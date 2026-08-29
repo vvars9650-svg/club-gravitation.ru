@@ -3,7 +3,7 @@
 
   const ENDPOINT = 'https://script.google.com/macros/s/AKfycbz3LNz4si1i2wueB1I1T5AleCOaaQ-HEgBWS1Injh_mCjFmkAQqKyCqvDH3LrgzBoI/exec';
   const MAX_FILE_BYTES = 10 * 1024 * 1024;
-  const CONFIRM_TIMEOUT_MS = 45000;
+  const SUBMIT_TIMEOUT_MS = 60000;
   const STEPS = ['Контактная информация','Фотография','О вас','Знакомства','Формат встреч','Проверка'];
   const YUFO_CITIES = ["Абинск","Адыгейск","Азов","Аксай","Алупка","Алушта","Анапа","Апшеронск","Армавир","Армянск","Астрахань","Ахтубинск","Батайск","Бахчисарай","Белая Калитва","Белогорск","Белореченск","Волгоград","Волгодонск","Волжский","Геленджик","Городовиковск","Горячий Ключ","Гуково","Гулькевичи","Джанкой","Донецк","Дубовка","Евпатория","Ейск","Жирновск","Зверево","Зерноград","Знаменск","Инкерман","Калач-на-Дону","Каменск-Шахтинский","Камызяк","Камышин","Керчь","Константиновск","Кореновск","Котельниково","Котово","Краснодар","Красноперекопск","Краснослободск","Красный Сулин","Кропоткин","Крымск","Курганинск","Лабинск","Лагань","Ленинск","Майкоп","Миллерово","Михайловка","Морозовск","Нариманов","Николаевск","Новоаннинский","Новокубанск","Новороссийск","Новочеркасск","Новошахтинск","Палласовка","Петров Вал","Приморско-Ахтарск","Пролетарск","Ростов-на-Дону","Саки","Сальск","Севастополь","Семикаракорск","Серафимович","Симферополь","Славянск-на-Кубани","Сочи","Старый Крым","Судак","Суровикино","Таганрог","Темрюк","Тимашёвск","Тихорецк","Туапсе","Урюпинск","Усть-Лабинск","Феодосия","Фролово","Хадыженск","Харабали","Цимлянск","Шахты","Щёлкино","Элиста","Ялта"];
 
@@ -21,6 +21,7 @@
   const submit = document.querySelector('#v2-submit');
   const success = document.querySelector('#v2-success');
   const successId = document.querySelector('#v2-success-id');
+  const iframe = document.querySelector('#gravitation-v2-submit-frame');
   const age = form.elements.age;
   const city = form.elements.city;
   const cityVisitWrap = form.querySelector('.v2-city-visit');
@@ -36,6 +37,7 @@
   let currentStep = 0;
   let maxReached = 0;
   let photoPayload = null;
+  let photoPreviewUrl = '';
   let activeSubmission = null;
 
   fillSelects();
@@ -43,6 +45,7 @@
   bindContactValidation();
   bindPhoto();
   bindSubmission();
+  bindServerResponse();
   renderStep(0);
 
   function fillSelects() {
@@ -69,7 +72,7 @@
       if (currentStep > 0) goTo(currentStep - 1);
     });
     tabs.forEach((tab, index) => tab.addEventListener('click', () => {
-      if (index <= maxReached) goTo(index);
+      if (index <= maxReached && !activeSubmission) goTo(index);
     }));
   }
 
@@ -87,20 +90,20 @@
     tabs.forEach((tab, i) => {
       tab.classList.toggle('is-active', i === index);
       tab.classList.toggle('is-done', i < index || i < maxReached);
-      tab.disabled = i > maxReached;
+      tab.disabled = i > maxReached || Boolean(activeSubmission);
     });
     progress.style.width = `${((index + 1) / steps.length) * 100}%`;
     mobileStep.textContent = STEPS[index];
+    back.hidden = index === 0;
     back.style.display = index === 0 ? 'none' : 'inline-flex';
+    next.hidden = index === steps.length - 1;
     next.style.display = index === steps.length - 1 ? 'none' : 'inline-flex';
   }
 
   function bindContactValidation() {
     city.addEventListener('change', syncCityVisit);
     syncCityVisit();
-    phone.addEventListener('focus', () => {
-      if (!phone.value) phone.value = '+7 ';
-    });
+    phone.addEventListener('focus', () => { if (!phone.value) phone.value = '+7 '; });
     phone.addEventListener('input', () => {
       phone.value = formatPhone(phone.value);
       phone.classList.remove('is-invalid');
@@ -169,10 +172,10 @@
     if (file.size > MAX_FILE_BYTES) return showPhotoError('Файл больше 10 МБ. Выберите фотографию поменьше.');
 
     try {
-      const source = await fileToDataUrl(file);
-      photoPreview.innerHTML = `<img src="${source}" alt="Предпросмотр фотографии">`;
+      setPreviewUrl(URL.createObjectURL(file));
       photoName.textContent = file.name;
 
+      const source = await fileToDataUrl(file);
       const image = await loadImage(source);
       const maxSide = 1600;
       const sourceWidth = image.naturalWidth || image.width;
@@ -188,19 +191,28 @@
       context.drawImage(image, 0, 0, width, height);
       const blob = await canvasToBlob(canvas, 'image/jpeg', .84);
       const encoded = await fileToDataUrl(blob);
+      setPreviewUrl(URL.createObjectURL(blob));
 
       photoPayload = {
         data: encoded.split(',')[1],
         type: 'image/jpeg',
-        name: String(file.name || 'photo.jpg').replace(/\.[^.]+$/, '') + '.jpg',
-        preview: encoded
+        name: String(file.name || 'photo.jpg').replace(/\.[^.]+$/, '') + '.jpg'
       };
-      photoPreview.innerHTML = `<img src="${encoded}" alt="Предпросмотр фотографии">`;
       dropzone.classList.remove('is-invalid');
     } catch (error) {
       console.error(error);
       showPhotoError('Не удалось обработать фотографию. Попробуйте другой файл.');
     }
+  }
+
+  function setPreviewUrl(url) {
+    if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
+    photoPreviewUrl = url;
+    photoPreview.replaceChildren();
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = 'Предпросмотр фотографии';
+    photoPreview.appendChild(img);
   }
 
   function showPhotoError(message) {
@@ -236,9 +248,7 @@
     return true;
   }
 
-  function markInvalid(el) {
-    if (el) el.classList.add('is-invalid');
-  }
+  function markInvalid(el) { if (el) el.classList.add('is-invalid'); }
 
   function buildReview() {
     const values = collectValues();
@@ -250,20 +260,40 @@
       ['Формат встреч',4,[['Удачный вечер',values.successful_evening],['Что заставит вернуться',values.return_reason],['Неприемлемое поведение',values.unacceptable_behavior],['Удобные дни',values.convenient_days],['Комфортная стоимость',values.comfortable_price],['Источник',values.source]]]
     ];
 
-    review.innerHTML = cards.map(([title,step,pairs]) => {
-      const photoHtml = step === 1 && photoPayload && photoPayload.preview
-        ? `<img class="v2-review-photo" src="${photoPayload.preview}" alt="Предпросмотр фотографии">`
-        : '';
-      return `
-        <article class="v2-review-card">
-          <div class="v2-review-head"><strong>${escapeHtml(title)}</strong><button type="button" data-edit-step="${step}">Изменить</button></div>
-          ${photoHtml}
-          <dl class="v2-review-grid">${pairs.map(([label,value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || '—')}</dd>`).join('')}</dl>
-        </article>`;
-    }).join('');
+    review.innerHTML = '';
+    cards.forEach(([title, step, pairs]) => {
+      const card = document.createElement('article');
+      card.className = 'v2-review-card';
+      const head = document.createElement('div');
+      head.className = 'v2-review-head';
+      const strong = document.createElement('strong');
+      strong.textContent = title;
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.textContent = 'Изменить';
+      edit.addEventListener('click', () => goTo(step));
+      head.append(strong, edit);
+      card.appendChild(head);
 
-    review.querySelectorAll('[data-edit-step]').forEach(button => {
-      button.addEventListener('click', () => goTo(Number(button.dataset.editStep)));
+      if (step === 1 && photoPayload && photoPreviewUrl) {
+        const img = document.createElement('img');
+        img.className = 'v2-review-photo';
+        img.src = photoPreviewUrl;
+        img.alt = 'Предпросмотр фотографии';
+        card.appendChild(img);
+      }
+
+      const dl = document.createElement('dl');
+      dl.className = 'v2-review-grid';
+      pairs.forEach(([label, value]) => {
+        const dt = document.createElement('dt');
+        dt.textContent = label;
+        const dd = document.createElement('dd');
+        dd.textContent = value || '—';
+        dl.append(dt, dd);
+      });
+      card.appendChild(dl);
+      review.appendChild(card);
     });
   }
 
@@ -291,9 +321,18 @@
 
       const values = collectValues();
       const participantId = makeParticipantId();
-      activeSubmission = {participantId};
+      const token = makeResponseToken();
+      const timeoutId = window.setTimeout(() => {
+        if (activeSubmission && activeSubmission.token === token) {
+          finishWithError('Сервер не подтвердил завершение отправки. Не отправляйте заявку повторно сразу.');
+        }
+      }, SUBMIT_TIMEOUT_MS);
+
+      activeSubmission = {participantId, token, timeoutId};
       submit.disabled = true;
       submit.textContent = 'ОТПРАВЛЯЕМ…';
+      back.disabled = true;
+      next.disabled = true;
       clearStatus();
 
       const params = new URLSearchParams();
@@ -302,6 +341,8 @@
       params.set('photo_data', photoPayload.data);
       params.set('photo_type', photoPayload.type);
       params.set('photo_name', photoPayload.name);
+      params.set('response_mode', 'postmessage');
+      params.set('response_token', token);
       params.set('page_url', location.href);
       params.set('referrer', document.referrer || '');
       params.set('user_agent', navigator.userAgent || '');
@@ -310,7 +351,22 @@
       ['utm_source','utm_medium','utm_campaign','utm_content','utm_term'].forEach(key => params.set(key, query.get(key) || ''));
 
       postToIframe(params);
-      confirmSubmission(participantId);
+    });
+  }
+
+  function bindServerResponse() {
+    window.addEventListener('message', event => {
+      const data = event.data;
+      if (!data || typeof data !== 'object' || data.type !== 'gravitation-v2-submit') return;
+      if (!activeSubmission || data.token !== activeSubmission.token) return;
+
+      const expectedId = activeSubmission.participantId;
+      clearTimeout(activeSubmission.timeoutId);
+      if (data.ok === true && data.id === expectedId) {
+        finishWithSuccess(expectedId);
+      } else {
+        finishWithError(data.error || 'Не удалось сохранить заявку. Попробуйте ещё раз.');
+      }
     });
   }
 
@@ -329,10 +385,11 @@
   }
 
   function postToIframe(params) {
+    if (!iframe) return finishWithError('Не найден технический канал отправки формы.');
     const postForm = document.createElement('form');
     postForm.method = 'POST';
     postForm.action = ENDPOINT;
-    postForm.target = 'gravitation-v2-submit-frame';
+    postForm.target = iframe.name;
     postForm.acceptCharset = 'UTF-8';
     postForm.style.display = 'none';
     for (const [name, value] of params.entries()) {
@@ -347,71 +404,8 @@
     postForm.remove();
   }
 
-  async function confirmSubmission(participantId) {
-    const deadline = Date.now() + CONFIRM_TIMEOUT_MS;
-    await delay(700);
-
-    while (activeSubmission && activeSubmission.participantId === participantId && Date.now() < deadline) {
-      const result = await getStatusJsonp(participantId);
-      if (!activeSubmission || activeSubmission.participantId !== participantId) return;
-
-      if (result && result.ok === true && result.found === true && result.id === participantId) {
-        finishWithSuccess(participantId);
-        return;
-      }
-      if (result && result.found === true && result.ok === false && result.error) {
-        finishWithError(result.error);
-        return;
-      }
-      await delay(900);
-    }
-
-    if (activeSubmission && activeSubmission.participantId === participantId) {
-      finishWithError('Не удалось подтвердить сохранение заявки. Не отправляйте её повторно сразу.');
-    }
-  }
-
-  function getStatusJsonp(participantId) {
-    return new Promise(resolve => {
-      const callbackName = `gravV2Status_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
-      const script = document.createElement('script');
-      let settled = false;
-
-      const cleanup = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        script.remove();
-        try { delete window[callbackName]; } catch (error) { window[callbackName] = undefined; }
-      };
-
-      window[callbackName] = data => {
-        cleanup();
-        resolve(data || null);
-      };
-
-      script.onerror = () => {
-        cleanup();
-        resolve(null);
-      };
-
-      const timer = setTimeout(() => {
-        cleanup();
-        resolve(null);
-      }, 7000);
-
-      const url = new URL(ENDPOINT);
-      url.searchParams.set('action', 'status');
-      url.searchParams.set('id', participantId);
-      url.searchParams.set('callback', callbackName);
-      url.searchParams.set('_', String(Date.now()));
-      script.src = url.toString();
-      script.async = true;
-      document.head.appendChild(script);
-    });
-  }
-
   function finishWithSuccess(id) {
+    if (activeSubmission) clearTimeout(activeSubmission.timeoutId);
     activeSubmission = null;
     form.hidden = true;
     const tabsWrap = document.querySelector('.v2-tabs');
@@ -424,9 +418,12 @@
   }
 
   function finishWithError(message) {
+    if (activeSubmission) clearTimeout(activeSubmission.timeoutId);
     activeSubmission = null;
     submit.disabled = false;
     submit.textContent = 'ОТПРАВИТЬ ЗАЯВКУ';
+    back.disabled = false;
+    next.disabled = false;
     status.textContent = message;
   }
 
@@ -439,6 +436,15 @@
     const d = new Date();
     const p = n => String(n).padStart(2,'0');
     return `GR-${String(d.getFullYear()).slice(-2)}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${p(Math.floor(Math.random()*100))}`;
+  }
+
+  function makeResponseToken() {
+    if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+      const bytes = new Uint32Array(4);
+      window.crypto.getRandomValues(bytes);
+      return Array.from(bytes, n => n.toString(36)).join('-');
+    }
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
   }
 
   function fileToDataUrl(file) {
@@ -463,13 +469,5 @@
     return new Promise((resolve,reject) => {
       canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Image conversion failed')), type, quality);
     });
-  }
-
-  function delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  function escapeHtml(value) {
-    return String(value == null ? '' : value).replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
   }
 })();
