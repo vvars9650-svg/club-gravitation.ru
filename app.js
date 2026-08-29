@@ -1,4 +1,4 @@
-const CONFIG={endpoint:"",fallbackForm:"https://docs.google.com/forms/d/e/1FAIpQLSe1cUBb3b0mZYz290N9ppx0CVbWQCqySiwrjBg2HCc9Y5tMmQ/viewform"};
+const CONFIG={endpoint:"https://script.google.com/macros/s/AKfycbz3LNz4si1i2wueB1I1T5AleCOaaQ-HEgBWS1Injh_mCjFmkAQqKyCqvDH3LrgzBoI/exec",fallbackForm:"https://docs.google.com/forms/d/e/1FAIpQLSe1cUBb3b0mZYz290N9ppx0CVbWQCqySiwrjBg2HCc9Y5tMmQ/viewform"};
 const body=document.body,menuToggle=document.querySelector(".menu-toggle"),nav=document.querySelector(".nav"),form=document.querySelector("#application-form"),statusEl=document.querySelector("#form-status");
 document.querySelector("#year").textContent=new Date().getFullYear();
 menuToggle?.addEventListener("click",()=>{const open=body.classList.toggle("menu-open");menuToggle.setAttribute("aria-expanded",String(open));});
