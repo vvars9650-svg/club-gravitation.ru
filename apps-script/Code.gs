@@ -2,7 +2,7 @@
  * ГРАВИТАЦИЯ — приём пошаговой анкеты сайта в Google Sheets + Google Drive.
  * После изменения этого файла: Apps Script → Развернуть → Управление развертываниями → Изменить → Новая версия.
  */
-const APP_VERSION=4;
+const APP_VERSION=5;
 const SPREADSHEET_ID='1pt69LEjrPiCPTF6ZzR_Lc6k-uXjW6qyXURBNqT_EsTw';
 const PARTICIPANTS_SHEET='Участники';
 const WEB_RAW_SHEET='Сайт — RAW';
@@ -16,13 +16,16 @@ const LOG_HEADERS=['Дата','Статус','Этап','ID заявки','Им�
 
 function doGet(){return json_({ok:true,service:'club-gravitation-applications',version:APP_VERSION});}
 
-/** Запустить вручную один раз из редактора Apps Script. Проверяет и запрашивает права на Sheets + Drive. */
+/** Запустить вручную из редактора Apps Script. Проверяет и запрашивает права на запись в Sheets + Drive. */
 function testAccess(){
   const ss=SpreadsheetApp.openById(SPREADSHEET_ID);
   const folder=DriveApp.getFolderById(PHOTO_FOLDER_ID);
+  const testFile=folder.createFile(Utilities.newBlob('permission test','text/plain','__gravitation_permission_test.txt'));
+  const testFileId=testFile.getId();
+  testFile.setTrashed(true);
   ensureLog_(ss);
-  logEvent_('OK','testAccess','','','Доступ к таблице и папке подтверждён','editor');
-  return {spreadsheet:ss.getName(),folder:folder.getName(),version:APP_VERSION};
+  logEvent_('OK','testAccess','','','Доступ на чтение и запись в таблицу и папку подтверждён','editor');
+  return {spreadsheet:ss.getName(),folder:folder.getName(),testFileId:testFileId,driveWrite:true,version:APP_VERSION};
 }
 
 function doPost(e){
@@ -56,15 +59,7 @@ function doPost(e){
     ensureLog_(ss);
 
     stage='запись RAW';
-    const rawValues=[
-      now,id,p.name||'',age,p.gender||'',city,cityVisit,phone,p.telegram||'',email,p.preferred_contact||'',photo.url,
-      p.occupation||'',p.life_beyond_work||'',p.interests||'',p.relationship_context||'',p.connection_goal||'',
-      p.values_people||'',p.meeting_barriers||'',p.interest_reason||'',p.expectations||'',p.successful_evening||'',
-      p.return_reason||'',p.social_comfort||'',p.initiative||'',p.introduction_scenario||'',p.unacceptable_behavior||'',
-      p.convenient_days||'',p.comfortable_price||'',p.source||'Сайт / лендинг',p.personal_data_consent||'',
-      p.rules_consent||'',p.page_url||'',p.utm_source||'',p.utm_medium||'',p.utm_campaign||'',p.utm_content||'',
-      p.utm_term||'',p.referrer||'',p.user_agent||'',p.submitted_at_client||''
-    ];
+    const rawValues=[now,id,p.name||'',age,p.gender||'',city,cityVisit,phone,p.telegram||'',email,p.preferred_contact||'',photo.url,p.occupation||'',p.life_beyond_work||'',p.interests||'',p.relationship_context||'',p.connection_goal||'',p.values_people||'',p.meeting_barriers||'',p.interest_reason||'',p.expectations||'',p.successful_evening||'',p.return_reason||'',p.social_comfort||'',p.initiative||'',p.introduction_scenario||'',p.unacceptable_behavior||'',p.convenient_days||'',p.comfortable_price||'',p.source||'Сайт / лендинг',p.personal_data_consent||'',p.rules_consent||'',p.page_url||'',p.utm_source||'',p.utm_medium||'',p.utm_campaign||'',p.utm_content||'',p.utm_term||'',p.referrer||'',p.user_agent||'',p.submitted_at_client||''];
     const rawRow=raw.getLastRow()+1;
     raw.getRange(rawRow,1,1,RAW_HEADERS.length).setValues([rawValues]);
     raw.getRange(rawRow,2).setNumberFormat('@').setValue(id);
@@ -72,20 +67,7 @@ function doPost(e){
 
     stage='запись участника';
     const row=Object.fromEntries(PARTICIPANT_HEADERS.map(h=>[h,'']));
-    Object.assign(row,{
-      'ID':id,'Статус':'Новая заявка','Дата заявки':now,'Имя и фамилия':p.name||'','Возраст':age,'Пол':p.gender||'',
-      'Город':city,'Посещение Краснодара':cityVisit,'Телефон':phone,'Telegram':p.telegram||'','Email':email,
-      'Как удобнее связаться?':p.preferred_contact||'','Чем занимается':p.occupation||'','Жизнь кроме работы':p.life_beyond_work||'',
-      'Интересы':p.interests||'','Контекст отношений':p.relationship_context||'','Какие знакомства интересны':p.connection_goal||'',
-      'Что ценит в людях':p.values_people||'','Что мешает знакомиться':p.meeting_barriers||'','Источник':p.source||'Сайт / лендинг',
-      'Что заинтересовало':p.interest_reason||'','Ожидания от мероприятия':p.expectations||'','Удачный вечер':p.successful_evening||'',
-      'Что заставит вернуться':p.return_reason||'','Комфорт в новой компании':p.social_comfort||'','Инициативность':p.initiative||'',
-      'Сценарий знакомства':p.introduction_scenario||'','Неприемлемое поведение':p.unacceptable_behavior||'',
-      'Удобные дни':p.convenient_days||'','Комфортная цена':p.comfortable_price||'','Согласие на связь':'Да',
-      'Согласие ПДн':p.personal_data_consent||'','Правила участия':p.rules_consent||'','Канал заявки':'Сайт',
-      'UTM Source':p.utm_source||'','UTM Medium':p.utm_medium||'','UTM Campaign':p.utm_campaign||'',
-      'UTM Content':p.utm_content||'','UTM Term':p.utm_term||'','Referrer':p.referrer||''
-    });
+    Object.assign(row,{'ID':id,'Статус':'Новая заявка','Дата заявки':now,'Имя и фамилия':p.name||'','Возраст':age,'Пол':p.gender||'','Город':city,'Посещение Краснодара':cityVisit,'Телефон':phone,'Telegram':p.telegram||'','Email':email,'Как удобнее связаться?':p.preferred_contact||'','Чем занимается':p.occupation||'','Жизнь кроме работы':p.life_beyond_work||'','Интересы':p.interests||'','Контекст отношений':p.relationship_context||'','Какие знакомства интересны':p.connection_goal||'','Что ценит в людях':p.values_people||'','Что мешает знакомиться':p.meeting_barriers||'','Источник':p.source||'Сайт / лендинг','Что заинтересовало':p.interest_reason||'','Ожидания от мероприятия':p.expectations||'','Удачный вечер':p.successful_evening||'','Что заставит вернуться':p.return_reason||'','Комфорт в новой компании':p.social_comfort||'','Инициативность':p.initiative||'','Сценарий знакомства':p.introduction_scenario||'','Неприемлемое поведение':p.unacceptable_behavior||'','Удобные дни':p.convenient_days||'','Комфортная цена':p.comfortable_price||'','Согласие на связь':'Да','Согласие ПДн':p.personal_data_consent||'','Правила участия':p.rules_consent||'','Канал заявки':'Сайт','UTM Source':p.utm_source||'','UTM Medium':p.utm_medium||'','UTM Campaign':p.utm_campaign||'','UTM Content':p.utm_content||'','UTM Term':p.utm_term||'','Referrer':p.referrer||''});
 
     const participantRow=participants.getLastRow()+1;
     participants.getRange(participantRow,1,1,PARTICIPANT_HEADERS.length).setValues([PARTICIPANT_HEADERS.map(h=>row[h]??'')]);
@@ -122,44 +104,10 @@ function savePhoto_(p,id){
   return {id:file.getId(),url:file.getUrl(),name:file.getName()};
 }
 
-function ensureParticipants_(ss){
-  let sheet=ss.getSheetByName(PARTICIPANTS_SHEET);
-  if(!sheet)sheet=ss.insertSheet(PARTICIPANTS_SHEET);
-  ensureColumns_(sheet,PARTICIPANT_HEADERS.length);
-  const current=sheet.getRange(1,1,1,PARTICIPANT_HEADERS.length).getValues()[0];
-  PARTICIPANT_HEADERS.forEach((header,idx)=>{if(current[idx]!==header)sheet.getRange(1,idx+1).setValue(header);});
-  sheet.setFrozenRows(1);
-  if(sheet.getMaxRows()>1){sheet.getRange(2,1,sheet.getMaxRows()-1,1).setNumberFormat('@');sheet.getRange(2,19,sheet.getMaxRows()-1,1).setNumberFormat('@');}
-  return sheet;
-}
-
-function ensureRaw_(ss){
-  let sheet=ss.getSheetByName(WEB_RAW_SHEET);
-  if(!sheet)sheet=ss.insertSheet(WEB_RAW_SHEET);
-  ensureColumns_(sheet,RAW_HEADERS.length);
-  const current=sheet.getRange(1,1,1,RAW_HEADERS.length).getValues()[0];
-  if(current.join('|')!==RAW_HEADERS.join('|'))sheet.getRange(1,1,1,RAW_HEADERS.length).setValues([RAW_HEADERS]);
-  sheet.setFrozenRows(1);
-  if(sheet.getMaxRows()>1){sheet.getRange(2,2,sheet.getMaxRows()-1,1).setNumberFormat('@');sheet.getRange(2,8,sheet.getMaxRows()-1,1).setNumberFormat('@');}
-  return sheet;
-}
-
-function ensureLog_(ss){
-  let sheet=ss.getSheetByName(LOG_SHEET);
-  if(!sheet)sheet=ss.insertSheet(LOG_SHEET);
-  ensureColumns_(sheet,LOG_HEADERS.length);
-  const current=sheet.getRange(1,1,1,LOG_HEADERS.length).getValues()[0];
-  if(current.join('|')!==LOG_HEADERS.join('|'))sheet.getRange(1,1,1,LOG_HEADERS.length).setValues([LOG_HEADERS]);
-  sheet.setFrozenRows(1);
-  return sheet;
-}
-
-function logEvent_(status,stage,id,name,error,source){
-  const ss=SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet=ensureLog_(ss);
-  sheet.appendRow([new Date(),status,stage,id||'',name||'',error||'',APP_VERSION,source||'']);
-}
-
+function ensureParticipants_(ss){let sheet=ss.getSheetByName(PARTICIPANTS_SHEET);if(!sheet)sheet=ss.insertSheet(PARTICIPANTS_SHEET);ensureColumns_(sheet,PARTICIPANT_HEADERS.length);const current=sheet.getRange(1,1,1,PARTICIPANT_HEADERS.length).getValues()[0];PARTICIPANT_HEADERS.forEach((header,idx)=>{if(current[idx]!==header)sheet.getRange(1,idx+1).setValue(header);});sheet.setFrozenRows(1);if(sheet.getMaxRows()>1){sheet.getRange(2,1,sheet.getMaxRows()-1,1).setNumberFormat('@');sheet.getRange(2,19,sheet.getMaxRows()-1,1).setNumberFormat('@');}return sheet;}
+function ensureRaw_(ss){let sheet=ss.getSheetByName(WEB_RAW_SHEET);if(!sheet)sheet=ss.insertSheet(WEB_RAW_SHEET);ensureColumns_(sheet,RAW_HEADERS.length);const current=sheet.getRange(1,1,1,RAW_HEADERS.length).getValues()[0];if(current.join('|')!==RAW_HEADERS.join('|'))sheet.getRange(1,1,1,RAW_HEADERS.length).setValues([RAW_HEADERS]);sheet.setFrozenRows(1);if(sheet.getMaxRows()>1){sheet.getRange(2,2,sheet.getMaxRows()-1,1).setNumberFormat('@');sheet.getRange(2,8,sheet.getMaxRows()-1,1).setNumberFormat('@');}return sheet;}
+function ensureLog_(ss){let sheet=ss.getSheetByName(LOG_SHEET);if(!sheet)sheet=ss.insertSheet(LOG_SHEET);ensureColumns_(sheet,LOG_HEADERS.length);const current=sheet.getRange(1,1,1,LOG_HEADERS.length).getValues()[0];if(current.join('|')!==LOG_HEADERS.join('|'))sheet.getRange(1,1,1,LOG_HEADERS.length).setValues([LOG_HEADERS]);sheet.setFrozenRows(1);return sheet;}
+function logEvent_(status,stage,id,name,error,source){const ss=SpreadsheetApp.openById(SPREADSHEET_ID);const sheet=ensureLog_(ss);sheet.appendRow([new Date(),status,stage,id||'',name||'',error||'',APP_VERSION,source||'']);}
 function ensureColumns_(sheet,count){const current=sheet.getMaxColumns();if(current<count)sheet.insertColumnsAfter(current,count-current);}
 function validateAge_(value){const age=Number(value);if(!Number.isInteger(age)||age<25||age>52)throw new Error('Возраст должен быть от 25 до 52');return age;}
 function validateCity_(value){const city=String(value||'').trim();if(!YUFO_CITIES.includes(city))throw new Error('Выберите город из списка ЮФО');return city;}
