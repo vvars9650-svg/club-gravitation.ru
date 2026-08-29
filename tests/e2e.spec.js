@@ -1,12 +1,13 @@
 const { test, expect } = require('@playwright/test');
 
 const SITE_URL = 'https://club-gravitation.ru/';
+const SITE_ORIGIN = new URL(SITE_URL).origin;
 const PNG_1X1 = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII=',
   'base64'
 );
 
-test.setTimeout(240000);
+test.setTimeout(300000);
 test.describe.configure({ mode: 'serial' });
 
 async function findFormFrame(page, timeout = 20000) {
@@ -68,10 +69,10 @@ async function verifyAndCleanup(frame, id) {
   }), id);
 }
 
-async function exerciseWizard(frame, label) {
+async function exerciseDesktopWizard(frame) {
   const form = frame.locator('#application-form');
   await expect(form).toBeVisible();
-  const name = `E2E CI ${label} ${Date.now()}`;
+  const name = `E2E CI Desktop ${Date.now()}`;
 
   await frame.locator('[name="name"]').fill(name);
   await frame.locator('[name="age"]').selectOption('31');
@@ -110,8 +111,8 @@ async function exerciseWizard(frame, label) {
     city: 'Краснодар',
     phone: '+79991234567',
     email: 'e2e-ci@example.com',
-    page_url: label === 'Android' ? 'https://club-gravitation.ru/mobile-e2e' : 'https://club-gravitation.ru/desktop-e2e',
-    user_agent: label,
+    page_url: 'https://club-gravitation.ru/desktop-e2e',
+    user_agent: 'Desktop',
     submitted_at_client: new Date().toISOString()
   };
 }
@@ -133,6 +134,68 @@ async function fullDataCycle(frame, payload) {
   return saved.id;
 }
 
+async function exerciseRealMobileForm(page) {
+  const form = page.locator('#application-v2');
+  await expect(form).toBeVisible({ timeout: 20000 });
+  const name = `E2E CI Android ${Date.now()}`;
+
+  await page.locator('[name="name"]').fill(name);
+  await page.locator('[name="age"]').selectOption('31');
+  await page.locator('[name="gender"]').selectOption({ label: 'Мужчина' });
+  await page.locator('[name="city"]').selectOption({ label: 'Краснодар' });
+  await page.locator('[name="phone"]').fill('+7 999 123-45-67');
+  await page.locator('[name="email"]').fill('e2e-ci@example.com');
+
+  await page.locator('#v2-next').click();
+  await expect(page.locator('.v2-step[data-step="1"]')).toHaveClass(/is-active/);
+
+  await page.locator('#v2-photo').setInputFiles({
+    name: 'e2e-photo.png',
+    mimeType: 'image/png',
+    buffer: PNG_1X1
+  });
+  await expect(page.locator('#v2-photo-preview img')).toBeVisible({ timeout: 15000 });
+  await expect(page.locator('#v2-photo-name')).toContainText('e2e-photo.png');
+
+  for (const step of [2, 3, 4, 5]) {
+    await page.locator('#v2-next').click();
+    await expect(page.locator(`.v2-step[data-step="${step}"]`)).toHaveClass(/is-active/);
+  }
+
+  await expect(page.locator('#v2-next')).toBeHidden();
+  await expect(page.getByText('ДАЛЕЕ', { exact: true })).toHaveCount(0);
+  await page.locator('[name="personal_data_consent"]').check();
+  await page.locator('[name="rules_consent"]').check();
+  await page.locator('#v2-submit').click();
+
+  await expect(page.locator('#v2-success')).toBeVisible({ timeout: 90000 });
+  const id = (await page.locator('#v2-success-id').textContent() || '').trim();
+  expect(id).toMatch(/^GR-/);
+  expect(new URL(page.url()).origin).toBe(SITE_ORIGIN);
+  await expect(page.getByText('Не удалось открыть файл.')).toHaveCount(0);
+
+  return { id, name };
+}
+
+async function verifyAndCleanupRealSubmission(browser, id) {
+  const context = await browser.newContext({ viewport: { width: 1365, height: 900 } });
+  const page = await context.newPage();
+  await page.goto(SITE_URL, { waitUntil: 'domcontentloaded' });
+  await page.locator('#apply').scrollIntoViewIfNeeded();
+  const frame = await waitForServerReady(page);
+  const verification = await verifyAndCleanup(frame, id);
+  await context.close();
+
+  expect(verification).toMatchObject({
+    ok: true,
+    participant: true,
+    raw: true,
+    photo: true,
+    photoLink: true,
+    cleaned: true
+  });
+}
+
 test('desktop: embedded form UI and real Sheets/Drive cycle', async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 1365, height: 900 } });
   const page = await context.newPage();
@@ -143,13 +206,13 @@ test('desktop: embedded form UI and real Sheets/Drive cycle', async ({ browser }
   await expect(page.locator('#application-frame')).toBeVisible();
 
   const frame = await waitForServerReady(page);
-  const payload = await exerciseWizard(frame, 'Desktop');
+  const payload = await exerciseDesktopWizard(frame);
   await fullDataCycle(frame, payload);
 
   await context.close();
 });
 
-test('android: menu is stable, no Drive iframe error, full data cycle', async ({ browser }) => {
+test('android: real club-domain form submits photo to Sheets/Drive', async ({ browser }) => {
   const context = await browser.newContext({
     viewport: { width: 360, height: 800 },
     isMobile: true,
@@ -158,7 +221,7 @@ test('android: menu is stable, no Drive iframe error, full data cycle', async ({
   });
   const page = await context.newPage();
 
-  await page.goto(SITE_URL, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${SITE_URL}?utm_source=e2e&utm_medium=android`, { waitUntil: 'domcontentloaded' });
   await expect(page.locator('#main-nav')).toBeHidden();
   await expect(page.locator('.menu-toggle')).toBeVisible();
 
@@ -181,12 +244,19 @@ test('android: menu is stable, no Drive iframe error, full data cycle', async ({
   const mobileLink = page.locator('[data-mobile-apply-link]');
   await expect(mobileLink).toBeVisible();
   const href = await mobileLink.getAttribute('href');
-  expect(href).toContain('script.google.com/macros/s/');
+  const target = new URL(href);
+  expect(target.origin).toBe(SITE_ORIGIN);
+  expect(target.pathname).toBe('/apply.html');
+  expect(target.searchParams.get('utm_source')).toBe('e2e');
+  expect(target.searchParams.get('utm_medium')).toBe('android');
 
-  await page.goto(href, { waitUntil: 'domcontentloaded' });
-  const frame = await waitForServerReady(page);
-  const payload = await exerciseWizard(frame, 'Android');
-  await fullDataCycle(frame, payload);
+  await mobileLink.click();
+  await page.waitForURL(url => url.origin === SITE_ORIGIN && url.pathname === '/apply.html', { timeout: 20000 });
+  expect(new URL(page.url()).origin).toBe(SITE_ORIGIN);
+  await expect(page.locator('#application-v2')).toBeVisible();
 
+  const { id } = await exerciseRealMobileForm(page);
   await context.close();
+
+  await verifyAndCleanupRealSubmission(browser, id);
 });
