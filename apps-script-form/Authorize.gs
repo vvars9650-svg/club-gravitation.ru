@@ -1,3 +1,7 @@
+/**
+ * One-time authorization probe for CI/CD and manual diagnostics.
+ * Touch 2026-08-29: trigger clasp pipeline after GitHub secret setup.
+ */
 function authorizeFormApp_() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const folder = DriveApp.getFolderById(PHOTO_FOLDER_ID);
