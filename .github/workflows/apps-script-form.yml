@@ -1,0 +1,164 @@
+name: Apps Script Form CI/CD
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "apps-script-form/*.gs"
+      - "apps-script-form/*.html"
+      - "apps-script-form/appsscript.json"
+      - "apps-script-form/.claspignore"
+      - "apps-script-form/validate.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: "apps-script-form-production"
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Validate form source
+        run: node apps-script-form/validate.mjs
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    env:
+      CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Check Google credentials
+        shell: bash
+        run: |
+          if [[ -z "${CLASPRC_JSON}" ]]; then
+            echo "::error::Repository secret CLASPRC_JSON is missing."
+            exit 1
+          fi
+
+      - name: Install clasp
+        run: npm install --global @google/clasp@3.3.0
+
+      - name: Restore clasp credentials
+        shell: bash
+        run: |
+          mkdir -p "$HOME"
+          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          chmod 600 "$HOME/.clasprc.json"
+          clasp --version
+          clasp show-authorized-user
+
+      - name: Bootstrap Apps Script project
+        id: bootstrap
+        working-directory: apps-script-form
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -s .clasp.json ]]; then
+            cp appsscript.json "$RUNNER_TEMP/gravitation-appsscript.json"
+            clasp create --type standalone --title "Гравитация — анкета FORM" --rootDir .
+            cp "$RUNNER_TEMP/gravitation-appsscript.json" appsscript.json
+            echo "created=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "created=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Using $(cat .clasp.json)"
+          clasp status
+
+      - name: Push source to Apps Script
+        working-directory: apps-script-form
+        run: clasp push --force
+
+      - name: Create or update web app deployment
+        id: deployment
+        working-directory: apps-script-form
+        shell: bash
+        run: |
+          set -euo pipefail
+          description="GitHub ${GITHUB_SHA::7} $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
+          if [[ -s .deployment-id ]]; then
+            deployment_id="$(tr -d '\r\n ' < .deployment-id)"
+            echo "Updating deployment: $deployment_id"
+            clasp deploy --deploymentId "$deployment_id" --description "$description" | tee "$RUNNER_TEMP/clasp-deploy.txt"
+          else
+            echo "Creating first deployment"
+            clasp deploy --description "$description" | tee "$RUNNER_TEMP/clasp-deploy.txt"
+            deployment_id="$(grep -Eo 'AKfy[[:alnum:]_-]+' "$RUNNER_TEMP/clasp-deploy.txt" | head -n 1 || true)"
+            if [[ -z "$deployment_id" ]]; then
+              echo "::error::Could not extract Apps Script deployment ID."
+              cat "$RUNNER_TEMP/clasp-deploy.txt"
+              exit 1
+            fi
+            printf '%s\n' "$deployment_id" > .deployment-id
+          fi
+
+          webapp_url="https://script.google.com/macros/s/${deployment_id}/exec"
+          printf '%s\n' "$webapp_url" > .webapp-url
+          echo "deployment_id=$deployment_id" >> "$GITHUB_OUTPUT"
+          echo "webapp_url=$webapp_url" >> "$GITHUB_OUTPUT"
+          echo "Web app: $webapp_url"
+
+      - name: Persist Apps Script metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add apps-script-form/.clasp.json apps-script-form/.deployment-id apps-script-form/.webapp-url
+          if git diff --cached --quiet; then
+            echo "No deployment metadata changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: persist Apps Script deployment metadata [skip ci]"
+          git push origin HEAD:main
+
+      - name: Smoke-test deployed form
+        shell: bash
+        env:
+          WEBAPP_URL: ${{ steps.deployment.outputs.webapp_url }}
+        run: |
+          set -euo pipefail
+          body_file="$RUNNER_TEMP/form-smoke.html"
+          ok=0
+          for attempt in $(seq 1 12); do
+            echo "Smoke test attempt $attempt/12"
+            if curl -LfsS --max-time 30 --retry 2 --retry-delay 2 "$WEBAPP_URL?ci=${GITHUB_SHA}" -o "$body_file"; then
+              if grep -q 'id="application-form"' "$body_file"; then
+                ok=1
+                break
+              fi
+            fi
+            sleep 5
+          done
+
+          if [[ "$ok" != "1" ]]; then
+            echo "::error::Published Apps Script form did not return the expected HTML."
+            if [[ -f "$body_file" ]]; then
+              sed -n '1,120p' "$body_file"
+            fi
+            exit 1
+          fi
+
+          echo "Apps Script web app smoke test passed: $WEBAPP_URL"
