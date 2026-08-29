@@ -2,16 +2,16 @@
   'use strict';
 
   const ENDPOINT = 'https://script.google.com/macros/s/AKfycbz3LNz4si1i2wueB1I1T5AleCOaaQ-HEgBWS1Injh_mCjFmkAQqKyCqvDH3LrgzBoI/exec';
-  const RESPONSE_TYPE = 'gravitation-v2-submit';
   const MAX_FILE_BYTES = 10 * 1024 * 1024;
+  const CONFIRM_TIMEOUT_MS = 45000;
   const STEPS = ['Контактная информация','Фотография','О вас','Знакомства','Формат встреч','Проверка'];
   const YUFO_CITIES = ["Абинск","Адыгейск","Азов","Аксай","Алупка","Алушта","Анапа","Апшеронск","Армавир","Армянск","Астрахань","Ахтубинск","Батайск","Бахчисарай","Белая Калитва","Белогорск","Белореченск","Волгоград","Волгодонск","Волжский","Геленджик","Городовиковск","Горячий Ключ","Гуково","Гулькевичи","Джанкой","Донецк","Дубовка","Евпатория","Ейск","Жирновск","Зверево","Зерноград","Знаменск","Инкерман","Калач-на-Дону","Каменск-Шахтинский","Камызяк","Камышин","Керчь","Константиновск","Кореновск","Котельниково","Котово","Краснодар","Красноперекопск","Краснослободск","Красный Сулин","Кропоткин","Крымск","Курганинск","Лабинск","Лагань","Ленинск","Майкоп","Миллерово","Михайловка","Морозовск","Нариманов","Николаевск","Новоаннинский","Новокубанск","Новороссийск","Новочеркасск","Новошахтинск","Палласовка","Петров Вал","Приморско-Ахтарск","Пролетарск","Ростов-на-Дону","Саки","Сальск","Севастополь","Семикаракорск","Серафимович","Симферополь","Славянск-на-Кубани","Сочи","Старый Крым","Судак","Суровикино","Таганрог","Темрюк","Тимашёвск","Тихорецк","Туапсе","Урюпинск","Усть-Лабинск","Феодосия","Фролово","Хадыженск","Харабали","Цимлянск","Шахты","Щёлкино","Элиста","Ялта"];
 
   const form = document.querySelector('#application-v2');
   if (!form) return;
 
-  const steps = [...form.querySelectorAll('.v2-step')];
-  const tabs = [...document.querySelectorAll('.v2-tab')];
+  const steps = Array.from(form.querySelectorAll('.v2-step'));
+  const tabs = Array.from(document.querySelectorAll('.v2-tab'));
   const progress = document.querySelector('#v2-progress-bar');
   const mobileStep = document.querySelector('#v2-mobile-step');
   const back = document.querySelector('#v2-back');
@@ -78,7 +78,8 @@
     maxReached = Math.max(maxReached, currentStep);
     if (currentStep === steps.length - 1) buildReview();
     renderStep(currentStep);
-    document.querySelector('.v2-card')?.scrollIntoView({behavior:'smooth', block:'start'});
+    const card = document.querySelector('.v2-card');
+    if (card) card.scrollIntoView({behavior:'smooth', block:'start'});
   }
 
   function renderStep(index) {
@@ -90,8 +91,6 @@
     });
     progress.style.width = `${((index + 1) / steps.length) * 100}%`;
     mobileStep.textContent = STEPS[index];
-
-    // Важное правило V2: кнопки существуют в одном месте и управляются только здесь.
     back.style.display = index === 0 ? 'none' : 'inline-flex';
     next.style.display = index === steps.length - 1 ? 'none' : 'inline-flex';
   }
@@ -99,7 +98,6 @@
   function bindContactValidation() {
     city.addEventListener('change', syncCityVisit);
     syncCityVisit();
-
     phone.addEventListener('focus', () => {
       if (!phone.value) phone.value = '+7 ';
     });
@@ -146,19 +144,20 @@
 
     const stop = event => { event.preventDefault(); event.stopPropagation(); };
     ['dragenter','dragover'].forEach(type => dropzone.addEventListener(type, event => {
-      stop(event); dropzone.classList.add('is-dragover');
+      stop(event);
+      dropzone.classList.add('is-dragover');
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
     }));
     ['dragleave','dragend'].forEach(type => dropzone.addEventListener(type, event => {
-      stop(event); dropzone.classList.remove('is-dragover');
+      stop(event);
+      dropzone.classList.remove('is-dragover');
     }));
     dropzone.addEventListener('drop', event => {
-      stop(event); dropzone.classList.remove('is-dragover');
-      const file = [...(event.dataTransfer?.files || [])].find(item => /^image\/(jpeg|png|webp)$/i.test(item.type));
-      if (!file) {
-        showPhotoError('Перетащите изображение JPG, PNG или WEBP.');
-        return;
-      }
+      stop(event);
+      dropzone.classList.remove('is-dragover');
+      const files = event.dataTransfer ? Array.from(event.dataTransfer.files || []) : [];
+      const file = files.find(item => /^image\/(jpeg|png|webp)$/i.test(item.type));
+      if (!file) return showPhotoError('Перетащите изображение JPG, PNG или WEBP.');
       processPhoto(file);
     });
   }
@@ -171,23 +170,32 @@
 
     try {
       const source = await fileToDataUrl(file);
+      photoPreview.innerHTML = `<img src="${source}" alt="Предпросмотр фотографии">`;
+      photoName.textContent = file.name;
+
       const image = await loadImage(source);
       const maxSide = 1600;
-      const scale = Math.min(1, maxSide / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
-      const width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
-      const height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+      const sourceWidth = image.naturalWidth || image.width;
+      const sourceHeight = image.naturalHeight || image.height;
+      const scale = Math.min(1, maxSide / Math.max(sourceWidth, sourceHeight));
+      const width = Math.max(1, Math.round(sourceWidth * scale));
+      const height = Math.max(1, Math.round(sourceHeight * scale));
       const canvas = document.createElement('canvas');
-      canvas.width = width; canvas.height = height;
-      canvas.getContext('2d', {alpha:false}).drawImage(image, 0, 0, width, height);
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext('2d', {alpha:false});
+      if (!context) throw new Error('Canvas unavailable');
+      context.drawImage(image, 0, 0, width, height);
       const blob = await canvasToBlob(canvas, 'image/jpeg', .84);
       const encoded = await fileToDataUrl(blob);
+
       photoPayload = {
         data: encoded.split(',')[1],
         type: 'image/jpeg',
-        name: String(file.name || 'photo.jpg').replace(/\.[^.]+$/, '') + '.jpg'
+        name: String(file.name || 'photo.jpg').replace(/\.[^.]+$/, '') + '.jpg',
+        preview: encoded
       };
       photoPreview.innerHTML = `<img src="${encoded}" alt="Предпросмотр фотографии">`;
-      photoName.textContent = file.name;
       dropzone.classList.remove('is-invalid');
     } catch (error) {
       console.error(error);
@@ -222,7 +230,7 @@
 
     if (firstInvalid) {
       firstInvalid.scrollIntoView({behavior:'smooth', block:'center'});
-      firstInvalid.focus?.();
+      if (typeof firstInvalid.focus === 'function') firstInvalid.focus();
       return false;
     }
     return true;
@@ -242,18 +250,26 @@
       ['Формат встреч',4,[['Удачный вечер',values.successful_evening],['Что заставит вернуться',values.return_reason],['Неприемлемое поведение',values.unacceptable_behavior],['Удобные дни',values.convenient_days],['Комфортная стоимость',values.comfortable_price],['Источник',values.source]]]
     ];
 
-    review.innerHTML = cards.map(([title,step,pairs]) => `
-      <article class="v2-review-card">
-        <div class="v2-review-head"><strong>${escapeHtml(title)}</strong><button type="button" data-edit-step="${step}">Изменить</button></div>
-        <dl class="v2-review-grid">${pairs.map(([label,value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || '—')}</dd>`).join('')}</dl>
-      </article>`).join('');
+    review.innerHTML = cards.map(([title,step,pairs]) => {
+      const photoHtml = step === 1 && photoPayload && photoPayload.preview
+        ? `<img class="v2-review-photo" src="${photoPayload.preview}" alt="Предпросмотр фотографии">`
+        : '';
+      return `
+        <article class="v2-review-card">
+          <div class="v2-review-head"><strong>${escapeHtml(title)}</strong><button type="button" data-edit-step="${step}">Изменить</button></div>
+          ${photoHtml}
+          <dl class="v2-review-grid">${pairs.map(([label,value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || '—')}</dd>`).join('')}</dl>
+        </article>`;
+    }).join('');
 
-    review.querySelectorAll('[data-edit-step]').forEach(button => button.addEventListener('click', () => goTo(Number(button.dataset.editStep))));
+    review.querySelectorAll('[data-edit-step]').forEach(button => {
+      button.addEventListener('click', () => goTo(Number(button.dataset.editStep)));
+    });
   }
 
   function collectValues() {
     const data = {};
-    [...form.elements].forEach(el => {
+    Array.from(form.elements).forEach(el => {
       if (!el.name || el.name === 'photo') return;
       if (el.type === 'checkbox') {
         if (!el.checked) return;
@@ -268,15 +284,14 @@
   }
 
   function bindSubmission() {
-    form.addEventListener('submit', async event => {
+    form.addEventListener('submit', event => {
       event.preventDefault();
       if (activeSubmission) return;
       if (!validateBeforeSubmit()) return;
 
       const values = collectValues();
       const participantId = makeParticipantId();
-      const token = `v2_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-      activeSubmission = {participantId, token};
+      activeSubmission = {participantId};
       submit.disabled = true;
       submit.textContent = 'ОТПРАВЛЯЕМ…';
       clearStatus();
@@ -287,8 +302,6 @@
       params.set('photo_data', photoPayload.data);
       params.set('photo_type', photoPayload.type);
       params.set('photo_name', photoPayload.name);
-      params.set('response_mode', 'postmessage');
-      params.set('response_token', token);
       params.set('page_url', location.href);
       params.set('referrer', document.referrer || '');
       params.set('user_agent', navigator.userAgent || '');
@@ -296,18 +309,8 @@
       const query = new URLSearchParams(location.search);
       ['utm_source','utm_medium','utm_campaign','utm_content','utm_term'].forEach(key => params.set(key, query.get(key) || ''));
 
-      const timer = setTimeout(() => finishWithError('Сервер не ответил вовремя. Не отправляйте заявку повторно сразу.'), 60000);
-
-      const onMessage = event => {
-        const data = event.data;
-        if (!data || data.type !== RESPONSE_TYPE || data.token !== token) return;
-        window.removeEventListener('message', onMessage);
-        clearTimeout(timer);
-        if (data.ok && data.id === participantId) finishWithSuccess(data.id);
-        else finishWithError(data.error || 'Не удалось сохранить заявку. Попробуйте ещё раз.');
-      };
-      window.addEventListener('message', onMessage);
       postToIframe(params);
+      confirmSubmission(participantId);
     });
   }
 
@@ -334,7 +337,9 @@
     postForm.style.display = 'none';
     for (const [name, value] of params.entries()) {
       const input = document.createElement('input');
-      input.type = 'hidden'; input.name = name; input.value = value;
+      input.type = 'hidden';
+      input.name = name;
+      input.value = value;
       postForm.appendChild(input);
     }
     document.body.appendChild(postForm);
@@ -342,11 +347,76 @@
     postForm.remove();
   }
 
+  async function confirmSubmission(participantId) {
+    const deadline = Date.now() + CONFIRM_TIMEOUT_MS;
+    await delay(700);
+
+    while (activeSubmission && activeSubmission.participantId === participantId && Date.now() < deadline) {
+      const result = await getStatusJsonp(participantId);
+      if (!activeSubmission || activeSubmission.participantId !== participantId) return;
+
+      if (result && result.ok === true && result.found === true && result.id === participantId) {
+        finishWithSuccess(participantId);
+        return;
+      }
+      if (result && result.found === true && result.ok === false && result.error) {
+        finishWithError(result.error);
+        return;
+      }
+      await delay(900);
+    }
+
+    if (activeSubmission && activeSubmission.participantId === participantId) {
+      finishWithError('Не удалось подтвердить сохранение заявки. Не отправляйте её повторно сразу.');
+    }
+  }
+
+  function getStatusJsonp(participantId) {
+    return new Promise(resolve => {
+      const callbackName = `gravV2Status_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+      const script = document.createElement('script');
+      let settled = false;
+
+      const cleanup = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        script.remove();
+        try { delete window[callbackName]; } catch (error) { window[callbackName] = undefined; }
+      };
+
+      window[callbackName] = data => {
+        cleanup();
+        resolve(data || null);
+      };
+
+      script.onerror = () => {
+        cleanup();
+        resolve(null);
+      };
+
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve(null);
+      }, 7000);
+
+      const url = new URL(ENDPOINT);
+      url.searchParams.set('action', 'status');
+      url.searchParams.set('id', participantId);
+      url.searchParams.set('callback', callbackName);
+      url.searchParams.set('_', String(Date.now()));
+      script.src = url.toString();
+      script.async = true;
+      document.head.appendChild(script);
+    });
+  }
+
   function finishWithSuccess(id) {
     activeSubmission = null;
     form.hidden = true;
-    document.querySelector('.v2-tabs').hidden = true;
-    document.querySelector('.v2-mobile-step').hidden = true;
+    const tabsWrap = document.querySelector('.v2-tabs');
+    if (tabsWrap) tabsWrap.hidden = true;
+    if (mobileStep) mobileStep.hidden = true;
     progress.style.width = '100%';
     successId.textContent = id;
     success.hidden = false;
@@ -390,10 +460,16 @@
   }
 
   function canvasToBlob(canvas,type,quality) {
-    return new Promise((resolve,reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Image conversion failed')), type, quality));
+    return new Promise((resolve,reject) => {
+      canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Image conversion failed')), type, quality);
+    });
+  }
+
+  function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   function escapeHtml(value) {
-    return String(value ?? '').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+    return String(value == null ? '' : value).replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
   }
 })();
