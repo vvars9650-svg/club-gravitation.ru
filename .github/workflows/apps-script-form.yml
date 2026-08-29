@@ -185,7 +185,7 @@ jobs:
             echo "Smoke test attempt $attempt/12"
             last_code="$(curl -L -sS --max-time 30 -o "$body_file" -w '%{http_code}' "$WEBAPP_URL?ci=${GITHUB_SHA}" || true)"
             echo "HTTP $last_code"
-            if [[ "$last_code" == "200" ]] && grep -q 'id="application-form"' "$body_file"; then
+            if [[ "$last_code" == "200" ]] && grep -q 'application-form' "$body_file" && grep -q 'saveApplication' "$body_file"; then
               ok=1
               break
             fi
@@ -193,9 +193,9 @@ jobs:
           done
           if [[ "$ok" != "1" ]]; then
             if [[ "$last_code" == "403" ]]; then
-              echo "::error::Web app deployment is public, but Apps Script runtime returned 403. Open the script once as owner and run authorizeFormApp_ to grant the project its Sheets/Drive scopes."
+              echo "::error::Web app deployment is public, but Apps Script runtime returned 403. Open the script once as owner and run authorizeFormApp to grant the project its Sheets/Drive scopes."
             else
-              echo "::error::Published Apps Script form did not return expected HTML (HTTP $last_code)."
+              echo "::error::Published Apps Script form did not return expected Google sandbox wrapper (HTTP $last_code)."
             fi
             sed -n '1,80p' "$body_file" || true
             exit 1
