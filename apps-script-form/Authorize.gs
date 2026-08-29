@@ -1,6 +1,6 @@
 /**
  * One-time authorization probe for CI/CD and manual diagnostics.
- * Touch 2026-08-29: trigger clasp pipeline after base64 secret setup.
+ * Touch 2026-08-29: test Apps Script API WebAppConfig automation.
  */
 function authorizeFormApp_() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
