@@ -2,7 +2,7 @@
  * ГРАВИТАЦИЯ — приём пошаговой анкеты сайта в Google Sheets + Google Drive.
  * После изменения этого файла: Apps Script → Развернуть → Управление развертываниями → Изменить → Новая версия.
  */
-const APP_VERSION=5;
+const APP_VERSION=6;
 const SPREADSHEET_ID='1pt69LEjrPiCPTF6ZzR_Lc6k-uXjW6qyXURBNqT_EsTw';
 const PARTICIPANTS_SHEET='Участники';
 const WEB_RAW_SHEET='Сайт — RAW';
@@ -14,9 +14,13 @@ const PARTICIPANT_HEADERS=['ID','Статус','Приоритет','Ответ�
 const RAW_HEADERS=['Дата сервера','ID','Имя и фамилия','Возраст','Пол','Город','Посещение Краснодара','Телефон','Telegram','Email','Как удобнее связаться','Фото URL','Чем занимается','Жизнь кроме работы','Интересы','Контекст отношений','Какие знакомства интересны','Что ценит в людях','Что мешает знакомиться','Что заинтересовало','Ожидания','Удачный вечер','Что заставит вернуться','Комфорт в новой компании','Инициативность','Сценарий знакомства','Неприемлемое поведение','Удобные дни','Комфортная цена','Источник','Согласие ПДн','Правила участия','Страница','UTM Source','UTM Medium','UTM Campaign','UTM Content','UTM Term','Referrer','User Agent','Дата клиента'];
 const LOG_HEADERS=['Дата','Статус','Этап','ID заявки','Имя','Ошибка','Версия','Источник'];
 
-function doGet(){return json_({ok:true,service:'club-gravitation-applications',version:APP_VERSION});}
+function doGet(e){
+  const p=(e&&e.parameter)||{};
+  if(p.action==='status')return respond_(submissionStatus_(p.id),p.callback);
+  return respond_({ok:true,service:'club-gravitation-applications',version:APP_VERSION},p.callback);
+}
 
-/** Запустить вручную из редактора Apps Script. Проверяет и запрашивает права на запись в Sheets + Drive. */
+/** Запустить вручную из редактора Apps Script. Проверяет права на запись в Sheets + Drive. */
 function testAccess(){
   const ss=SpreadsheetApp.openById(SPREADSHEET_ID);
   const folder=DriveApp.getFolderById(PHOTO_FOLDER_ID);
@@ -31,7 +35,7 @@ function testAccess(){
 function doPost(e){
   const p=(e&&e.parameter)||{};
   let stage='получение запроса';
-  let id='';
+  let id=validateParticipantId_(p.participant_id)||makeId_();
   try{
     if(p.website)return json_({ok:true});
 
@@ -45,18 +49,22 @@ function doPost(e){
     require_(p.personal_data_consent,'personal_data_consent');
     require_(p.rules_consent,'rules_consent');
     require_(p.photo_data,'photo_data');
-
-    id=validateParticipantId_(p.participant_id)||makeId_();
     const now=new Date();
-
-    stage='сохранение фотографии';
-    const photo=savePhoto_(p,id);
 
     stage='открытие базы';
     const ss=SpreadsheetApp.openById(SPREADSHEET_ID);
     const participants=ensureParticipants_(ss);
     const raw=ensureRaw_(ss);
     ensureLog_(ss);
+
+    const existingRow=findParticipantRow_(participants,id);
+    if(existingRow){
+      logEvent_('OK','повторное подтверждение',id,p.name||'','Заявка уже была записана',p.page_url||'site');
+      return json_({ok:true,id:id,duplicate:true,version:APP_VERSION});
+    }
+
+    stage='сохранение фотографии';
+    const photo=savePhoto_(p,id);
 
     stage='запись RAW';
     const rawValues=[now,id,p.name||'',age,p.gender||'',city,cityVisit,phone,p.telegram||'',email,p.preferred_contact||'',photo.url,p.occupation||'',p.life_beyond_work||'',p.interests||'',p.relationship_context||'',p.connection_goal||'',p.values_people||'',p.meeting_barriers||'',p.interest_reason||'',p.expectations||'',p.successful_evening||'',p.return_reason||'',p.social_comfort||'',p.initiative||'',p.introduction_scenario||'',p.unacceptable_behavior||'',p.convenient_days||'',p.comfortable_price||'',p.source||'Сайт / лендинг',p.personal_data_consent||'',p.rules_consent||'',p.page_url||'',p.utm_source||'',p.utm_medium||'',p.utm_campaign||'',p.utm_content||'',p.utm_term||'',p.referrer||'',p.user_agent||'',p.submitted_at_client||''];
@@ -85,8 +93,35 @@ function doPost(e){
     const message=String(err&&err.message?err.message:err);
     console.error(stage+': '+message);
     try{logEvent_('ERROR',stage,id,p.name||'',message,p.page_url||'site');}catch(logErr){console.error('log error: '+logErr);}
-    return json_({ok:false,error:message,stage:stage,version:APP_VERSION});
+    return json_({ok:false,error:message,stage:stage,id:id,version:APP_VERSION});
   }
+}
+
+function submissionStatus_(value){
+  const id=validateParticipantId_(value);
+  if(!id)return {ok:false,found:true,error:'Некорректный номер заявки',stage:'проверка статуса',version:APP_VERSION};
+  const ss=SpreadsheetApp.openById(SPREADSHEET_ID);
+  const participants=ss.getSheetByName(PARTICIPANTS_SHEET);
+  if(participants&&findParticipantRow_(participants,id))return {ok:true,found:true,id:id,status:'saved',version:APP_VERSION};
+
+  const logs=ss.getSheetByName(LOG_SHEET);
+  if(logs&&logs.getLastRow()>1){
+    const range=logs.getRange(2,4,logs.getLastRow()-1,1);
+    const matches=range.createTextFinder(id).matchEntireCell(true).findAll();
+    if(matches.length){
+      const last=matches[matches.length-1].getRow();
+      const values=logs.getRange(last,1,1,8).getDisplayValues()[0];
+      if(values[1]==='ERROR')return {ok:false,found:true,id:id,error:values[5]||'Ошибка сохранения заявки',stage:values[2]||'',version:APP_VERSION};
+      if(values[1]==='OK'&&values[2]==='готово')return {ok:true,found:true,id:id,status:'saved',version:APP_VERSION};
+    }
+  }
+  return {ok:false,found:false,pending:true,id:id,version:APP_VERSION};
+}
+
+function findParticipantRow_(sheet,id){
+  if(!sheet||sheet.getLastRow()<2)return 0;
+  const match=sheet.getRange(2,1,sheet.getLastRow()-1,1).createTextFinder(id).matchEntireCell(true).findNext();
+  return match?match.getRow():0;
 }
 
 function savePhoto_(p,id){
@@ -118,4 +153,9 @@ function makeId_(){return 'GR-'+Utilities.formatDate(new Date(),'Europe/Moscow',
 function sanitizeFileName_(value){return String(value||'participant').trim().replace(/[^0-9A-Za-zА-Яа-яЁё_-]+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'').slice(0,70)||'participant';}
 function requiredText_(value,name){const text=String(value||'').trim();if(!text)throw new Error('Required field: '+name);return text;}
 function require_(value,name){requiredText_(value,name);}
+function respond_(obj,callback){
+  const cb=String(callback||'').trim();
+  if(cb&&/^[A-Za-z_$][0-9A-Za-z_$]*$/.test(cb))return ContentService.createTextOutput(`${cb}(${JSON.stringify(obj)});`).setMimeType(ContentService.MimeType.JAVASCRIPT);
+  return json_(obj);
+}
 function json_(obj){return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);}
