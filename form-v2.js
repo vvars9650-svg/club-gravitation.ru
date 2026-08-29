@@ -3,9 +3,8 @@
 
   const ENDPOINT = 'https://script.google.com/macros/s/AKfycbz3LNz4si1i2wueB1I1T5AleCOaaQ-HEgBWS1Injh_mCjFmkAQqKyCqvDH3LrgzBoI/exec';
   const MAX_FILE_BYTES = 10 * 1024 * 1024;
-  const SUBMIT_TIMEOUT_MS = 60000;
-  const STATUS_POLL_MS = 1500;
-  const STATUS_CALLBACK = '__gravitationStatusCallback';
+  const REQUEST_TIMEOUT_MS = 45000;
+  const PENDING_ID_KEY = 'gravitation_pending_application_id';
   const STEPS = ['Контактная информация','Фотография','О вас','Знакомства','Формат встреч','Проверка'];
   const YUFO_CITIES = ["Абинск","Адыгейск","Азов","Аксай","Алупка","Алушта","Анапа","Апшеронск","Армавир","Армянск","Астрахань","Ахтубинск","Батайск","Бахчисарай","Белая Калитва","Белогорск","Белореченск","Волгоград","Волгодонск","Волжский","Геленджик","Городовиковск","Горячий Ключ","Гуково","Гулькевичи","Джанкой","Донецк","Дубовка","Евпатория","Ейск","Жирновск","Зверево","Зерноград","Знаменск","Инкерман","Калач-на-Дону","Каменск-Шахтинский","Камызяк","Камышин","Керчь","Константиновск","Кореновск","Котельниково","Котово","Краснодар","Красноперекопск","Краснослободск","Красный Сулин","Кропоткин","Крымск","Курганинск","Лабинск","Лагань","Ленинск","Майкоп","Миллерово","Михайловка","Морозовск","Нариманов","Николаевск","Новоаннинский","Новокубанск","Новороссийск","Новочеркасск","Новошахтинск","Палласовка","Петров Вал","Приморско-Ахтарск","Пролетарск","Ростов-на-Дону","Саки","Сальск","Севастополь","Семикаракорск","Серафимович","Симферополь","Славянск-на-Кубани","Сочи","Старый Крым","Судак","Суровикино","Таганрог","Темрюк","Тимашёвск","Тихорецк","Туапсе","Урюпинск","Усть-Лабинск","Феодосия","Фролово","Хадыженск","Харабали","Цимлянск","Шахты","Щёлкино","Элиста","Ялта"];
 
@@ -23,7 +22,6 @@
   const submit = document.querySelector('#v2-submit');
   const success = document.querySelector('#v2-success');
   const successId = document.querySelector('#v2-success-id');
-  const iframe = document.querySelector('#gravitation-v2-submit-frame');
   const age = form.elements.age;
   const city = form.elements.city;
   const cityVisitWrap = form.querySelector('.v2-city-visit');
@@ -40,15 +38,13 @@
   let maxReached = 0;
   let photoPayload = null;
   let photoPreviewUrl = '';
-  let activeSubmission = null;
+  let submitting = false;
 
   fillSelects();
   bindNavigation();
   bindContactValidation();
   bindPhoto();
   bindSubmission();
-  bindServerResponse();
-  bindStatusCallback();
   renderStep(0);
 
   function fillSelects() {
@@ -75,7 +71,7 @@
       if (currentStep > 0) goTo(currentStep - 1);
     });
     tabs.forEach((tab, index) => tab.addEventListener('click', () => {
-      if (index <= maxReached && !activeSubmission) goTo(index);
+      if (index <= maxReached && !submitting) goTo(index);
     }));
   }
 
@@ -84,8 +80,7 @@
     maxReached = Math.max(maxReached, currentStep);
     if (currentStep === steps.length - 1) buildReview();
     renderStep(currentStep);
-    const card = document.querySelector('.v2-card');
-    if (card) card.scrollIntoView({behavior:'smooth', block:'start'});
+    document.querySelector('.v2-card')?.scrollIntoView({behavior:'smooth', block:'start'});
   }
 
   function renderStep(index) {
@@ -93,7 +88,7 @@
     tabs.forEach((tab, i) => {
       tab.classList.toggle('is-active', i === index);
       tab.classList.toggle('is-done', i < index || i < maxReached);
-      tab.disabled = i > maxReached || Boolean(activeSubmission);
+      tab.disabled = i > maxReached || submitting;
     });
     progress.style.width = `${((index + 1) / steps.length) * 100}%`;
     mobileStep.textContent = STEPS[index];
@@ -177,7 +172,6 @@
     try {
       setPreviewUrl(URL.createObjectURL(file));
       photoName.textContent = file.name;
-
       const source = await fileToDataUrl(file);
       const image = await loadImage(source);
       const maxSide = 1600;
@@ -195,9 +189,8 @@
       const blob = await canvasToBlob(canvas, 'image/jpeg', .84);
       const encoded = await fileToDataUrl(blob);
       setPreviewUrl(URL.createObjectURL(blob));
-
       photoPayload = {
-        data: encoded.split(',')[1],
+        data: String(encoded).split(',')[1],
         type: 'image/jpeg',
         name: String(file.name || 'photo.jpg').replace(/\.[^.]+$/, '') + '.jpg'
       };
@@ -226,7 +219,6 @@
   function validateStep(index) {
     clearStatus();
     let firstInvalid = null;
-
     if (index === 0) {
       ['name','age','gender','city'].forEach(name => {
         const el = form.elements[name];
@@ -237,12 +229,10 @@
       if (email.value && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/u.test(email.value.trim())) markInvalid(email);
       firstInvalid = steps[index].querySelector('.is-invalid');
     }
-
     if (index === 1 && !photoPayload) {
       showPhotoError('Фотография обязательна.');
       firstInvalid = dropzone;
     }
-
     if (firstInvalid) {
       firstInvalid.scrollIntoView({behavior:'smooth', block:'center'});
       if (typeof firstInvalid.focus === 'function') firstInvalid.focus();
@@ -316,109 +306,6 @@
     return data;
   }
 
-  function bindSubmission() {
-    form.addEventListener('submit', event => {
-      event.preventDefault();
-      if (activeSubmission) return;
-      if (!validateBeforeSubmit()) return;
-
-      const values = collectValues();
-      const participantId = makeParticipantId();
-      const token = makeResponseToken();
-      const timeoutId = window.setTimeout(() => {
-        if (activeSubmission && activeSubmission.token === token) {
-          requestSubmissionStatus(participantId, token);
-          window.setTimeout(() => {
-            if (activeSubmission && activeSubmission.token === token) {
-              finishWithError('Сервер не подтвердил завершение отправки. Не отправляйте заявку повторно сразу.');
-            }
-          }, 2500);
-        }
-      }, SUBMIT_TIMEOUT_MS);
-
-      activeSubmission = {participantId, token, timeoutId, pollTimer:null};
-      submit.disabled = true;
-      submit.textContent = 'ОТПРАВЛЯЕМ…';
-      back.disabled = true;
-      next.disabled = true;
-      clearStatus();
-
-      const params = new URLSearchParams();
-      Object.entries(values).forEach(([key,value]) => params.set(key, value));
-      params.set('participant_id', participantId);
-      params.set('photo_data', photoPayload.data);
-      params.set('photo_type', photoPayload.type);
-      params.set('photo_name', photoPayload.name);
-      params.set('response_mode', 'postmessage');
-      params.set('response_token', token);
-      params.set('page_url', location.href);
-      params.set('referrer', document.referrer || '');
-      params.set('user_agent', navigator.userAgent || '');
-      params.set('submitted_at_client', new Date().toISOString());
-      const query = new URLSearchParams(location.search);
-      ['utm_source','utm_medium','utm_campaign','utm_content','utm_term'].forEach(key => params.set(key, query.get(key) || ''));
-
-      postToIframe(params);
-      startStatusPolling(participantId, token);
-    });
-  }
-
-  function bindServerResponse() {
-    window.addEventListener('message', event => {
-      const data = event.data;
-      if (!data || typeof data !== 'object' || data.type !== 'gravitation-v2-submit') return;
-      if (!activeSubmission || data.token !== activeSubmission.token) return;
-
-      const expectedId = activeSubmission.participantId;
-      if (data.ok === true && data.id === expectedId) {
-        finishWithSuccess(expectedId);
-      } else if (data.id === expectedId) {
-        finishWithError(data.error || 'Не удалось сохранить заявку. Попробуйте ещё раз.');
-      }
-    });
-  }
-
-  function bindStatusCallback() {
-    window[STATUS_CALLBACK] = data => {
-      if (!data || typeof data !== 'object' || !activeSubmission) return;
-      const expectedId = activeSubmission.participantId;
-      if (data.id !== expectedId) return;
-      if (data.ok === true && data.found === true) {
-        finishWithSuccess(expectedId);
-        return;
-      }
-      if (data.found === true && data.ok === false && data.error) {
-        finishWithError(data.error);
-      }
-    };
-  }
-
-  function startStatusPolling(id, token) {
-    if (!activeSubmission || activeSubmission.token !== token) return;
-    window.setTimeout(() => requestSubmissionStatus(id, token), 900);
-    activeSubmission.pollTimer = window.setInterval(() => {
-      requestSubmissionStatus(id, token);
-    }, STATUS_POLL_MS);
-  }
-
-  function requestSubmissionStatus(id, token) {
-    if (!activeSubmission || activeSubmission.token !== token) return;
-    const url = new URL(ENDPOINT);
-    url.searchParams.set('action', 'status');
-    url.searchParams.set('id', id);
-    url.searchParams.set('callback', STATUS_CALLBACK);
-    url.searchParams.set('_', String(Date.now()));
-
-    const script = document.createElement('script');
-    script.src = url.toString();
-    script.async = true;
-    script.dataset.gravitationStatus = '1';
-    const remove = () => script.remove();
-    script.addEventListener('load', remove, {once:true});
-    script.addEventListener('error', remove, {once:true});
-    document.head.appendChild(script);
-  }
-
   function validateBeforeSubmit() {
     if (!validateStep(0)) { goTo(0); return false; }
     if (!photoPayload) { goTo(1); showPhotoError('Фотография обязательна.'); return false; }
@@ -433,58 +320,88 @@
     return true;
   }
 
-  function postToIframe(params) {
-    if (!iframe) return finishWithError('Не найден технический канал отправки формы.');
-    const postForm = document.createElement('form');
-    postForm.method = 'POST';
-    postForm.action = ENDPOINT;
-    postForm.target = iframe.name;
-    postForm.acceptCharset = 'UTF-8';
-    postForm.style.display = 'none';
-    for (const [name, value] of params.entries()) {
-      const input = document.createElement('input');
-      input.type = 'hidden';
-      input.name = name;
-      input.value = value;
-      postForm.appendChild(input);
-    }
-    document.body.appendChild(postForm);
-    postForm.submit();
-    postForm.remove();
-  }
+  function bindSubmission() {
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      if (submitting || !validateBeforeSubmit()) return;
 
-  function stopSubmissionWatch() {
-    if (!activeSubmission) return;
-    clearTimeout(activeSubmission.timeoutId);
-    if (activeSubmission.pollTimer) clearInterval(activeSubmission.pollTimer);
-    document.querySelectorAll('script[data-gravitation-status="1"]').forEach(node => node.remove());
+      submitting = true;
+      renderStep(currentStep);
+      submit.disabled = true;
+      back.disabled = true;
+      next.disabled = true;
+      submit.textContent = 'ОТПРАВЛЯЕМ…';
+      status.textContent = 'Отправляем заявку. Обычно это занимает несколько секунд.';
+
+      let participantId = '';
+      try {
+        participantId = sessionStorage.getItem(PENDING_ID_KEY) || makeParticipantId();
+        sessionStorage.setItem(PENDING_ID_KEY, participantId);
+      } catch (_) {
+        participantId = makeParticipantId();
+      }
+
+      const values = collectValues();
+      const params = new URLSearchParams();
+      Object.entries(values).forEach(([key, value]) => params.set(key, value));
+      params.set('participant_id', participantId);
+      params.set('photo_data', photoPayload.data);
+      params.set('photo_type', photoPayload.type);
+      params.set('photo_name', photoPayload.name);
+      params.set('page_url', location.href);
+      params.set('referrer', document.referrer || '');
+      params.set('user_agent', navigator.userAgent || '');
+      params.set('submitted_at_client', new Date().toISOString());
+      const query = new URLSearchParams(location.search);
+      ['utm_source','utm_medium','utm_campaign','utm_content','utm_term'].forEach(key => params.set(key, query.get(key) || ''));
+
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+      try {
+        await fetch(ENDPOINT, {
+          method: 'POST',
+          mode: 'no-cors',
+          credentials: 'omit',
+          cache: 'no-store',
+          redirect: 'follow',
+          body: params,
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        try { sessionStorage.removeItem(PENDING_ID_KEY); } catch (_) {}
+        finishWithSuccess(participantId);
+      } catch (error) {
+        clearTimeout(timeoutId);
+        console.error('Application submit failed', error);
+        submitting = false;
+        renderStep(currentStep);
+        submit.disabled = false;
+        back.disabled = false;
+        next.disabled = false;
+        submit.textContent = 'ОТПРАВИТЬ ЗАЯВКУ';
+        status.textContent = error && error.name === 'AbortError'
+          ? 'Отправка заняла слишком много времени. Не нажимайте повторно сразу: сохранён тот же номер заявки для безопасной повторной отправки.'
+          : 'Не удалось отправить заявку из-за сетевой ошибки. Проверьте интернет и повторите отправку.';
+      }
+    });
   }
 
   function finishWithSuccess(id) {
-    stopSubmissionWatch();
-    activeSubmission = null;
+    submitting = false;
     form.hidden = true;
     const tabsWrap = document.querySelector('.v2-tabs');
     if (tabsWrap) tabsWrap.hidden = true;
     if (mobileStep) mobileStep.hidden = true;
     progress.style.width = '100%';
+    status.textContent = '';
     successId.textContent = id;
     success.hidden = false;
     success.scrollIntoView({behavior:'smooth', block:'center'});
   }
 
-  function finishWithError(message) {
-    stopSubmissionWatch();
-    activeSubmission = null;
-    submit.disabled = false;
-    submit.textContent = 'ОТПРАВИТЬ ЗАЯВКУ';
-    back.disabled = false;
-    next.disabled = false;
-    status.textContent = message;
-  }
-
   function clearStatus() {
-    status.textContent = '';
+    if (!submitting) status.textContent = '';
     form.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
   }
 
@@ -494,17 +411,8 @@
     return `GR-${String(d.getFullYear()).slice(-2)}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${p(Math.floor(Math.random()*100))}`;
   }
 
-  function makeResponseToken() {
-    if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
-      const bytes = new Uint32Array(4);
-      window.crypto.getRandomValues(bytes);
-      return Array.from(bytes, n => n.toString(36)).join('-');
-    }
-    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
-  }
-
   function fileToDataUrl(file) {
-    return new Promise((resolve,reject) => {
+    return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result);
       reader.onerror = () => reject(reader.error || new Error('File read failed'));
@@ -513,7 +421,7 @@
   }
 
   function loadImage(src) {
-    return new Promise((resolve,reject) => {
+    return new Promise((resolve, reject) => {
       const image = new Image();
       image.onload = () => resolve(image);
       image.onerror = () => reject(new Error('Image decode failed'));
@@ -521,8 +429,8 @@
     });
   }
 
-  function canvasToBlob(canvas,type,quality) {
-    return new Promise((resolve,reject) => {
+  function canvasToBlob(canvas, type, quality) {
+    return new Promise((resolve, reject) => {
       canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Image conversion failed')), type, quality);
     });
   }
