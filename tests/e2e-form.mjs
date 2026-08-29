@@ -41,15 +41,17 @@ async function fillAndSubmit(scope, label) {
 const browser = await chromium.launch();
 const result = {};
 try {
-  // Desktop: exercise the exact iframe path used on the live site.
+  // Desktop: exercise the exact lazy-loaded iframe path used on the live site.
   const desktop = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   await desktop.goto(`${SITE}?e2e=${runTag}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await desktop.locator('#apply').scrollIntoViewIfNeeded();
+  await desktop.locator('#application-frame').waitFor({ state: 'visible', timeout: 15000 });
   const frame = desktop.frameLocator('#application-frame');
   await frame.locator('#application-form').waitFor({ state: 'visible', timeout: 60000 });
   result.desktop = await fillAndSubmit(frame, 'DESKTOP');
   await desktop.close();
 
-  // Android-like Chromium: verify closed/open navigation and the direct-form fallback.
+  // Android-like Chromium: verify closed/open navigation and direct-form fallback.
   const mobile = await browser.newContext({ ...devices['Pixel 7'] });
   const page = await mobile.newPage();
   await page.goto(`${SITE}?e2e=${runTag}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
@@ -63,8 +65,11 @@ try {
   await page.locator('#apply').scrollIntoViewIfNeeded();
   const mobileCard = page.locator('.mobile-apply-card');
   await mobileCard.waitFor({ state: 'visible' });
-  if (await page.locator('#application-frame').isVisible()) throw new Error('MOBILE: iframe should not be visible');
-  await mobileCard.locator('a').click();
+  if (await page.locator('#application-frame').count()) throw new Error('MOBILE: iframe should be removed from DOM');
+  await Promise.all([
+    page.waitForURL(/script\.google\.com\/macros\/s\//, { timeout: 60000 }),
+    mobileCard.locator('a').click()
+  ]);
   await page.locator('#application-form').waitFor({ state: 'visible', timeout: 60000 });
   result.mobile = await fillAndSubmit(page, 'MOBILE');
   await mobile.close();
