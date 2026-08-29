@@ -1,4 +1,6 @@
 (function(){
+  const DRAFT_KEY='gravitation_application_draft_v3';
+
   // Надёжная отправка заявки без fetch/no-cors.
   // POST уходит через скрытую форму в iframe, затем сайт получает подтверждение
   // от Apps Script через отдельный iframe + postMessage.
@@ -111,6 +113,25 @@
 
   const shell=document.querySelector('.wizard-shell');
   if(!shell)return;
+  const form=shell.querySelector('#application-form');
+
+  // После полной перезагрузки начинаем новую анкету. Возврат из политики остаётся
+  // безопасным: она открывается в отдельной вкладке, исходная форма не перезагружается.
+  try{localStorage.removeItem(DRAFT_KEY);}catch(e){}
+  if(form){
+    form.reset();
+    form.querySelectorAll('.is-invalid').forEach(el=>el.classList.remove('is-invalid'));
+    const status=form.querySelector('#form-status');
+    if(status){status.textContent='';status.className='form-status';}
+    const preview=form.querySelector('#photo-preview');
+    if(preview)preview.innerHTML='<span>＋</span>';
+    const photoName=form.querySelector('#photo-file-name');
+    if(photoName)photoName.textContent='';
+    const photoError=form.querySelector('#photo-error');
+    if(photoError)photoError.textContent='';
+    const firstTab=shell.querySelector('[data-step-target="0"]');
+    if(firstTab&&!firstTab.classList.contains('is-active'))firstTab.click();
+  }
 
   const style=document.createElement('style');
   style.textContent=`
@@ -131,6 +152,22 @@
     step.querySelector('.wizard-title')?.remove();
     step.querySelector('.wizard-help')?.remove();
   });
+
+  // Навигация: первый шаг — только «Далее». Последний — только «Назад» + «Отправить заявку».
+  const actions=shell.querySelector('#wizard-actions');
+  const back=shell.querySelector('#wizard-back');
+  const next=shell.querySelector('#wizard-next');
+  const steps=[...shell.querySelectorAll('.wizard-step')];
+  function syncWizardActions(){
+    const current=steps.findIndex(step=>step.classList.contains('is-active'));
+    if(current<0||!actions||!back||!next)return;
+    actions.hidden=false;
+    back.hidden=current===0;
+    next.hidden=current===steps.length-1;
+  }
+  const observer=new MutationObserver(syncWizardActions);
+  steps.forEach(step=>observer.observe(step,{attributes:true,attributeFilter:['class']}));
+  syncWizardActions();
 
   const upload=shell.querySelector('#photo-upload');
   const input=shell.querySelector('#photo-input');
