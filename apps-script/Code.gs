@@ -2,7 +2,7 @@
  * ГРАВИТАЦИЯ — приём пошаговой анкеты сайта в Google Sheets + Google Drive.
  * После изменения этого файла: Apps Script → Развернуть → Управление развертываниями → Изменить → Новая версия.
  */
-const APP_VERSION=6;
+const APP_VERSION=7;
 const SPREADSHEET_ID='1pt69LEjrPiCPTF6ZzR_Lc6k-uXjW6qyXURBNqT_EsTw';
 const PARTICIPANTS_SHEET='Участники';
 const WEB_RAW_SHEET='Сайт — RAW';
@@ -16,6 +16,7 @@ const LOG_HEADERS=['Дата','Статус','Этап','ID заявки','Им�
 
 function doGet(e){
   const p=(e&&e.parameter)||{};
+  if(p.action==='bridge')return bridge_(submissionStatus_(p.id),p.token);
   if(p.action==='status')return respond_(submissionStatus_(p.id),p.callback);
   return respond_({ok:true,service:'club-gravitation-applications',version:APP_VERSION},p.callback);
 }
@@ -99,7 +100,7 @@ function doPost(e){
 
 function submissionStatus_(value){
   const id=validateParticipantId_(value);
-  if(!id)return {ok:false,found:true,error:'Некорректный номер заявки',stage:'проверка статуса',version:APP_VERSION};
+  if(!id)return {ok:false,found:true,id:String(value||''),error:'Некорректный номер заявки',stage:'проверка статуса',version:APP_VERSION};
   const ss=SpreadsheetApp.openById(SPREADSHEET_ID);
   const participants=ss.getSheetByName(PARTICIPANTS_SHEET);
   if(participants&&findParticipantRow_(participants,id))return {ok:true,found:true,id:id,status:'saved',version:APP_VERSION};
@@ -112,7 +113,7 @@ function submissionStatus_(value){
       const last=matches[matches.length-1].getRow();
       const values=logs.getRange(last,1,1,8).getDisplayValues()[0];
       if(values[1]==='ERROR')return {ok:false,found:true,id:id,error:values[5]||'Ошибка сохранения заявки',stage:values[2]||'',version:APP_VERSION};
-      if(values[1]==='OK'&&values[2]==='готово')return {ok:true,found:true,id:id,status:'saved',version:APP_VERSION};
+      if(values[1]==='OK'&&(values[2]==='готово'||values[2]==='повторное подтверждение'))return {ok:true,found:true,id:id,status:'saved',version:APP_VERSION};
     }
   }
   return {ok:false,found:false,pending:true,id:id,version:APP_VERSION};
@@ -153,6 +154,13 @@ function makeId_(){return 'GR-'+Utilities.formatDate(new Date(),'Europe/Moscow',
 function sanitizeFileName_(value){return String(value||'participant').trim().replace(/[^0-9A-Za-zА-Яа-яЁё_-]+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'').slice(0,70)||'participant';}
 function requiredText_(value,name){const text=String(value||'').trim();if(!text)throw new Error('Required field: '+name);return text;}
 function require_(value,name){requiredText_(value,name);}
+function bridge_(obj,token){
+  const safeToken=String(token||'').replace(/[^0-9A-Za-z_-]/g,'').slice(0,120);
+  const payload=Object.assign({type:'gravitation-submission-status',token:safeToken},obj||{});
+  const data=JSON.stringify(payload).replace(/</g,'\\u003c');
+  const html='<!doctype html><meta charset="utf-8"><script>window.parent.postMessage('+data+',"*");<\/script>';
+  return HtmlService.createHtmlOutput(html).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
 function respond_(obj,callback){
   const cb=String(callback||'').trim();
   if(cb&&/^[A-Za-z_$][0-9A-Za-z_$]*$/.test(cb))return ContentService.createTextOutput(`${cb}(${JSON.stringify(obj)});`).setMimeType(ContentService.MimeType.JAVASCRIPT);
