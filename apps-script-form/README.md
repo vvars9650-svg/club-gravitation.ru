@@ -1,45 +1,78 @@
 # Гравитация — кастомная анкета на Apps Script
 
-Это новый отдельный Apps Script-проект. Старый проект `Гравитация — заявки с сайта` не изменять и не удалять до завершения тестов.
+Это отдельное веб-приложение Apps Script с полностью нашей HTML/CSS-формой. Google Forms не используется.
 
-## Файлы нового проекта
+Архитектура формы:
 
-Создать в Apps Script 5 файлов:
+`HtmlService → google.script.run.saveApplication(form) → Google Sheets + Google Drive`
 
-1. `Code.gs` — тип «Скрипт»
-2. `Authorize.gs` — тип «Скрипт»
-3. `Index.html` — тип HTML
-4. `Styles.html` — тип HTML
-5. `Script.html` — тип HTML
+Никаких CORS, JSONP, postMessage-подтверждений, polling или внешнего POST.
 
-Скопировать содержимое одноимённых файлов из этой папки.
+## GitHub — источник истины
 
-## Развёртывание
+Рабочие исходники находятся только в этой папке:
 
-1. Создать новый проект Apps Script с названием `Гравитация — анкета FORM`.
-2. В настройках проекта установить часовой пояс `Europe/Moscow`.
-3. Добавить пять файлов выше.
-4. Сохранить проект.
-5. В списке функций выбрать `authorizeFormApp_` и один раз нажать `Выполнить`.
-6. Выдать проекту доступ к Google Sheets и Google Drive.
-7. После успешного выполнения открыть `Сайт — Логи`: должна появиться строка `OK | authorizeFormApp | ... | FORM-1`.
-8. `Развернуть → Новое развёртывание → Веб-приложение`.
-9. Выполнять от имени: `Я`.
-10. Доступ: `Все`.
-11. Развернуть и скопировать URL, заканчивающийся на `/exec`.
+- `Code.gs`
+- `Authorize.gs`
+- `Index.html`
+- `Styles.html`
+- `Script.html`
+- `appsscript.json`
 
-## Как работает
+Ручное редактирование кода в `script.google.com` после включения CI/CD не используется.
 
-Форма полностью отрисовывается внутри HtmlService. Она НЕ является Google Forms.
+## Автоматизация
 
-Отправка выполняется напрямую:
+Workflow: `.github/workflows/apps-script-form.yml`.
 
-`google.script.run.saveApplication(form)`
+На каждом изменении `apps-script-form/**` он:
 
-Файл из `input[type=file]` приходит на сервер как Blob. Сервер сохраняет фотографию в Drive, пишет строки в `Участники`, `Сайт — RAW`, `Сайт — Логи` и возвращает `{ok:true,id}` в successHandler той же страницы.
+1. запускает `validate.mjs`;
+2. устанавливает официальный `@google/clasp` 3.3.0;
+3. авторизуется через секрет `CLASPRC_JSON`;
+4. при первом запуске сам создаёт standalone Apps Script-проект `Гравитация — анкета FORM`;
+5. сохраняет `.clasp.json` в репозиторий;
+6. выполняет `clasp push --force`;
+7. создаёт или обновляет одно и то же web app deployment;
+8. сохраняет `.deployment-id` и `.webapp-url` в репозиторий;
+9. делает HTTP smoke-test опубликованной формы.
 
-Здесь нет CORS, JSONP, postMessage-подтверждений, повторного polling или внешнего POST.
+Таким образом после bootstrap изменение кода выглядит так:
 
-## После получения /exec URL
+`ChatGPT → commit GitHub → CI validation → clasp push → deployment → smoke-test`.
 
-Не менять живой `index.html` сразу. Сначала создать на сайте отдельную тестовую обёртку с iframe нового web app, проверить Desktop + Android, затем переключить кнопки `Подать заявку` на новую страницу.
+## Единственный секрет
+
+В GitHub Actions требуется один repository secret:
+
+`CLASPRC_JSON`
+
+Это содержимое `~/.clasprc.json`, созданное командой:
+
+```bash
+npx @google/clasp@3.3.0 login --no-localhost
+```
+
+Содержимое `.clasprc.json` нельзя коммитить в репозиторий или отправлять в чат. Его нужно вставить только в:
+
+`GitHub → Settings → Secrets and variables → Actions → New repository secret`.
+
+Перед первым запуском также должен быть включён Apps Script API в настройках аккаунта Google.
+
+## Однократная авторизация runtime
+
+После первого автоматического создания проекта Google может потребовать один раз выдать самому скрипту права на Sheets и Drive. Для этого в созданном проекте запускается `authorizeFormApp_` и подтверждаются разрешения. Это OAuth-согласие Google; его нельзя безопасно обойти автоматизацией.
+
+После этого обычные изменения кода и deployment выполняются GitHub Actions без ручного копирования файлов.
+
+## Защита от регрессий
+
+`validate.mjs` останавливает deployment, если:
+
+- отсутствует обязательный файл;
+- сломан JavaScript-синтаксис `.gs` или `Script.html`;
+- манифест потерял web app / Drive / Sheets настройки;
+- вернулся `fetch`, XHR, postMessage или localStorage;
+- на последнем шаге снова появилась кнопка `Далее`;
+- исчез `google.script.run.saveApplication(form)`;
+- сломан обязательный предпросмотр фотографии.
