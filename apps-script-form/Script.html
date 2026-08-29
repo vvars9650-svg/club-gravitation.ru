@@ -46,8 +46,8 @@
 
   function fillMeta() {
     const qs = new URLSearchParams(location.search);
-    document.getElementById('page-url').value = location.href;
-    document.getElementById('referrer').value = document.referrer || '';
+    document.getElementById('page-url').value = qs.get('parent_url') || location.href;
+    document.getElementById('referrer').value = qs.get('parent_url') || document.referrer || '';
     document.getElementById('user-agent').value = navigator.userAgent || '';
     ['utm_source','utm_medium','utm_campaign','utm_content','utm_term'].forEach(key => {
       const el = document.getElementById(key.replaceAll('_','-'));
