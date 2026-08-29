@@ -70,9 +70,22 @@ jobs:
         if: steps.credentials.outputs.configured == 'true'
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p "$HOME"
-          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          raw="$CLASPRC_JSON"
+          if printf '%s' "$raw" | jq -e . >/dev/null 2>&1; then
+            printf '%s' "$raw" > "$HOME/.clasprc.json"
+          else
+            decoded="$(printf '%s' "$raw" | base64 --decode 2>/dev/null || true)"
+            if [[ -n "$decoded" ]] && printf '%s' "$decoded" | jq -e . >/dev/null 2>&1; then
+              printf '%s' "$decoded" > "$HOME/.clasprc.json"
+            else
+              echo "::error::CLASPRC_JSON is neither valid JSON nor base64-encoded valid JSON. Replace the secret with: base64 -w0 ~/.clasprc.json"
+              exit 1
+            fi
+          fi
           chmod 600 "$HOME/.clasprc.json"
+          jq -e . "$HOME/.clasprc.json" >/dev/null
           clasp --version
           clasp show-authorized-user
 
