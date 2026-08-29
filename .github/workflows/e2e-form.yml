@@ -1,0 +1,53 @@
+name: End-to-end Form Test
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "site.js"
+      - "index.html"
+      - "tests/e2e-form.mjs"
+      - ".github/workflows/e2e-form.yml"
+      - "apps-script-form/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "gravitation-e2e"
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install Playwright
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Wait for deployments to settle
+        run: sleep 35
+
+      - name: Run desktop and mobile application test
+        env:
+          SITE_URL: https://club-gravitation.ru/
+        run: node tests/e2e-form.mjs
+
+      - name: Upload test result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gravitation-e2e-result
+          path: e2e-output.json
+          if-no-files-found: ignore
