@@ -1,90 +1,112 @@
 (function(){
-  // Apps Script POST остаётся no-cors. Некоторые мобильные браузеры могут отклонить сам fetch
-  // уже после того, как сервер успешно принял данные. Поэтому транспортную ошибку не считаем
-  // финальным результатом: всегда проверяем сохранение по ID через отдельный JSONP status-запрос.
+  // Надёжная отправка заявки без fetch/no-cors.
+  // POST уходит через скрытую форму в iframe, затем сайт получает подтверждение
+  // от Apps Script через отдельный iframe + postMessage.
   if(!window.__gravitationSubmissionGuard){
     window.__gravitationSubmissionGuard=true;
     const nativeFetch=window.fetch.bind(window);
     const appsScriptRe=/^https:\/\/script\.google\.com\/macros\/s\//i;
+    const messageType='gravitation-submission-status';
 
-    window.fetch=async function(input,init={}){
+    window.fetch=function(input,init={}){
       const url=typeof input==='string'?input:(input&&input.url)||'';
       const method=String(init.method||'GET').toUpperCase();
       const body=init.body;
       const guarded=appsScriptRe.test(url)&&method==='POST'&&body instanceof URLSearchParams&&body.has('participant_id');
       if(!guarded)return nativeFetch(input,init);
-
-      const participantId=String(body.get('participant_id')||'').trim();
-      let response=null;
-      let transportError=null;
-
-      try{
-        response=await nativeFetch(input,init);
-      }catch(error){
-        // На Android/некоторых WebView no-cors POST к Apps Script может упасть на клиенте
-        // после успешной серверной записи. Проверка по ID ниже является источником истины.
-        transportError=error;
-      }
-
-      const confirmation=await waitForConfirmation(url,participantId);
-      if(confirmation.ok)return response;
-
-      const error=new Error(
-        confirmation.error||
-        (transportError&&transportError.message)||
-        'Сервер не подтвердил сохранение заявки.'
-      );
-      error.stage=confirmation.stage||'подтверждение записи';
-      error.submissionId=participantId;
-      error.transportError=transportError||null;
-      throw error;
+      return submitAndConfirm(url,body);
     };
 
-    async function waitForConfirmation(endpoint,id){
+    async function submitAndConfirm(endpoint,params){
+      const participantId=String(params.get('participant_id')||'').trim();
+      const token=`gr_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      submitViaIframe(endpoint,params,token);
+
       let last=null;
       for(let attempt=0;attempt<18;attempt++){
-        if(attempt>0)await new Promise(resolve=>setTimeout(resolve,attempt<6?650:1100));
-        try{
-          last=await statusJsonp(endpoint,id);
-        }catch(error){
-          last={ok:false,found:false,pending:true,error:String(error&&error.message||error)};
-          continue;
+        if(attempt>0)await delay(attempt<7?650:1000);
+        try{last=await statusBridge(endpoint,participantId,token,5500);}catch(error){continue;}
+        if(last&&last.ok)return {ok:true,status:204,type:'confirmed'};
+        if(last&&last.found&&!last.pending){
+          showPreciseError(last.error||'Сервер не сохранил заявку. Попробуйте ещё раз.');
+          const error=new Error(last.error||'Submission failed');
+          error.stage=last.stage||'сохранение заявки';
+          throw error;
         }
-        if(last&&last.ok)return last;
-        if(last&&last.found&&!last.pending)return last;
       }
-      return {
-        ok:false,
-        found:false,
-        pending:false,
-        id,
-        stage:'подтверждение записи',
-        error:'Не удалось подтвердить сохранение заявки. Данные формы сохранены в браузере. Повторная отправка с тем же номером не создаст дубль.'
-      };
+
+      const message='Заявка могла быть отправлена, но сайт не получил подтверждение. Не отправляйте её повторно сразу. Подождите минуту и обновите страницу.';
+      showPreciseError(message);
+      throw new Error('Submission confirmation timeout');
     }
 
-    function statusJsonp(endpoint,id){
+    function submitViaIframe(endpoint,params,token){
+      const frameName=`gravitation_post_${token}`;
+      const iframe=document.createElement('iframe');
+      iframe.name=frameName;
+      iframe.hidden=true;
+      iframe.setAttribute('aria-hidden','true');
+
+      const postForm=document.createElement('form');
+      postForm.method='POST';
+      postForm.action=endpoint;
+      postForm.target=frameName;
+      postForm.hidden=true;
+      postForm.acceptCharset='UTF-8';
+
+      for(const [name,value] of params.entries()){
+        const field=document.createElement('input');
+        field.type='hidden';
+        field.name=name;
+        field.value=value;
+        postForm.appendChild(field);
+      }
+
+      document.body.append(iframe,postForm);
+      postForm.submit();
+      postForm.remove();
+      setTimeout(()=>iframe.remove(),45000);
+    }
+
+    function statusBridge(endpoint,id,token,timeoutMs){
       return new Promise((resolve,reject)=>{
-        const callback=`gravitationSubmission_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-        const script=document.createElement('script');
+        const iframe=document.createElement('iframe');
+        iframe.hidden=true;
+        iframe.setAttribute('aria-hidden','true');
         let finished=false;
-        const timer=setTimeout(()=>finish(()=>reject(new Error('Сервис подтверждения не ответил.'))),6500);
-        window[callback]=data=>finish(()=>resolve(data||{}));
-        script.onerror=()=>finish(()=>reject(new Error('Не удалось проверить статус заявки.')));
-        const separator=endpoint.includes('?')?'&':'?';
-        script.src=`${endpoint}${separator}action=status&id=${encodeURIComponent(id)}&callback=${encodeURIComponent(callback)}&_=${Date.now()}`;
-        script.async=true;
-        document.head.appendChild(script);
+        const timer=setTimeout(()=>finish(()=>reject(new Error('Сервис подтверждения не ответил.'))),timeoutMs);
+
+        function onMessage(event){
+          const data=event.data;
+          if(!data||data.type!==messageType||data.token!==token||data.id!==id)return;
+          finish(()=>resolve(data));
+        }
         function finish(done){
           if(finished)return;
           finished=true;
           clearTimeout(timer);
-          try{delete window[callback];}catch(e){window[callback]=undefined;}
-          script.remove();
+          window.removeEventListener('message',onMessage);
+          iframe.remove();
           done();
         }
+
+        window.addEventListener('message',onMessage);
+        const separator=endpoint.includes('?')?'&':'?';
+        iframe.src=`${endpoint}${separator}action=bridge&id=${encodeURIComponent(id)}&token=${encodeURIComponent(token)}&_=${Date.now()}`;
+        document.body.appendChild(iframe);
       });
     }
+
+    function showPreciseError(message){
+      setTimeout(()=>{
+        const status=document.querySelector('#form-status');
+        if(!status)return;
+        status.textContent=message;
+        status.className='form-status is-error';
+      },60);
+    }
+
+    function delay(ms){return new Promise(resolve=>setTimeout(resolve,ms));}
   }
 
   const shell=document.querySelector('.wizard-shell');
