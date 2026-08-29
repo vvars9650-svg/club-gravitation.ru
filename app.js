@@ -23,8 +23,10 @@ if(phoneInput){phoneInput.placeholder="+7 (999) 999-99-99";phoneInput.autocomple
 if(emailInput){emailInput.placeholder="name@example.ru";emailInput.autocomplete="email";}
 
 function nationalPhoneDigits(value){
-  let digits=String(value||"").replace(/\D/g,"");
-  if(digits.length>10&&(digits.startsWith("7")||digits.startsWith("8")))digits=digits.slice(1);
+  const raw=String(value||"");
+  let digits=raw.replace(/\D/g,"");
+  if(raw.trim().startsWith("+7"))digits=digits.slice(1);
+  else if(digits.length===11&&(digits.startsWith("7")||digits.startsWith("8")))digits=digits.slice(1);
   return digits.slice(0,10);
 }
 function formatPhone(value){
