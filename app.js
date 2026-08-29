@@ -1,6 +1,23 @@
 const CONFIG={endpoint:"https://script.google.com/macros/s/AKfycbz3LNz4si1i2wueB1I1T5AleCOaaQ-HEgBWS1Injh_mCjFmkAQqKyCqvDH3LrgzBoI/exec",fallbackForm:"https://docs.google.com/forms/d/e/1FAIpQLSe1cUBb3b0mZYz290N9ppx0CVbWQCqySiwrjBg2HCc9Y5tMmQ/viewform"};
 const YUFO_CITIES=["Абинск","Адыгейск","Азов","Аксай","Алупка","Алушта","Анапа","Апшеронск","Армавир","Армянск","Астрахань","Ахтубинск","Батайск","Бахчисарай","Белая Калитва","Белогорск","Белореченск","Волгоград","Волгодонск","Волжский","Геленджик","Городовиковск","Горячий Ключ","Гуково","Гулькевичи","Джанкой","Донецк","Дубовка","Евпатория","Ейск","Жирновск","Зверево","Зерноград","Знаменск","Калач-на-Дону","Каменск-Шахтинский","Камызяк","Камышин","Керчь","Константиновск","Кореновск","Котельниково","Котово","Краснодар","Красноперекопск","Краснослободск","Красный Сулин","Кропоткин","Крымск","Курганинск","Лабинск","Лагань","Ленинск","Майкоп","Миллерово","Михайловка","Морозовск","Нариманов","Николаевск","Новоаннинский","Новокубанск","Новороссийск","Новочеркасск","Новошахтинск","Палласовка","Петров Вал","Приморско-Ахтарск","Пролетарск","Ростов-на-Дону","Саки","Сальск","Севастополь","Семикаракорск","Серафимович","Симферополь","Славянск-на-Кубани","Сочи","Старый Крым","Судак","Суровикино","Таганрог","Темрюк","Тимашёвск","Тихорецк","Туапсе","Урюпинск","Усть-Лабинск","Феодосия","Фролово","Хадыженск","Харабали","Цимлянск","Шахты","Щёлкино","Элиста","Ялта"];
 const DRAFT_KEY="gravitation_application_draft_v2";
+
+const mobileNavStyle=document.createElement("style");
+mobileNavStyle.textContent=`
+@media(max-width:980px){
+  .site-header .brand{position:relative;z-index:3}
+  .menu-toggle{z-index:3}
+  .nav{z-index:2;height:100dvh;min-height:100svh;inset:0;padding:82px 20px 28px;justify-content:flex-start;gap:4px;overflow-y:auto;overscroll-behavior:contain;font-size:14px}
+  .nav a{width:min(100%,360px);padding:11px 16px;text-align:center;line-height:1.3;opacity:.86}
+  .nav__cta{margin-top:8px;padding:12px 18px!important}
+}
+@media(max-width:640px){
+  .nav{padding:74px 16px 22px;gap:2px;font-size:13px}
+  .nav a{padding:10px 14px}
+}
+`;
+document.head.appendChild(mobileNavStyle);
+
 const body=document.body,menuToggle=document.querySelector(".menu-toggle"),nav=document.querySelector(".nav"),form=document.querySelector("#application-form"),statusEl=document.querySelector("#form-status");
 const yearEl=document.querySelector("#year");if(yearEl)yearEl.textContent=new Date().getFullYear();
 menuToggle?.addEventListener("click",()=>{const open=body.classList.toggle("menu-open");menuToggle.setAttribute("aria-expanded",String(open));});
