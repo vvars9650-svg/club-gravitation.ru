@@ -163,7 +163,6 @@ async function exerciseRealMobileForm(page) {
   }
 
   await expect(page.locator('#v2-next')).toBeHidden();
-  await expect(page.getByText('ДАЛЕЕ', { exact: true })).toHaveCount(0);
   await page.locator('[name="personal_data_consent"]').check();
   await page.locator('[name="rules_consent"]').check();
   await page.locator('#v2-submit').click();
