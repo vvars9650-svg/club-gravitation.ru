@@ -1,8 +1,9 @@
 /**
- * ГРАВИТАЦИЯ — приём пошаговой анкеты сайта в Google Sheets + Google Drive.
- * После изменения этого файла: Apps Script → Развернуть → Управление развертываниями → Изменить → Новая версия.
+ * ГРАВИТАЦИЯ — приём анкеты сайта в Google Sheets + Google Drive.
+ * V2 формы получает финальный результат тем же POST через postMessage.
+ * После изменения: Apps Script → Управление развертываниями → Изменить → Новая версия.
  */
-const APP_VERSION=7;
+const APP_VERSION='V2-test';
 const SPREADSHEET_ID='1pt69LEjrPiCPTF6ZzR_Lc6k-uXjW6qyXURBNqT_EsTw';
 const PARTICIPANTS_SHEET='Участники';
 const WEB_RAW_SHEET='Сайт — RAW';
@@ -21,7 +22,6 @@ function doGet(e){
   return respond_({ok:true,service:'club-gravitation-applications',version:APP_VERSION},p.callback);
 }
 
-/** Запустить вручную из редактора Apps Script. Проверяет права на запись в Sheets + Drive. */
 function testAccess(){
   const ss=SpreadsheetApp.openById(SPREADSHEET_ID);
   const folder=DriveApp.getFolderById(PHOTO_FOLDER_ID);
@@ -38,7 +38,7 @@ function doPost(e){
   let stage='получение запроса';
   let id=validateParticipantId_(p.participant_id)||makeId_();
   try{
-    if(p.website)return json_({ok:true});
+    if(p.website)return postResponse_({ok:true,id:id,version:APP_VERSION},p);
 
     stage='проверка обязательных полей';
     require_(p.name,'name');
@@ -61,7 +61,7 @@ function doPost(e){
     const existingRow=findParticipantRow_(participants,id);
     if(existingRow){
       logEvent_('OK','повторное подтверждение',id,p.name||'','Заявка уже была записана',p.page_url||'site');
-      return json_({ok:true,id:id,duplicate:true,version:APP_VERSION});
+      return postResponse_({ok:true,id:id,duplicate:true,version:APP_VERSION},p);
     }
 
     stage='сохранение фотографии';
@@ -89,12 +89,12 @@ function doPost(e){
 
     stage='готово';
     logEvent_('OK',stage,id,p.name||'','',p.page_url||'site');
-    return json_({ok:true,id:id,photo:photo.url,version:APP_VERSION});
+    return postResponse_({ok:true,id:id,photo:photo.url,version:APP_VERSION},p);
   }catch(err){
     const message=String(err&&err.message?err.message:err);
     console.error(stage+': '+message);
     try{logEvent_('ERROR',stage,id,p.name||'',message,p.page_url||'site');}catch(logErr){console.error('log error: '+logErr);}
-    return json_({ok:false,error:message,stage:stage,id:id,version:APP_VERSION});
+    return postResponse_({ok:false,error:message,stage:stage,id:id,version:APP_VERSION},p);
   }
 }
 
@@ -154,6 +154,15 @@ function makeId_(){return 'GR-'+Utilities.formatDate(new Date(),'Europe/Moscow',
 function sanitizeFileName_(value){return String(value||'participant').trim().replace(/[^0-9A-Za-zА-Яа-яЁё_-]+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'').slice(0,70)||'participant';}
 function requiredText_(value,name){const text=String(value||'').trim();if(!text)throw new Error('Required field: '+name);return text;}
 function require_(value,name){requiredText_(value,name);}
+
+function postResponse_(obj,p){
+  if(String((p&&p.response_mode)||'')!=='postmessage')return json_(obj);
+  const token=String((p&&p.response_token)||'').replace(/[^0-9A-Za-z_-]/g,'').slice(0,160);
+  const payload=Object.assign({type:'gravitation-v2-submit',token:token},obj||{});
+  const data=JSON.stringify(payload).replace(/</g,'\\u003c');
+  const html='<!doctype html><html><head><meta charset="utf-8"></head><body><script>window.parent.postMessage('+data+',"*");<\/script></body></html>';
+  return HtmlService.createHtmlOutput(html).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
 function bridge_(obj,token){
   const safeToken=String(token||'').replace(/[^0-9A-Za-z_-]/g,'').slice(0,120);
   const payload=Object.assign({type:'gravitation-submission-status',token:safeToken},obj||{});
