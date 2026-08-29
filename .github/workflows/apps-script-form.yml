@@ -9,6 +9,7 @@ on:
       - "apps-script-form/appsscript.json"
       - "apps-script-form/.claspignore"
       - "apps-script-form/validate.mjs"
+      - ".github/workflows/apps-script-form.yml"
   workflow_dispatch:
 
 permissions:
@@ -131,7 +132,7 @@ jobs:
           echo "deployment_id=$deployment_id" >> "$GITHUB_OUTPUT"
           echo "webapp_url=$webapp_url" >> "$GITHUB_OUTPUT"
 
-      - name: Attempt WebAppConfig via Apps Script API
+      - name: Verify Web App deployment config
         if: steps.credentials.outputs.configured == 'true'
         working-directory: apps-script-form
         shell: bash
@@ -144,29 +145,19 @@ jobs:
 
           curl -fsS -H "Authorization: Bearer $access_token" \
             "https://script.googleapis.com/v1/projects/${script_id}/deployments/${deployment_id}" \
-            -o "$RUNNER_TEMP/deployment-before.json"
-          echo "Deployment before WebAppConfig attempt:"
-          jq '{deploymentId,deploymentConfig,entryPoints}' "$RUNNER_TEMP/deployment-before.json"
+            -o "$RUNNER_TEMP/deployment.json"
 
-          version="$(jq -r '.deploymentConfig.versionNumber' "$RUNNER_TEMP/deployment-before.json")"
-          description="GitHub ${GITHUB_SHA::7} webapp"
-          jq -n --argjson version "$version" --arg description "$description" '{
-            deploymentConfig:{versionNumber:$version,manifestFileName:"appsscript",description:$description},
-            entryPoints:[{entryPointType:"WEB_APP",webApp:{entryPointConfig:{access:"ANYONE_ANONYMOUS",executeAs:"USER_DEPLOYING"}}}]
-          }' > "$RUNNER_TEMP/webapp-update.json"
+          access="$(jq -r '.entryPoints[]? | select(.entryPointType=="WEB_APP") | .webApp.entryPointConfig.access' "$RUNNER_TEMP/deployment.json" | head -n1)"
+          execute_as="$(jq -r '.entryPoints[]? | select(.entryPointType=="WEB_APP") | .webApp.entryPointConfig.executeAs' "$RUNNER_TEMP/deployment.json" | head -n1)"
+          url="$(jq -r '.entryPoints[]? | select(.entryPointType=="WEB_APP") | .webApp.url' "$RUNNER_TEMP/deployment.json" | head -n1)"
 
-          http_code="$(curl -sS -o "$RUNNER_TEMP/webapp-update-response.json" -w '%{http_code}' \
-            -X PUT \
-            -H "Authorization: Bearer $access_token" \
-            -H 'Content-Type: application/json' \
-            --data-binary @"$RUNNER_TEMP/webapp-update.json" \
-            "https://script.googleapis.com/v1/projects/${script_id}/deployments/${deployment_id}")"
-          echo "Apps Script API WebAppConfig HTTP $http_code"
-          cat "$RUNNER_TEMP/webapp-update-response.json" | jq . || cat "$RUNNER_TEMP/webapp-update-response.json"
-          if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
-            echo "::error::Apps Script API did not accept WebAppConfig on deployment update."
-            exit 1
-          fi
+          echo "Web app access: $access"
+          echo "Web app executeAs: $execute_as"
+          echo "Web app URL: $url"
+
+          [[ "$access" == "ANYONE_ANONYMOUS" ]] || { echo "::error::Web app access is $access, expected ANYONE_ANONYMOUS"; exit 1; }
+          [[ "$execute_as" == "USER_DEPLOYING" ]] || { echo "::error::Web app executeAs is $execute_as, expected USER_DEPLOYING"; exit 1; }
+          [[ -n "$url" && "$url" != "null" ]] || { echo "::error::Deployment has no WEB_APP URL"; exit 1; }
 
       - name: Persist Apps Script metadata
         if: steps.credentials.outputs.configured == 'true'
@@ -189,18 +180,23 @@ jobs:
           set -euo pipefail
           body_file="$RUNNER_TEMP/form-smoke.html"
           ok=0
+          last_code=""
           for attempt in $(seq 1 12); do
             echo "Smoke test attempt $attempt/12"
-            http_code="$(curl -L -sS --max-time 30 -o "$body_file" -w '%{http_code}' "$WEBAPP_URL?ci=${GITHUB_SHA}" || true)"
-            echo "HTTP $http_code"
-            if [[ "$http_code" == "200" ]] && grep -q 'id="application-form"' "$body_file"; then
+            last_code="$(curl -L -sS --max-time 30 -o "$body_file" -w '%{http_code}' "$WEBAPP_URL?ci=${GITHUB_SHA}" || true)"
+            echo "HTTP $last_code"
+            if [[ "$last_code" == "200" ]] && grep -q 'id="application-form"' "$body_file"; then
               ok=1
               break
             fi
             sleep 5
           done
           if [[ "$ok" != "1" ]]; then
-            echo "::error::Published Apps Script form did not return expected HTML."
+            if [[ "$last_code" == "403" ]]; then
+              echo "::error::Web app deployment is public, but Apps Script runtime returned 403. Open the script once as owner and run authorizeFormApp_ to grant the project its Sheets/Drive scopes."
+            else
+              echo "::error::Published Apps Script form did not return expected HTML (HTTP $last_code)."
+            fi
             sed -n '1,80p' "$body_file" || true
             exit 1
           fi
