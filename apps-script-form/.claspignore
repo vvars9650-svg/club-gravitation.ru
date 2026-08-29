@@ -1,5 +1,8 @@
 README.md
 validate.mjs
+CI_NOTE.html
+.ci-trigger
+ci-trigger*.gs
 .clasp.json
 .claspignore
 .deployment-id
