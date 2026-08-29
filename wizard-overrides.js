@@ -1,9 +1,8 @@
 (function(){
   const DRAFT_KEY='gravitation_application_draft_v3';
 
-  // Apps Script v6 уже умеет status + JSONP. Отправляем POST через скрытый iframe,
-  // а подтверждение читаем отдельным JSONP-запросом по participant_id.
-  // Так мы не зависим ни от CORS, ни от fetch/no-cors, ни от postMessage bridge.
+  // Надёжная отправка без CORS: POST через скрытый iframe,
+  // подтверждение по ID через JSONP (script src), который работает и на Android.
   if(!window.__gravitationSubmissionGuard){
     window.__gravitationSubmissionGuard=true;
     const nativeFetch=window.fetch.bind(window);
@@ -20,30 +19,22 @@
 
     async function submitAndConfirm(endpoint,params){
       const participantId=String(params.get('participant_id')||'').trim();
-      if(!participantId)throw new Error('Не удалось сформировать номер заявки.');
-
-      submitViaIframe(endpoint,params,participantId);
+      submitViaIframe(endpoint,params);
 
       let last=null;
-      for(let attempt=0;attempt<20;attempt++){
-        if(attempt===0)await delay(850);
-        else await delay(attempt<7?650:1000);
-
+      for(let attempt=0;attempt<22;attempt++){
+        if(attempt>0)await delay(attempt<8?650:1000);
         try{
-          last=await statusJsonp(endpoint,participantId,3500);
+          last=await statusJsonp(endpoint,participantId,5000);
         }catch(error){
           continue;
         }
-
         if(last&&last.ok){
           return {ok:true,status:204,type:'confirmed'};
         }
         if(last&&last.found&&!last.pending){
-          const text=last.error||'Сервер не сохранил заявку. Попробуйте ещё раз.';
-          showPreciseError(text);
-          const error=new Error(text);
-          error.stage=last.stage||'сохранение заявки';
-          throw error;
+          showPreciseError(last.error||'Сервер не сохранил заявку. Попробуйте ещё раз.');
+          throw new Error(last.error||'Submission failed');
         }
       }
 
@@ -52,13 +43,11 @@
       throw new Error('Submission confirmation timeout');
     }
 
-    function submitViaIframe(endpoint,params,id){
-      const safe=id.replace(/[^0-9A-Za-z_-]/g,'');
-      const frameName=`gravitation_post_${safe}_${Date.now()}`;
+    function submitViaIframe(endpoint,params){
+      const frameName=`gravitation_post_${Date.now()}_${Math.random().toString(36).slice(2)}`;
       const iframe=document.createElement('iframe');
       iframe.name=frameName;
       iframe.hidden=true;
-      iframe.style.display='none';
       iframe.setAttribute('aria-hidden','true');
 
       const postForm=document.createElement('form');
@@ -66,7 +55,6 @@
       postForm.action=endpoint;
       postForm.target=frameName;
       postForm.hidden=true;
-      postForm.style.display='none';
       postForm.acceptCharset='UTF-8';
 
       for(const [name,value] of params.entries()){
@@ -80,43 +68,41 @@
       document.body.append(iframe,postForm);
       postForm.submit();
       postForm.remove();
-      setTimeout(()=>iframe.remove(),60000);
+      setTimeout(()=>iframe.remove(),45000);
     }
 
     function statusJsonp(endpoint,id,timeoutMs){
       return new Promise((resolve,reject)=>{
-        const callback=`gravitationStatus_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        const callback=`__gravStatus_${Date.now()}_${Math.random().toString(36).slice(2)}`.replace(/[^0-9A-Za-z_$]/g,'');
         const script=document.createElement('script');
         let finished=false;
-        const timer=setTimeout(()=>finish(()=>reject(new Error('Сервис подтверждения не ответил.'))),timeoutMs);
-
-        window[callback]=data=>finish(()=>resolve(data||{}));
-        script.onerror=()=>finish(()=>reject(new Error('Не удалось проверить статус заявки.')));
-
-        const separator=endpoint.includes('?')?'&':'?';
-        script.src=`${endpoint}${separator}action=status&id=${encodeURIComponent(id)}&callback=${encodeURIComponent(callback)}&_=${Date.now()}`;
-        script.async=true;
-        document.head.appendChild(script);
+        const timer=setTimeout(()=>finish(()=>reject(new Error('Status timeout'))),timeoutMs);
 
         function finish(done){
           if(finished)return;
           finished=true;
           clearTimeout(timer);
-          try{delete window[callback];}catch(e){window[callback]=undefined;}
           script.remove();
+          try{delete window[callback];}catch(e){window[callback]=undefined;}
           done();
         }
+
+        window[callback]=data=>finish(()=>resolve(data));
+        script.onerror=()=>finish(()=>reject(new Error('Status load failed')));
+        const separator=endpoint.includes('?')?'&':'?';
+        script.src=`${endpoint}${separator}action=status&id=${encodeURIComponent(id)}&callback=${encodeURIComponent(callback)}&_=${Date.now()}`;
+        script.async=true;
+        document.head.appendChild(script);
       });
     }
 
     function showPreciseError(message){
-      // app.js в catch пишет своё старое сообщение, поэтому ставим наше на тик позже.
       setTimeout(()=>{
         const status=document.querySelector('#form-status');
         if(!status)return;
         status.textContent=message;
         status.className='form-status is-error';
-      },100);
+      },60);
     }
 
     function delay(ms){return new Promise(resolve=>setTimeout(resolve,ms));}
@@ -126,8 +112,7 @@
   if(!shell)return;
   const form=shell.querySelector('#application-form');
 
-  // После полного обновления страницы начинаем чистую анкету.
-  // Политика открывается в новой вкладке, поэтому введённые данные в исходной вкладке не теряются.
+  // Полное обновление страницы всегда начинает новую заявку.
   try{localStorage.removeItem(DRAFT_KEY);}catch(e){}
   if(form){
     form.reset();
@@ -164,7 +149,7 @@
     step.querySelector('.wizard-help')?.remove();
   });
 
-  // Навигация: первый шаг — только «Далее»; последний — «Назад» + «Отправить заявку».
+  // Первый шаг: только «Далее». Последний: «Назад» + кнопка отправки, без «Далее».
   const actions=shell.querySelector('#wizard-actions');
   const back=shell.querySelector('#wizard-back');
   const next=shell.querySelector('#wizard-next');
@@ -173,11 +158,8 @@
     const current=steps.findIndex(step=>step.classList.contains('is-active'));
     if(current<0||!actions||!back||!next)return;
     actions.hidden=false;
-    actions.style.display='flex';
     back.hidden=current===0;
-    back.style.display=current===0?'none':'';
     next.hidden=current===steps.length-1;
-    next.style.display=current===steps.length-1?'none':'';
   }
   const observer=new MutationObserver(syncWizardActions);
   steps.forEach(step=>observer.observe(step,{attributes:true,attributeFilter:['class']}));
