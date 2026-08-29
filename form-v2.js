@@ -4,6 +4,8 @@
   const ENDPOINT = 'https://script.google.com/macros/s/AKfycbz3LNz4si1i2wueB1I1T5AleCOaaQ-HEgBWS1Injh_mCjFmkAQqKyCqvDH3LrgzBoI/exec';
   const MAX_FILE_BYTES = 10 * 1024 * 1024;
   const SUBMIT_TIMEOUT_MS = 60000;
+  const STATUS_POLL_MS = 1500;
+  const STATUS_CALLBACK = '__gravitationStatusCallback';
   const STEPS = ['Контактная информация','Фотография','О вас','Знакомства','Формат встреч','Проверка'];
   const YUFO_CITIES = ["Абинск","Адыгейск","Азов","Аксай","Алупка","Алушта","Анапа","Апшеронск","Армавир","Армянск","Астрахань","Ахтубинск","Батайск","Бахчисарай","Белая Калитва","Белогорск","Белореченск","Волгоград","Волгодонск","Волжский","Геленджик","Городовиковск","Горячий Ключ","Гуково","Гулькевичи","Джанкой","Донецк","Дубовка","Евпатория","Ейск","Жирновск","Зверево","Зерноград","Знаменск","Инкерман","Калач-на-Дону","Каменск-Шахтинский","Камызяк","Камышин","Керчь","Константиновск","Кореновск","Котельниково","Котово","Краснодар","Красноперекопск","Краснослободск","Красный Сулин","Кропоткин","Крымск","Курганинск","Лабинск","Лагань","Ленинск","Майкоп","Миллерово","Михайловка","Морозовск","Нариманов","Николаевск","Новоаннинский","Новокубанск","Новороссийск","Новочеркасск","Новошахтинск","Палласовка","Петров Вал","Приморско-Ахтарск","Пролетарск","Ростов-на-Дону","Саки","Сальск","Севастополь","Семикаракорск","Серафимович","Симферополь","Славянск-на-Кубани","Сочи","Старый Крым","Судак","Суровикино","Таганрог","Темрюк","Тимашёвск","Тихорецк","Туапсе","Урюпинск","Усть-Лабинск","Феодосия","Фролово","Хадыженск","Харабали","Цимлянск","Шахты","Щёлкино","Элиста","Ялта"];
 
@@ -46,6 +48,7 @@
   bindPhoto();
   bindSubmission();
   bindServerResponse();
+  bindStatusCallback();
   renderStep(0);
 
   function fillSelects() {
@@ -324,11 +327,16 @@
       const token = makeResponseToken();
       const timeoutId = window.setTimeout(() => {
         if (activeSubmission && activeSubmission.token === token) {
-          finishWithError('Сервер не подтвердил завершение отправки. Не отправляйте заявку повторно сразу.');
+          requestSubmissionStatus(participantId, token);
+          window.setTimeout(() => {
+            if (activeSubmission && activeSubmission.token === token) {
+              finishWithError('Сервер не подтвердил завершение отправки. Не отправляйте заявку повторно сразу.');
+            }
+          }, 2500);
         }
       }, SUBMIT_TIMEOUT_MS);
 
-      activeSubmission = {participantId, token, timeoutId};
+      activeSubmission = {participantId, token, timeoutId, pollTimer:null};
       submit.disabled = true;
       submit.textContent = 'ОТПРАВЛЯЕМ…';
       back.disabled = true;
@@ -351,6 +359,7 @@
       ['utm_source','utm_medium','utm_campaign','utm_content','utm_term'].forEach(key => params.set(key, query.get(key) || ''));
 
       postToIframe(params);
+      startStatusPolling(participantId, token);
     });
   }
 
@@ -361,13 +370,53 @@
       if (!activeSubmission || data.token !== activeSubmission.token) return;
 
       const expectedId = activeSubmission.participantId;
-      clearTimeout(activeSubmission.timeoutId);
       if (data.ok === true && data.id === expectedId) {
         finishWithSuccess(expectedId);
-      } else {
+      } else if (data.id === expectedId) {
         finishWithError(data.error || 'Не удалось сохранить заявку. Попробуйте ещё раз.');
       }
     });
+  }
+
+  function bindStatusCallback() {
+    window[STATUS_CALLBACK] = data => {
+      if (!data || typeof data !== 'object' || !activeSubmission) return;
+      const expectedId = activeSubmission.participantId;
+      if (data.id !== expectedId) return;
+      if (data.ok === true && data.found === true) {
+        finishWithSuccess(expectedId);
+        return;
+      }
+      if (data.found === true && data.ok === false && data.error) {
+        finishWithError(data.error);
+      }
+    };
+  }
+
+  function startStatusPolling(id, token) {
+    if (!activeSubmission || activeSubmission.token !== token) return;
+    window.setTimeout(() => requestSubmissionStatus(id, token), 900);
+    activeSubmission.pollTimer = window.setInterval(() => {
+      requestSubmissionStatus(id, token);
+    }, STATUS_POLL_MS);
+  }
+
+  function requestSubmissionStatus(id, token) {
+    if (!activeSubmission || activeSubmission.token !== token) return;
+    const url = new URL(ENDPOINT);
+    url.searchParams.set('action', 'status');
+    url.searchParams.set('id', id);
+    url.searchParams.set('callback', STATUS_CALLBACK);
+    url.searchParams.set('_', String(Date.now()));
+
+    const script = document.createElement('script');
+    script.src = url.toString();
+    script.async = true;
+    script.dataset.gravitationStatus = '1';
+    const remove = () => script.remove();
+    script.addEventListener('load', remove, {once:true});
+    script.addEventListener('error', remove, {once:true});
+    document.head.appendChild(script);
   }
 
   function validateBeforeSubmit() {
@@ -404,8 +453,15 @@
     postForm.remove();
   }
 
+  function stopSubmissionWatch() {
+    if (!activeSubmission) return;
+    clearTimeout(activeSubmission.timeoutId);
+    if (activeSubmission.pollTimer) clearInterval(activeSubmission.pollTimer);
+    document.querySelectorAll('script[data-gravitation-status="1"]').forEach(node => node.remove());
+  }
+
   function finishWithSuccess(id) {
-    if (activeSubmission) clearTimeout(activeSubmission.timeoutId);
+    stopSubmissionWatch();
     activeSubmission = null;
     form.hidden = true;
     const tabsWrap = document.querySelector('.v2-tabs');
@@ -418,7 +474,7 @@
   }
 
   function finishWithError(message) {
-    if (activeSubmission) clearTimeout(activeSubmission.timeoutId);
+    stopSubmissionWatch();
     activeSubmission = null;
     submit.disabled = false;
     submit.textContent = 'ОТПРАВИТЬ ЗАЯВКУ';
