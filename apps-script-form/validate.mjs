@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const required = ['Code.gs','Authorize.gs','Index.html','Styles.html','Script.html','appsscript.json'];
+const required = ['Code.gs','Authorize.gs','E2E.gs','Index.html','Styles.html','Script.html','appsscript.json'];
 const errors = [];
 
 const read = name => fs.readFileSync(path.join(here, name), 'utf8');
@@ -34,7 +34,7 @@ if (!errors.length) {
     assert(scopes.has('https://www.googleapis.com/auth/drive'), 'Missing Drive OAuth scope');
   }
 
-  for (const file of ['Code.gs','Authorize.gs']) {
+  for (const file of ['Code.gs','Authorize.gs','E2E.gs']) {
     try {
       new vm.Script(read(file), { filename: file });
     } catch (error) {
@@ -58,6 +58,7 @@ if (!errors.length) {
   assert(client.includes('google.script.run'), 'Client must submit through google.script.run');
   assert(client.includes('.saveApplication(form)'), 'Client must call saveApplication(form)');
   assert(read('Code.gs').includes('function saveApplication(form)'), 'Server must expose saveApplication(form)');
+  assert(read('E2E.gs').includes('function e2eVerifyCleanup(id)'), 'E2E helper must expose e2eVerifyCleanup(id)');
 
   const forbidden = [
     ['fetch(', 'fetch transport'],
