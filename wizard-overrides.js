@@ -1,6 +1,7 @@
 (function(){
-  // Apps Script POST остаётся no-cors, поэтому подтверждаем запись отдельным JSONP-запросом по ID.
-  // Promise POST считается успешным только после того, как ID реально найден в базе.
+  // Apps Script POST остаётся no-cors. Некоторые мобильные браузеры могут отклонить сам fetch
+  // уже после того, как сервер успешно принял данные. Поэтому транспортную ошибку не считаем
+  // финальным результатом: всегда проверяем сохранение по ID через отдельный JSONP status-запрос.
   if(!window.__gravitationSubmissionGuard){
     window.__gravitationSubmissionGuard=true;
     const nativeFetch=window.fetch.bind(window);
@@ -14,27 +15,52 @@
       if(!guarded)return nativeFetch(input,init);
 
       const participantId=String(body.get('participant_id')||'').trim();
-      const response=await nativeFetch(input,init);
-      const confirmation=await waitForConfirmation(url,participantId);
-      if(!confirmation.ok){
-        const error=new Error(confirmation.error||'Сервер не подтвердил сохранение заявки.');
-        error.stage=confirmation.stage||'';
-        error.submissionId=participantId;
-        throw error;
+      let response=null;
+      let transportError=null;
+
+      try{
+        response=await nativeFetch(input,init);
+      }catch(error){
+        // На Android/некоторых WebView no-cors POST к Apps Script может упасть на клиенте
+        // после успешной серверной записи. Проверка по ID ниже является источником истины.
+        transportError=error;
       }
-      return response;
+
+      const confirmation=await waitForConfirmation(url,participantId);
+      if(confirmation.ok)return response;
+
+      const error=new Error(
+        confirmation.error||
+        (transportError&&transportError.message)||
+        'Сервер не подтвердил сохранение заявки.'
+      );
+      error.stage=confirmation.stage||'подтверждение записи';
+      error.submissionId=participantId;
+      error.transportError=transportError||null;
+      throw error;
     };
 
     async function waitForConfirmation(endpoint,id){
       let last=null;
-      for(let attempt=0;attempt<15;attempt++){
-        if(attempt>0)await new Promise(resolve=>setTimeout(resolve,attempt<5?650:1100));
-        try{last=await statusJsonp(endpoint,id);}
-        catch(error){last={ok:false,found:false,pending:true,error:String(error&&error.message||error)};continue;}
+      for(let attempt=0;attempt<18;attempt++){
+        if(attempt>0)await new Promise(resolve=>setTimeout(resolve,attempt<6?650:1100));
+        try{
+          last=await statusJsonp(endpoint,id);
+        }catch(error){
+          last={ok:false,found:false,pending:true,error:String(error&&error.message||error)};
+          continue;
+        }
         if(last&&last.ok)return last;
         if(last&&last.found&&!last.pending)return last;
       }
-      return {ok:false,found:false,pending:false,id,stage:'подтверждение записи',error:'Не удалось подтвердить сохранение заявки. Повторная отправка с тем же номером не создаст дубль.'};
+      return {
+        ok:false,
+        found:false,
+        pending:false,
+        id,
+        stage:'подтверждение записи',
+        error:'Не удалось подтвердить сохранение заявки. Данные формы сохранены в браузере. Повторная отправка с тем же номером не создаст дубль.'
+      };
     }
 
     function statusJsonp(endpoint,id){
