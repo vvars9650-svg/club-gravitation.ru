@@ -24,12 +24,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "24"
-
       - name: Validate form source
         run: node apps-script-form/validate.mjs
 
@@ -104,7 +102,6 @@ jobs:
           else
             echo "created=false" >> "$GITHUB_OUTPUT"
           fi
-          echo "Using $(cat .clasp.json)"
           clasp status
 
       - name: Push source to Apps Script
@@ -112,7 +109,7 @@ jobs:
         working-directory: apps-script-form
         run: clasp push --force
 
-      - name: Create or update web app deployment
+      - name: Create or update deployment
         if: steps.credentials.outputs.configured == 'true'
         id: deployment
         working-directory: apps-script-form
@@ -120,28 +117,56 @@ jobs:
         run: |
           set -euo pipefail
           description="GitHub ${GITHUB_SHA::7} $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-
           if [[ -s .deployment-id ]]; then
             deployment_id="$(tr -d '\r\n ' < .deployment-id)"
-            echo "Updating deployment: $deployment_id"
             clasp deploy --deploymentId "$deployment_id" --description "$description" | tee "$RUNNER_TEMP/clasp-deploy.txt"
           else
-            echo "Creating first deployment"
             clasp deploy --description "$description" | tee "$RUNNER_TEMP/clasp-deploy.txt"
             deployment_id="$(grep -Eo 'AKfy[[:alnum:]_-]+' "$RUNNER_TEMP/clasp-deploy.txt" | head -n 1 || true)"
-            if [[ -z "$deployment_id" ]]; then
-              echo "::error::Could not extract Apps Script deployment ID."
-              cat "$RUNNER_TEMP/clasp-deploy.txt"
-              exit 1
-            fi
+            [[ -n "$deployment_id" ]] || { echo "::error::Could not extract deployment ID"; exit 1; }
             printf '%s\n' "$deployment_id" > .deployment-id
           fi
-
           webapp_url="https://script.google.com/macros/s/${deployment_id}/exec"
           printf '%s\n' "$webapp_url" > .webapp-url
           echo "deployment_id=$deployment_id" >> "$GITHUB_OUTPUT"
           echo "webapp_url=$webapp_url" >> "$GITHUB_OUTPUT"
-          echo "Web app: $webapp_url"
+
+      - name: Attempt WebAppConfig via Apps Script API
+        if: steps.credentials.outputs.configured == 'true'
+        working-directory: apps-script-form
+        shell: bash
+        run: |
+          set -euo pipefail
+          script_id="$(jq -r '.scriptId' .clasp.json)"
+          deployment_id="$(tr -d '\r\n ' < .deployment-id)"
+          access_token="$(jq -r '.tokens.default.access_token // .access_token // .token.access_token // empty' "$HOME/.clasprc.json")"
+          [[ -n "$access_token" ]] || { echo "::error::No access token found in clasp credentials"; exit 1; }
+
+          curl -fsS -H "Authorization: Bearer $access_token" \
+            "https://script.googleapis.com/v1/projects/${script_id}/deployments/${deployment_id}" \
+            -o "$RUNNER_TEMP/deployment-before.json"
+          echo "Deployment before WebAppConfig attempt:"
+          jq '{deploymentId,deploymentConfig,entryPoints}' "$RUNNER_TEMP/deployment-before.json"
+
+          version="$(jq -r '.deploymentConfig.versionNumber' "$RUNNER_TEMP/deployment-before.json")"
+          description="GitHub ${GITHUB_SHA::7} webapp"
+          jq -n --argjson version "$version" --arg description "$description" '{
+            deploymentConfig:{versionNumber:$version,manifestFileName:"appsscript",description:$description},
+            entryPoints:[{entryPointType:"WEB_APP",webApp:{entryPointConfig:{access:"ANYONE_ANONYMOUS",executeAs:"USER_DEPLOYING"}}}]
+          }' > "$RUNNER_TEMP/webapp-update.json"
+
+          http_code="$(curl -sS -o "$RUNNER_TEMP/webapp-update-response.json" -w '%{http_code}' \
+            -X PUT \
+            -H "Authorization: Bearer $access_token" \
+            -H 'Content-Type: application/json' \
+            --data-binary @"$RUNNER_TEMP/webapp-update.json" \
+            "https://script.googleapis.com/v1/projects/${script_id}/deployments/${deployment_id}")"
+          echo "Apps Script API WebAppConfig HTTP $http_code"
+          cat "$RUNNER_TEMP/webapp-update-response.json" | jq . || cat "$RUNNER_TEMP/webapp-update-response.json"
+          if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
+            echo "::error::Apps Script API did not accept WebAppConfig on deployment update."
+            exit 1
+          fi
 
       - name: Persist Apps Script metadata
         if: steps.credentials.outputs.configured == 'true'
@@ -149,10 +174,7 @@ jobs:
         run: |
           set -euo pipefail
           git add apps-script-form/.clasp.json apps-script-form/.deployment-id apps-script-form/.webapp-url
-          if git diff --cached --quiet; then
-            echo "No deployment metadata changes."
-            exit 0
-          fi
+          if git diff --cached --quiet; then exit 0; fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "chore: persist Apps Script deployment metadata [skip ci]"
@@ -169,21 +191,17 @@ jobs:
           ok=0
           for attempt in $(seq 1 12); do
             echo "Smoke test attempt $attempt/12"
-            if curl -LfsS --max-time 30 --retry 2 --retry-delay 2 "$WEBAPP_URL?ci=${GITHUB_SHA}" -o "$body_file"; then
-              if grep -q 'id="application-form"' "$body_file"; then
-                ok=1
-                break
-              fi
+            http_code="$(curl -L -sS --max-time 30 -o "$body_file" -w '%{http_code}' "$WEBAPP_URL?ci=${GITHUB_SHA}" || true)"
+            echo "HTTP $http_code"
+            if [[ "$http_code" == "200" ]] && grep -q 'id="application-form"' "$body_file"; then
+              ok=1
+              break
             fi
             sleep 5
           done
-
           if [[ "$ok" != "1" ]]; then
-            echo "::error::Published Apps Script form did not return the expected HTML."
-            if [[ -f "$body_file" ]]; then
-              sed -n '1,120p' "$body_file"
-            fi
+            echo "::error::Published Apps Script form did not return expected HTML."
+            sed -n '1,80p' "$body_file" || true
             exit 1
           fi
-
           echo "Apps Script web app smoke test passed: $WEBAPP_URL"
