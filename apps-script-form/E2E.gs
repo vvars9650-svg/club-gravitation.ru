@@ -1,0 +1,84 @@
+function e2eReady() {
+  return {ok: true, marker: 'E2E-1'};
+}
+
+function e2eVerifyCleanup(id) {
+  const safeId = text_(id);
+  if (!safeId) throw new Error('E2E: empty id');
+
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const participants = ss.getSheetByName(PARTICIPANTS_SHEET);
+  const raw = ss.getSheetByName(WEB_RAW_SHEET);
+  if (!participants || !raw) throw new Error('E2E: required sheets are missing');
+
+  const participantRow = findE2ERowById_(participants, safeId, 1);
+  const rawRow = findE2ERowById_(raw, safeId, 2);
+
+  const participantNameCol = PARTICIPANT_HEADERS.indexOf('Имя и фамилия') + 1;
+  const rawNameCol = RAW_HEADERS.indexOf('Имя и фамилия') + 1;
+  const participantName = participantRow ? text_(participants.getRange(participantRow, participantNameCol).getValue()) : '';
+  const rawName = rawRow ? text_(raw.getRange(rawRow, rawNameCol).getValue()) : '';
+  const safeTestName = participantName || rawName;
+
+  if (!safeTestName.startsWith('E2E CI ')) {
+    throw new Error('E2E: cleanup refused for a non-test application');
+  }
+
+  const participantOk = Boolean(participantRow);
+  const rawOk = Boolean(rawRow);
+
+  const folder = DriveApp.getFolderById(PHOTO_FOLDER_ID);
+  let photoFile = null;
+  const files = folder.getFiles();
+  while (files.hasNext()) {
+    const candidate = files.next();
+    if (candidate.getName().startsWith(safeId + '_')) {
+      photoFile = candidate;
+      break;
+    }
+  }
+
+  const photoOk = Boolean(photoFile && photoFile.getSize() > 0 && !photoFile.isTrashed());
+  let photoLinkOk = false;
+  if (participantRow && photoFile) {
+    const photoCol = PARTICIPANT_HEADERS.indexOf('Фото') + 1;
+    const rich = participants.getRange(participantRow, photoCol).getRichTextValue();
+    const link = rich ? rich.getLinkUrl() : '';
+    photoLinkOk = Boolean(link && link.includes(photoFile.getId()));
+  }
+
+  if (photoFile) photoFile.setTrashed(true);
+  if (rawRow) raw.deleteRow(rawRow);
+  if (participantRow) participants.deleteRow(participantRow);
+  SpreadsheetApp.flush();
+
+  const participantClean = !findE2ERowById_(participants, safeId, 1);
+  const rawClean = !findE2ERowById_(raw, safeId, 2);
+  const photoClean = !photoFile || photoFile.isTrashed();
+  const cleaned = participantClean && rawClean && photoClean;
+  const ok = participantOk && rawOk && photoOk && photoLinkOk && cleaned;
+
+  try {
+    logEvent_(ok ? 'E2E_OK' : 'E2E_FAIL', 'verify+cleanup', safeId, safeTestName, ok ? '' : 'verification failed', 'GitHub Actions');
+  } catch (_) {}
+
+  return {
+    ok,
+    id: safeId,
+    participant: participantOk,
+    raw: rawOk,
+    photo: photoOk,
+    photoLink: photoLinkOk,
+    cleaned
+  };
+}
+
+function findE2ERowById_(sheet, id, column) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+  const match = sheet.getRange(2, column, lastRow - 1, 1)
+    .createTextFinder(id)
+    .matchEntireCell(true)
+    .findNext();
+  return match ? match.getRow() : 0;
+}
