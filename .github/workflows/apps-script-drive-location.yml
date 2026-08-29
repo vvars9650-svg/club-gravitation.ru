@@ -1,4 +1,4 @@
-name: Keep Apps Script in Participants Folder
+name: Verify Apps Script Drive Location
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 jobs:
-  move-project:
+  verify-project-location:
     runs-on: ubuntu-latest
     env:
       CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
@@ -43,32 +43,16 @@ jobs:
           jq -e . "$HOME/.clasprc.json" >/dev/null
           clasp show-authorized-user >/dev/null
 
-      - name: Move Apps Script project in Google Drive
+      - name: Verify Apps Script project folder
         shell: bash
         run: |
           set -euo pipefail
           script_id="$(jq -r '.scriptId' apps-script-form/.clasp.json)"
           token="$(jq -r '.tokens.default.access_token // .access_token // .token.access_token // empty' "$HOME/.clasprc.json")"
-          [[ -n "$script_id" && "$script_id" != "null" ]] || { echo "::error::Missing scriptId"; exit 1; }
-          [[ -n "$token" ]] || { echo "::error::Missing access token"; exit 1; }
-
           curl -fsS -H "Authorization: Bearer $token" \
             "https://www.googleapis.com/drive/v3/files/${script_id}?fields=id,name,parents&supportsAllDrives=true" \
             -o "$RUNNER_TEMP/script-file.json"
           cat "$RUNNER_TEMP/script-file.json"
-
-          if jq -e --arg dest "$DESTINATION_FOLDER_ID" '.parents[]? == $dest' "$RUNNER_TEMP/script-file.json" >/dev/null; then
-            echo "Apps Script project is already in the participants folder."
-            exit 0
-          fi
-
-          current_parents="$(jq -r '.parents // [] | join(",")' "$RUNNER_TEMP/script-file.json")"
-          query="addParents=${DESTINATION_FOLDER_ID}&fields=id,name,parents&supportsAllDrives=true"
-          if [[ -n "$current_parents" ]]; then query="${query}&removeParents=${current_parents}"; fi
-
-          curl -fsS -X PATCH -H "Authorization: Bearer $token" \
-            "https://www.googleapis.com/drive/v3/files/${script_id}?${query}" \
-            -o "$RUNNER_TEMP/moved-script.json"
-          cat "$RUNNER_TEMP/moved-script.json"
-          jq -e --arg dest "$DESTINATION_FOLDER_ID" '.parents[]? == $dest' "$RUNNER_TEMP/moved-script.json" >/dev/null \
-            || { echo "::error::Apps Script project was not moved to 5. Участники"; exit 1; }
+          jq -e --arg dest "$DESTINATION_FOLDER_ID" '.parents[]? == $dest' "$RUNNER_TEMP/script-file.json" >/dev/null \
+            || { echo "::error::Apps Script project is not inside 5. Участники"; exit 1; }
+          echo "Apps Script project location is correct."
