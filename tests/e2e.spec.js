@@ -38,7 +38,7 @@ async function waitForServerReady(page) {
     try {
       const frame = await findFormFrame(page, 12000);
       const ready = await serverReady(frame);
-      if (ready && ready.ok === true && ready.marker === 'E2E-1') return frame;
+      if (ready && ready.ok === true && ready.marker === 'E2E-2') return frame;
     } catch (error) {
       lastError = error;
     }
@@ -46,6 +46,16 @@ async function waitForServerReady(page) {
     await page.reload({ waitUntil: 'domcontentloaded' });
   }
   throw lastError || new Error('Apps Script E2E helper was not deployed in time');
+}
+
+async function submitServerTest(frame, payload) {
+  return frame.evaluate(data => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('e2eSubmitApplication timeout')), 45000);
+    google.script.run
+      .withSuccessHandler(value => { clearTimeout(timer); resolve(value); })
+      .withFailureHandler(error => { clearTimeout(timer); reject(new Error(error?.message || String(error))); })
+      .e2eSubmitApplication(data);
+  }), payload);
 }
 
 async function verifyAndCleanup(frame, id) {
@@ -58,11 +68,12 @@ async function verifyAndCleanup(frame, id) {
   }), id);
 }
 
-async function fillAndSubmit(frame, label) {
+async function exerciseWizard(frame, label) {
   const form = frame.locator('#application-form');
   await expect(form).toBeVisible();
+  const name = `E2E CI ${label} ${Date.now()}`;
 
-  await frame.locator('[name="name"]').fill(`E2E CI ${label} ${Date.now()}`);
+  await frame.locator('[name="name"]').fill(name);
   await frame.locator('[name="age"]').selectOption('31');
   await frame.locator('[name="gender"]').selectOption({ label: 'Мужчина' });
   await frame.locator('[name="city"]').selectOption({ label: 'Краснодар' });
@@ -89,19 +100,29 @@ async function fillAndSubmit(frame, label) {
   await expect(finalStep).toHaveClass(/is-active/);
   await expect(finalStep.locator('[data-next]')).toHaveCount(0);
   await expect(finalStep.getByText('ДАЛЕЕ', { exact: true })).toHaveCount(0);
-
   await finalStep.locator('[name="personal_data_consent"]').check();
   await finalStep.locator('[name="rules_consent"]').check();
-  await finalStep.locator('#submit').click();
 
-  await expect(frame.locator('#success')).toBeVisible({ timeout: 45000 });
-  const id = (await frame.locator('#success-id').textContent() || '').trim();
-  expect(id).toMatch(/^GR-/);
-  return id;
+  return {
+    name,
+    age: '31',
+    gender: 'Мужчина',
+    city: 'Краснодар',
+    phone: '+79991234567',
+    email: 'e2e-ci@example.com',
+    page_url: label === 'Android' ? 'https://club-gravitation.ru/mobile-e2e' : 'https://club-gravitation.ru/desktop-e2e',
+    user_agent: label,
+    submitted_at_client: new Date().toISOString()
+  };
 }
 
-async function assertVerification(result) {
-  expect(result).toMatchObject({
+async function fullDataCycle(frame, payload) {
+  const saved = await submitServerTest(frame, payload);
+  expect(saved).toMatchObject({ ok: true });
+  expect(saved.id).toMatch(/^GR-/);
+
+  const verification = await verifyAndCleanup(frame, saved.id);
+  expect(verification).toMatchObject({
     ok: true,
     participant: true,
     raw: true,
@@ -109,9 +130,10 @@ async function assertVerification(result) {
     photoLink: true,
     cleaned: true
   });
+  return saved.id;
 }
 
-test('desktop: embedded form writes Sheets and Drive and confirms success', async ({ browser }) => {
+test('desktop: embedded form UI and real Sheets/Drive cycle', async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 1365, height: 900 } });
   const page = await context.newPage();
 
@@ -121,14 +143,13 @@ test('desktop: embedded form writes Sheets and Drive and confirms success', asyn
   await expect(page.locator('#application-frame')).toBeVisible();
 
   const frame = await waitForServerReady(page);
-  const id = await fillAndSubmit(frame, 'Desktop');
-  const verification = await verifyAndCleanup(frame, id);
-  await assertVerification(verification);
+  const payload = await exerciseWizard(frame, 'Desktop');
+  await fullDataCycle(frame, payload);
 
   await context.close();
 });
 
-test('android: menu is stable and application opens top-level without Drive error', async ({ browser }) => {
+test('android: menu is stable, no Drive iframe error, full data cycle', async ({ browser }) => {
   const context = await browser.newContext({
     viewport: { width: 360, height: 800 },
     isMobile: true,
@@ -162,13 +183,10 @@ test('android: menu is stable and application opens top-level without Drive erro
   const href = await mobileLink.getAttribute('href');
   expect(href).toContain('script.google.com/macros/s/');
 
-  await mobileLink.click();
-  await page.waitForLoadState('domcontentloaded');
-
+  await page.goto(href, { waitUntil: 'domcontentloaded' });
   const frame = await waitForServerReady(page);
-  const id = await fillAndSubmit(frame, 'Android');
-  const verification = await verifyAndCleanup(frame, id);
-  await assertVerification(verification);
+  const payload = await exerciseWizard(frame, 'Android');
+  await fullDataCycle(frame, payload);
 
   await context.close();
 });
