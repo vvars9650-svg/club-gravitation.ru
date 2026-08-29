@@ -1,8 +1,8 @@
 /**
  * One-time authorization probe for CI/CD and manual diagnostics.
- * Touch 2026-08-29: test Apps Script API WebAppConfig automation.
+ * Public function name is intentional so it appears in the Apps Script Run menu.
  */
-function authorizeFormApp_() {
+function authorizeFormApp() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const folder = DriveApp.getFolderById(PHOTO_FOLDER_ID);
   const testFile = folder.createFile(Utilities.newBlob('permission test','text/plain','__gravitation_form_permission_test.txt'));
