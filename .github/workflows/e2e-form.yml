@@ -4,7 +4,10 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "site.js"
+      - "site-v2.js"
+      - "mobile-fixes.css"
+      - "apply-embed.css"
+      - "styles.css"
       - "index.html"
       - "tests/e2e-form.mjs"
       - ".github/workflows/e2e-form.yml"
