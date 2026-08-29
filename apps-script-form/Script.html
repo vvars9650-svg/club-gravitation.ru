@@ -1,0 +1,322 @@
+<script>
+(() => {
+  'use strict';
+
+  const form = document.getElementById('application-form');
+  const steps = Array.from(document.querySelectorAll('.step'));
+  const tabs = Array.from(document.querySelectorAll('.tab'));
+  const progress = document.getElementById('progress-bar');
+  const mobileStep = document.getElementById('mobile-step');
+  const review = document.getElementById('review');
+  const submit = document.getElementById('submit');
+  const status = document.getElementById('status');
+  const success = document.getElementById('success');
+  const successId = document.getElementById('success-id');
+  const age = document.getElementById('age');
+  const city = document.getElementById('city');
+  const cityVisitWrap = document.getElementById('city-visit-wrap');
+  const cityVisit = document.getElementById('city-visit');
+  const phone = document.getElementById('phone');
+  const email = document.getElementById('email');
+  const photo = document.getElementById('photo');
+  const dropzone = document.getElementById('dropzone');
+  const photoPreview = document.getElementById('photo-preview');
+  const photoName = document.getElementById('photo-name');
+  const photoError = document.getElementById('photo-error');
+
+  const STEP_NAMES = ['Контактная информация','Фотография','О вас','Знакомства','Формат встреч','Проверка'];
+  const MAX_PHOTO = 10 * 1024 * 1024;
+  let currentStep = 0;
+  let maxReached = 0;
+  let previewUrl = '';
+  let sending = false;
+
+  fillOptions();
+  fillMeta();
+  bindNavigation();
+  bindValidation();
+  bindPhoto();
+  bindSubmit();
+  renderStep(0);
+
+  function fillOptions() {
+    for (let n = 25; n <= 52; n += 1) age.add(new Option(String(n), String(n)));
+    (window.GRAVITATION_CITIES || []).forEach(name => city.add(new Option(name, name)));
+  }
+
+  function fillMeta() {
+    const qs = new URLSearchParams(location.search);
+    document.getElementById('page-url').value = location.href;
+    document.getElementById('referrer').value = document.referrer || '';
+    document.getElementById('user-agent').value = navigator.userAgent || '';
+    ['utm_source','utm_medium','utm_campaign','utm_content','utm_term'].forEach(key => {
+      const el = document.getElementById(key.replaceAll('_','-'));
+      if (el) el.value = qs.get(key) || '';
+    });
+  }
+
+  function bindNavigation() {
+    form.addEventListener('click', event => {
+      const next = event.target.closest('[data-next]');
+      const back = event.target.closest('[data-back]');
+      if (next) {
+        if (!validateStep(currentStep)) return;
+        goTo(currentStep + 1);
+      }
+      if (back) goTo(currentStep - 1);
+    });
+
+    tabs.forEach((tab, index) => tab.addEventListener('click', () => {
+      if (index <= maxReached) goTo(index);
+    }));
+  }
+
+  function goTo(index) {
+    currentStep = Math.max(0, Math.min(index, steps.length - 1));
+    maxReached = Math.max(maxReached, currentStep);
+    if (currentStep === 5) buildReview();
+    renderStep(currentStep);
+    window.scrollTo({top: 0, behavior: 'smooth'});
+  }
+
+  function renderStep(index) {
+    steps.forEach((step, i) => step.classList.toggle('is-active', i === index));
+    tabs.forEach((tab, i) => {
+      tab.classList.toggle('is-active', i === index);
+      tab.classList.toggle('is-done', i < index || i < maxReached);
+      tab.disabled = i > maxReached;
+    });
+    progress.style.width = `${((index + 1) / steps.length) * 100}%`;
+    mobileStep.textContent = STEP_NAMES[index];
+  }
+
+  function bindValidation() {
+    city.addEventListener('change', syncCityVisit);
+    syncCityVisit();
+
+    phone.addEventListener('focus', () => { if (!phone.value) phone.value = '+7 '; });
+    phone.addEventListener('input', () => {
+      phone.value = formatPhone(phone.value);
+      phone.classList.remove('is-invalid');
+    });
+    email.addEventListener('input', () => email.classList.remove('is-invalid'));
+    form.querySelectorAll('input,select,textarea').forEach(el => {
+      el.addEventListener('change', () => el.classList.remove('is-invalid'));
+    });
+  }
+
+  function syncCityVisit() {
+    const needed = Boolean(city.value && city.value !== 'Краснодар');
+    cityVisitWrap.hidden = !needed;
+    cityVisit.required = needed;
+    if (!needed) cityVisit.value = '';
+  }
+
+  function formatPhone(value) {
+    let digits = String(value || '').replace(/\D/g, '');
+    if (digits[0] === '7' || digits[0] === '8') digits = digits.slice(1);
+    digits = digits.slice(0, 10);
+    let out = '+7';
+    if (digits.length) out += ' ' + digits.slice(0,3);
+    if (digits.length > 3) out += ' ' + digits.slice(3,6);
+    if (digits.length > 6) out += '-' + digits.slice(6,8);
+    if (digits.length > 8) out += '-' + digits.slice(8,10);
+    return out;
+  }
+
+  function normalizedPhone() {
+    let digits = String(phone.value || '').replace(/\D/g, '');
+    if (digits.length === 11 && (digits[0] === '7' || digits[0] === '8')) digits = digits.slice(1);
+    return digits.length === 10 ? '+7' + digits : '';
+  }
+
+  function bindPhoto() {
+    photo.addEventListener('change', () => {
+      const file = photo.files && photo.files[0];
+      if (file) showPhoto(file);
+    });
+
+    const stop = e => { e.preventDefault(); e.stopPropagation(); };
+    ['dragenter','dragover'].forEach(type => dropzone.addEventListener(type, e => {
+      stop(e); dropzone.classList.add('is-dragover');
+    }));
+    ['dragleave','dragend'].forEach(type => dropzone.addEventListener(type, e => {
+      stop(e); dropzone.classList.remove('is-dragover');
+    }));
+    dropzone.addEventListener('drop', e => {
+      stop(e);
+      dropzone.classList.remove('is-dragover');
+      const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (!file) return;
+      if (!validatePhotoFile(file)) return;
+      try {
+        const transfer = new DataTransfer();
+        transfer.items.add(file);
+        photo.files = transfer.files;
+        showPhoto(file);
+      } catch (_) {
+        photoError.textContent = 'Перетаскивание не поддерживается этим браузером. Нажмите на область и выберите фото.';
+      }
+    });
+  }
+
+  function validatePhotoFile(file) {
+    photoError.textContent = '';
+    dropzone.classList.remove('is-invalid');
+    if (!/^image\/(jpeg|png|webp)$/i.test(file.type)) {
+      photoError.textContent = 'Поддерживаются JPG, PNG и WEBP.';
+      dropzone.classList.add('is-invalid');
+      return false;
+    }
+    if (file.size > MAX_PHOTO) {
+      photoError.textContent = 'Фотография должна быть не больше 10 МБ.';
+      dropzone.classList.add('is-invalid');
+      return false;
+    }
+    return true;
+  }
+
+  function showPhoto(file) {
+    if (!validatePhotoFile(file)) return;
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = URL.createObjectURL(file);
+    photoPreview.innerHTML = '';
+    const img = document.createElement('img');
+    img.src = previewUrl;
+    img.alt = 'Предпросмотр фотографии';
+    photoPreview.appendChild(img);
+    photoName.textContent = file.name;
+  }
+
+  function validateStep(index) {
+    clearStatus();
+    let invalid = null;
+    if (index === 0) {
+      ['name','age','gender','city'].forEach(name => {
+        const el = form.elements[name];
+        if (!String(el.value || '').trim()) mark(el);
+      });
+      if (city.value && city.value !== 'Краснодар' && !cityVisit.value) mark(cityVisit);
+      if (!normalizedPhone()) mark(phone);
+      if (email.value && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/u.test(email.value.trim())) mark(email);
+      invalid = steps[index].querySelector('.is-invalid');
+    }
+    if (index === 1) {
+      const file = photo.files && photo.files[0];
+      if (!file || !validatePhotoFile(file)) {
+        if (!file) photoError.textContent = 'Фотография обязательна.';
+        dropzone.classList.add('is-invalid');
+        invalid = dropzone;
+      }
+    }
+    if (invalid) {
+      invalid.scrollIntoView({behavior:'smooth',block:'center'});
+      return false;
+    }
+    return true;
+  }
+
+  function mark(el) { if (el) el.classList.add('is-invalid'); }
+
+  function collectReviewValues() {
+    const fd = new FormData(form);
+    const value = name => {
+      const all = fd.getAll(name).map(v => String(v || '').trim()).filter(Boolean);
+      return all.join(', ');
+    };
+    return {
+      name:value('name'), age:value('age'), gender:value('gender'), city:value('city'),
+      city_visit:city.value === 'Краснодар' ? 'Краснодар' : value('city_visit'), phone:normalizedPhone(),
+      telegram:value('telegram'), email:value('email'), preferred_contact:value('preferred_contact'),
+      occupation:value('occupation'), life_beyond_work:value('life_beyond_work'), interests:value('interests'),
+      interest_reason:value('interest_reason'), expectations:value('expectations'), relationship_context:value('relationship_context'),
+      connection_goal:value('connection_goal'), values_people:value('values_people'), meeting_barriers:value('meeting_barriers'),
+      social_comfort:value('social_comfort'), initiative:value('initiative'), introduction_scenario:value('introduction_scenario'),
+      successful_evening:value('successful_evening'), return_reason:value('return_reason'), unacceptable_behavior:value('unacceptable_behavior'),
+      convenient_days:value('convenient_days'), comfortable_price:value('comfortable_price'), source:value('source')
+    };
+  }
+
+  function buildReview() {
+    const v = collectReviewValues();
+    const cards = [
+      ['Контактная информация',0,[['Имя и фамилия',v.name],['Возраст',v.age],['Пол',v.gender],['Город',v.city],['Посещение Краснодара',v.city_visit],['Телефон',v.phone],['Telegram',v.telegram],['Email',v.email],['Как связаться',v.preferred_contact]]],
+      ['Фотография',1,[['Фото',(photo.files && photo.files[0]) ? 'Загружено' : '—']]],
+      ['О вас',2,[['Чем занимаетесь',v.occupation],['Жизнь кроме работы',v.life_beyond_work],['Интересы',v.interests],['Что зацепило',v.interest_reason],['Ожидания от первой встречи',v.expectations]]],
+      ['Знакомства',3,[['Контекст отношений',v.relationship_context],['Интересующие знакомства',v.connection_goal],['Что цените в людях',v.values_people],['Что мешает знакомиться',v.meeting_barriers],['Комфорт в новой компании',v.social_comfort],['Инициативность',v.initiative],['Естественный способ знакомства',v.introduction_scenario]]],
+      ['Формат встреч',4,[['Удачный вечер',v.successful_evening],['Что заставит вернуться',v.return_reason],['Неприемлемое поведение',v.unacceptable_behavior],['Удобные дни',v.convenient_days],['Комфортная стоимость',v.comfortable_price],['Источник',v.source]]]
+    ];
+    review.innerHTML = cards.map(([title,step,pairs]) => `
+      <article class="review-card">
+        <div class="review-head"><strong>${esc(title)}</strong><button type="button" data-edit="${step}">Изменить</button></div>
+        ${step === 1 && previewUrl ? `<img class="review-photo" src="${previewUrl}" alt="Фотография">` : ''}
+        <dl class="review-grid">${pairs.map(([label,val]) => `<dt>${esc(label)}</dt><dd>${esc(val || '—')}</dd>`).join('')}</dl>
+      </article>`).join('');
+    review.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', () => goTo(Number(btn.dataset.edit))));
+  }
+
+  function bindSubmit() {
+    form.addEventListener('submit', event => {
+      event.preventDefault();
+      if (sending) return;
+      if (!validateStep(0)) return goTo(0);
+      if (!validateStep(1)) return goTo(1);
+      const pd = form.elements.personal_data_consent;
+      const rules = form.elements.rules_consent;
+      if (!pd.checked || !rules.checked) {
+        if (!pd.checked) pd.classList.add('is-invalid');
+        if (!rules.checked) rules.classList.add('is-invalid');
+        status.textContent = 'Подтвердите оба согласия перед отправкой.';
+        return;
+      }
+
+      sending = true;
+      submit.disabled = true;
+      submit.textContent = 'ОТПРАВЛЯЕМ…';
+      status.textContent = '';
+      document.getElementById('submitted-at-client').value = new Date().toISOString();
+
+      google.script.run
+        .withSuccessHandler(result => {
+          if (!result || result.ok !== true || !result.id) {
+            finishError('Сервер не подтвердил сохранение заявки.');
+            return;
+          }
+          finishSuccess(result.id);
+        })
+        .withFailureHandler(error => {
+          const message = error && error.message ? error.message : 'Не удалось отправить заявку. Попробуйте ещё раз.';
+          finishError(message);
+        })
+        .saveApplication(form);
+    });
+  }
+
+  function finishSuccess(id) {
+    sending = false;
+    form.hidden = true;
+    document.getElementById('tabs').hidden = true;
+    mobileStep.hidden = true;
+    progress.style.width = '100%';
+    successId.textContent = id;
+    success.hidden = false;
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+
+  function finishError(message) {
+    sending = false;
+    submit.disabled = false;
+    submit.textContent = 'ОТПРАВИТЬ ЗАЯВКУ';
+    status.textContent = message;
+  }
+
+  function clearStatus() {
+    status.textContent = '';
+    form.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+  }
+
+  function esc(value) {
+    return String(value == null ? '' : value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+  }
+})();
+</script>
