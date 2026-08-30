@@ -72,9 +72,9 @@ test('footer navigation is prominent and back-to-top works', async ({ page }) =>
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, '/about/');
   await expect(page.locator('.footer-links a[href="/founders/"]')).toBeVisible();
-  await expect(page.locator('.footer-to-top')).toBeVisible();
+  await expect(page.locator('.back-to-top')).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  await page.locator('.footer-to-top').click();
+  await page.locator('.back-to-top').click();
   await page.waitForTimeout(900);
   const y = await page.evaluate(() => window.scrollY);
   expect(y).toBeLessThan(100);
@@ -87,7 +87,7 @@ test('mobile privacy heading stays inside viewport', async ({ page }) => {
   expect(box).toBeTruthy();
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(360);
-  await expect(page.locator('.legal-brand')).toBeVisible();
+  await expect(page.locator('.legal-brand-lockup')).toBeVisible();
   await expectNoHorizontalOverflow(page, 'mobile privacy 360');
 });
 
