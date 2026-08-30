@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 90" role="img" aria-labelledby="t">
+  <title id="t">Логотип клуба Гравитация</title>
+  <defs>
+    <linearGradient id="g" x1="17" y1="13" x2="102" y2="79" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F1D6A6"/>
+      <stop offset=".55" stop-color="#D4AF7A"/>
+      <stop offset="1" stop-color="#A96F2F"/>
+    </linearGradient>
+  </defs>
+  <circle cx="55" cy="46" r="29" fill="none" stroke="url(#g)" stroke-width="2.3"/>
+  <ellipse cx="57" cy="46" rx="48" ry="15" fill="none" stroke="url(#g)" stroke-width="2.3" transform="rotate(-17 57 46)"/>
+  <circle cx="76" cy="39" r="5" fill="url(#g)"/>
+  <path d="M94 15l2.7 6.3L103 24l-6.3 2.7L94 33l-2.7-6.3L85 24l6.3-2.7L94 15z" fill="#F1D6A6"/>
+</svg>
