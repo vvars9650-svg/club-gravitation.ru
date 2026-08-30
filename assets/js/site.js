@@ -48,21 +48,8 @@ document.querySelectorAll('.site-footer').forEach(footer => {
     top.className = 'back-to-top';
     top.setAttribute('aria-label', 'Наверх');
     top.setAttribute('title', 'Наверх');
-    top.textContent = '↑';
     top.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
     footer.appendChild(top);
   }
 });
-
-const legal = document.querySelector('.legal');
-if (legal) {
-  const eyebrow = legal.querySelector(':scope > .eyebrow');
-  if (eyebrow) {
-    const lockup = document.createElement('div');
-    lockup.className = 'legal-brand-lockup';
-    lockup.setAttribute('aria-label', 'Гравитация, клуб встреч');
-    lockup.innerHTML = '<img src="/assets/brand/logo-mark.svg" alt=""><span class="legal-brand-lockup__text"><span class="legal-brand-lockup__name">ГРАВИТАЦИЯ</span><span class="legal-brand-lockup__tag">КЛУБ ВСТРЕЧ</span></span>';
-    eyebrow.replaceWith(lockup);
-  }
-}
 })();
