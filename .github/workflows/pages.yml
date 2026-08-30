@@ -34,7 +34,7 @@ jobs:
         uses: actions/deploy-pages@v4
 
   e2e:
-    name: Desktop + Mobile QA + Final Integration
+    name: Desktop + Mobile QA
     needs: deploy
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -49,10 +49,10 @@ jobs:
         run: npm install --no-save @playwright/test@1.55.0
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
-      - name: Run live-site tests and one-off final submission
+      - name: Run live-site responsive tests
         env:
           BASE_URL: https://club-gravitation.ru
-        run: npx playwright test tests/e2e.spec.js tests/final-integration.spec.js --reporter=line
+        run: npx playwright test tests/e2e.spec.js --reporter=line
       - name: Upload Playwright artifacts on failure
         if: failure()
         uses: actions/upload-artifact@v4
