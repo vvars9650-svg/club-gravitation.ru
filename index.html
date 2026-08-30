@@ -3,26 +3,48 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ГРАВИТАЦИЯ — V2</title>
-  <meta name="description" content="Новая многостраничная версия сайта клуба ГРАВИТАЦИЯ.">
+  <meta name="theme-color" content="#caa27e">
+  <title>ГРАВИТАЦИЯ — клуб живых встреч</title>
+  <meta name="description" content="Гравитация — пространство для тех, кто ищет настоящую близость, дружбу, партнёрство и любовь.">
   <link rel="stylesheet" href="/assets/css/site.css">
 </head>
-<body>
-  <header class="site-header">
-    <a class="brand" href="/">ГРАВИТАЦИЯ</a>
+<body class="home-page">
+  <header class="site-header site-header--hero">
+    <a class="brand" href="/" aria-label="Гравитация, главная страница">
+      <span class="brand__name">ГРАВИТАЦИЯ</span>
+      <span class="brand__tag">КЛУБ ВСТРЕЧ</span>
+    </a>
     <nav class="site-nav" aria-label="Основная навигация">
-      <a href="/">Главная</a>
       <a href="/about/">О клубе</a>
       <a href="/events/">Мероприятия</a>
       <a href="/founders/">Основатели</a>
-      <a href="/apply/">Подать заявку</a>
+      <a class="site-nav__cta" href="/apply/">Подать заявку</a>
     </nav>
   </header>
-  <main class="page-shell">
-    <p class="eyebrow">ГРАВИТАЦИЯ V2</p>
-    <h1>Главная страница</h1>
-    <p>Каркас новой версии. Содержание и дизайн этой страницы утверждаем отдельно.</p>
+
+  <main>
+    <section class="home-hero" aria-labelledby="hero-title">
+      <img class="home-hero__image" src="/assets/images/hero-lara.jpg" alt="Женщина в светлом платье на террасе у моря на закате">
+      <div class="home-hero__wash" aria-hidden="true"></div>
+
+      <div class="home-hero__content">
+        <p class="hero-kicker">ГРАВИТАЦИЯ</p>
+        <h1 id="hero-title">ЗДЕСЬ ЧЕЛОВЕК<br>ВИДИТ ЧЕЛОВЕКА</h1>
+
+        <p class="hero-intro">
+          Гравитация — пространство для тех, кто ищет не случайной встречи, а настоящей близости.<br>
+          <strong>Дружбы. Партнёрства. Любви.</strong>
+        </p>
+
+        <p class="hero-steps">За ролями. За статусом.<br>За привычными масками.</p>
+
+        <p class="hero-final">Увидеть того, кто перед тобой. Настоящего.</p>
+
+        <a class="button button--hero" href="/apply/">Подать заявку</a>
+      </div>
+    </section>
   </main>
+
   <script src="/assets/js/site.js"></script>
 </body>
 </html>
