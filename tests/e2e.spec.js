@@ -49,8 +49,8 @@ test('desktop hero uses high-resolution artwork and favicon', async ({ page }) =
   await open(page, '/');
   const hero = page.locator('.home-hero__image');
   await expect(hero).toBeVisible();
+  await expect.poll(async () => hero.evaluate(img => img.complete ? img.naturalWidth : 0), { timeout: 15000 }).toBeGreaterThanOrEqual(1600);
   const natural = await hero.evaluate(img => ({ w: img.naturalWidth, h: img.naturalHeight, src: img.currentSrc }));
-  expect(natural.w).toBeGreaterThanOrEqual(1600);
   expect(natural.h).toBeGreaterThanOrEqual(900);
   expect(natural.src).toContain('hero-1672.webp');
   await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', '/favicon.svg');
@@ -91,9 +91,11 @@ test('application validation, photo processing and review work without backend s
   await page.locator('#form-next').click();
   await expect(page.locator('.form-step[data-step="1"]')).toHaveClass(/is-active/);
 
-  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAQAAABFaP0WAAAADElEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAUAAAADwCAIAAAD+Tyo8AAAGOklEQVR42u3dvXEabRRAYcmjYkRMqogOXIFKcAUqwiWoAjogUkqMynHgGQ0jI5mf3Xfvz3Py7zPsvodzLxh8v9++3AHIyQ+XACAwAAIDIDBAYAAEBkBgAAQGCAyAwAAIDBAYAIEBEBgAgQECAyAwAAIDIDBAYAAEBkBggMAACAyAwAAIDBAYAIEBEBgAgQECAyAwAAIDBAZAYAAEBkBggMAAPvP49ExggL0X8+AG1ODnr9dL/5Pt72fXbSp1H5+e399eCYxZXD3//8PqFOH94H6/fXEz+kgr0bOqOz7CBCYtmSewd5H5mcB1vL1CsGF/kPASmLeDFAryMISXwKXUXcSWsA9MeAmcQ90gemR5nH3CS+DQSoT1IenDrhdeAkd0IJEANZ5F3vAS2KH3jBKHl8AhDnqZmbPGE0wUXgIvfLhLvuuT95mmCy+BHWjPOnF4P/B1Qud4Yk4+x1B/LfRY3dT2KjB1+16H7OoSeNCpbf41gIAXJO/Ga4Rm7/IT9bLj9DfhTWevAhubG12fSuElsPD2ulA1Nl4jNHvbjdMF3momMHubOlxs4zVCz2gvdUNdvZIbrwKzN2iKp+1w+fASmL01Ha698RKYvZUd7hNeArO3lMPdwktg9tZxuGF4CczeCg63DS+B2Zve4c7hJfBk5wzjr63wEvj6/GLZKy+8BDY8pxykhZfA7M3qsPAS2Oqb8mof9jvh/YoHZ8XqG5nDfkddAhue66jLXgIbnqNjZrYDT5Nf9o5X9yt7V+uN60Ngq2++8K7Wm7/2ujtGaMNzJnWNzQosv4k33n/tdY8ILL8JNt5jdd0LAl+WXycmWniP74gI24Fh41Vg+cXM4RVhBYbwKrD8YqHwirACQ3gVuEF+ETO87h2BL57QcLu6c3wnwT0isJfw3OF1BwnspT1ZeN2pk3gTC4PC6+IosPm5dXjdRwKbynJvvO6XERoj1DU2K7D5WXjdTQKbx2ptvO6aERpzhdfFITBsvDBCn70ymcTSbbwn733PNViBIbwEho0XBIbwwg5sAa658VqDFRjCS2DYeEFgCC8IDOElMKjLXgJDeDGSdh8j+QzpQ90y9nb+JEmBhVd4CQwbLwgM4QWBIbwEhvCCwBBeEBjCCwILL3sJDOEFgSG8IDCEl8AQXhAYwgsCQ3hBYOEFgSG8iEu7L/Sn/vJ3lt9qHkznH2lQYOEFgWHjBYEhvCCw8ILAEF4QGMKL+ej4z4uG/SSp0m81D6P5D30rsPCCwLDxgsDspS7swDnWYBuvBViBhRdGaNh4YYSuMYktFV72hr1rBI6+Btt43U0jNGy8UOBa85jwmp8JnHXusvGan43QpWZm4YUCR5/KhNf8TOCU05eN1/xM4Kwv7cIrvwRO+RIuvPK7FN7EmnHjdXGgwKNfyM+f0IR32flZfhVYeKHAzSIsvPKrwMILKPDACAuv/BI464nxGW+cewECnxVh4c1yj+zAsPHKrwIXeoE/7HeH/Y698qvA+aBuzPyyl8BXzszsNTwbobPau1pvVuuN67OsvfKrwNeEl7pWXwVOae/72+uxvcY5wzOBw6n7/QdFn174nSrDM4EThPf4/SoOs5fAycJrAbP6Ejh3eK1nVl8C5w7vNylwzgzPBE4WXg6zl8DJwsth9hI4d3g5zF4C5w4vh9lL4Nzh5TB7CZw7vBxmb0Du99uXDuEdcwodRBdNgUOH978nT4rZS+BYGy+H2WuEHqru3fAf0DgprdPp+hA40MarMC6LETrxxmucZq8CFwyvcdF1IHCmjdfx9dyN0JOFN+YPvp48rx0mavYqcOLwdj7Q1CVwvo336pNd6XCXf4IEbhfei+bnpAe93jMisPC2OPTUJXCX8F4qQGQHkj5sAgvvAj7EUSLL4ySw8EbUYylDwj4wxBK4W3ivtmWAM0EeBnII7N/jvUWhG3Ua9gehpsDCO4dgM8FbAgtvMplJS+ALHKZuBJlJm4uHII+DvTc6doXVXFXgCSJMXeBqFv46IXuBrAKzF8hdYAAEBggMgMAACAyAwACBARAYAIEBEBggMAACAyAwQGAABAZAYAAEBggMgMAACAyAwACBARAYAIEBAgMgMAACAyAwQGAABAZAYIDAAAgMgMAACAwQGEBg/gA/g62XDKAhLwAAAABJRU5ErkJggg==', 'base64');
   await page.locator('#photo').setInputFiles({ name: 'qa-photo.png', mimeType: 'image/png', buffer: png });
   await expect(page.locator('#photo-preview img')).toBeVisible({ timeout: 10000 });
+  await page.waitForTimeout(1200);
+  await expect(page.locator('#photo-error')).toHaveText('');
   await page.locator('#form-next').click();
   await expect(page.locator('.form-step[data-step="2"]')).toHaveClass(/is-active/);
 
