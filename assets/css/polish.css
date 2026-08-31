@@ -100,6 +100,10 @@
   .home-hero__wash{background:linear-gradient(90deg,rgba(15,12,10,.01) 0%,rgba(15,12,10,0) 34%,rgba(247,244,238,.06) 58%,rgba(247,244,238,.18) 100%)!important}
 }
 
+@media(max-width:1199px) and (orientation:portrait){
+  .home-hero .hero-intro,.home-hero .hero-steps,.home-hero .hero-final{color:#2b211b!important}
+}
+
 @media(max-width:390px){
   .site-footer{padding-left:18px;padding-right:18px}
   .site-footer .footer-links{grid-template-columns:1fr 1fr}
