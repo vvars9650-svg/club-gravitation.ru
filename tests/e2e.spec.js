@@ -117,6 +117,45 @@ test('homepage picture exposes all responsive hero sources', async ({ page }) =>
   await expect(page.locator('.home-hero__image')).toHaveAttribute('src', /hero-desktop\.webp$/);
 });
 
+test('tablet and mobile hero copy follows approved responsive zones', async ({ page }) => {
+  const cases = [
+    { label: 'tablet landscape', width: 1024, height: 768, portrait: false },
+    { label: 'tablet portrait', width: 900, height: 1200, portrait: true },
+    { label: 'mobile portrait', width: 390, height: 844, portrait: true }
+  ];
+
+  for (const item of cases) {
+    await page.setViewportSize({ width: item.width, height: item.height });
+    await open(page, '/');
+
+    const kickerDisplay = await page.locator('.hero-kicker').evaluate(el => getComputedStyle(el).display);
+    expect(kickerDisplay, `${item.label}: kicker should be removed`).toBe('none');
+
+    const title = await page.locator('.hero-title-block').boundingBox();
+    const body = await page.locator('.hero-body-block').boundingBox();
+    const actions = await page.locator('.hero-actions').boundingBox();
+    expect(title, `${item.label}: title block`).toBeTruthy();
+    expect(body, `${item.label}: body block`).toBeTruthy();
+    expect(actions, `${item.label}: actions block`).toBeTruthy();
+    expect(title.y, `${item.label}: title should stay high`).toBeLessThan(item.height * .36);
+    expect(actions.y + actions.height, `${item.label}: actions should fit hero`).toBeLessThanOrEqual(item.height + 2);
+
+    if (item.portrait) {
+      expect(title.width, `${item.label}: title wider than body`).toBeGreaterThan(body.width);
+      expect(body.y, `${item.label}: body below title`).toBeGreaterThan(title.y);
+      expect(actions.y, `${item.label}: actions below body`).toBeGreaterThan(body.y);
+      const color = await page.locator('.hero-intro').evaluate(el => getComputedStyle(el).color);
+      const rgb = color.match(/\d+/g).slice(0, 3).map(Number);
+      const luminance = .2126 * rgb[0] + .7152 * rgb[1] + .0722 * rgb[2];
+      expect(luminance, `${item.label}: copy should be dark`).toBeLessThan(120);
+    } else {
+      expect(body.y, `${item.label}: copy lifted with title`).toBeLessThan(item.height * .58);
+    }
+
+    await expectNoHorizontalOverflow(page, `${item.label} approved copy zones`);
+  }
+});
+
 test('desktop navigation buttons have outlines and CTA has gold fill', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, '/about/');
