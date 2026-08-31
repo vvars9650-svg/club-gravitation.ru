@@ -19,6 +19,42 @@ async function expectNoHorizontalOverflow(page, label) {
   expect(metrics.bodyWidth, `${label}: body overflow`).toBeLessThanOrEqual(metrics.clientWidth + 1);
 }
 
+async function inspectHero(page) {
+  const hero = page.locator('.home-hero__image');
+  await expect(hero).toBeVisible();
+  await hero.evaluate(img => img.decode ? img.decode() : Promise.resolve());
+  return hero.evaluate(img => {
+    const style = getComputedStyle(img);
+    const rect = img.getBoundingClientRect();
+    const canvas = document.createElement('canvas');
+    canvas.width = 80;
+    canvas.height = 80;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, 80, 80);
+    const data = ctx.getImageData(0, 0, 80, 80).data;
+    let min = 255, max = 0, sum = 0, sumSq = 0, n = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const y = .2126 * data[i] + .7152 * data[i + 1] + .0722 * data[i + 2];
+      min = Math.min(min, y);
+      max = Math.max(max, y);
+      sum += y;
+      sumSq += y * y;
+      n++;
+    }
+    const mean = sum / n;
+    return {
+      w: img.naturalWidth,
+      h: img.naturalHeight,
+      src: img.currentSrc,
+      opacity: +style.opacity,
+      rectW: rect.width,
+      rectH: rect.height,
+      range: max - min,
+      variance: sumSq / n - mean * mean
+    };
+  });
+}
+
 const pages = [
   ['/', /ЗДЕСЬ ЧЕЛОВЕК/],
   ['/about/', /НЕ ИСКАТЬ ЧЕЛОВЕКА/],
@@ -44,37 +80,41 @@ for (const [path, text] of pages) {
   });
 }
 
-test('homepage approved artwork is actually visible and contains image detail', async ({ page }) => {
-  await page.setViewportSize({ width: 1600, height: 900 });
-  await open(page, '/');
-  const hero = page.locator('.home-hero__image');
-  await expect(hero).toBeVisible();
-  await hero.evaluate(img => img.decode ? img.decode() : Promise.resolve());
-  const result = await hero.evaluate(img => {
-    const style = getComputedStyle(img);
-    const rect = img.getBoundingClientRect();
-    const canvas = document.createElement('canvas');
-    canvas.width = 80; canvas.height = 45;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(img, 0, 0, 80, 45);
-    const data = ctx.getImageData(0, 0, 80, 45).data;
-    let min = 255, max = 0, sum = 0, sumSq = 0, n = 0;
-    for (let i = 0; i < data.length; i += 4) {
-      const y = .2126 * data[i] + .7152 * data[i + 1] + .0722 * data[i + 2];
-      min = Math.min(min, y); max = Math.max(max, y); sum += y; sumSq += y * y; n++;
-    }
-    const mean = sum / n;
-    const variance = sumSq / n - mean * mean;
-    return { w: img.naturalWidth, h: img.naturalHeight, src: img.currentSrc, opacity: +style.opacity, rectW: rect.width, rectH: rect.height, range: max - min, variance };
+const heroCases = [
+  { label: 'desktop', width: 1600, height: 900, asset: 'hero-desktop.webp', portrait: false },
+  { label: 'tablet landscape', width: 1024, height: 768, asset: 'hero-tablet-landscape.webp', portrait: false },
+  { label: 'tablet portrait', width: 900, height: 1200, asset: 'hero-tablet-portrait.webp', portrait: true },
+  { label: 'mobile portrait', width: 390, height: 844, asset: 'hero-mobile.webp', portrait: true }
+];
+
+for (const item of heroCases) {
+  test(`homepage uses dedicated ${item.label} artwork`, async ({ page }) => {
+    await page.setViewportSize({ width: item.width, height: item.height });
+    await open(page, '/');
+    const result = await inspectHero(page);
+    expect(result.src).toContain(item.asset);
+    expect(result.opacity).toBe(1);
+    expect(result.w).toBeGreaterThan(800);
+    expect(result.h).toBeGreaterThan(700);
+    if (item.portrait) expect(result.h).toBeGreaterThan(result.w);
+    else expect(result.w).toBeGreaterThan(result.h);
+    expect(result.rectW).toBeGreaterThanOrEqual(item.width - 2);
+    expect(result.rectH).toBeGreaterThanOrEqual(item.height - 2);
+    expect(result.range).toBeGreaterThan(70);
+    expect(result.variance).toBeGreaterThan(180);
+    await expectNoHorizontalOverflow(page, item.label);
   });
-  expect(result.w).toBe(1672);
-  expect(result.h).toBe(941);
-  expect(result.src).toContain('glavnaya-approved.webp');
-  expect(result.opacity).toBe(1);
-  expect(result.rectW).toBeGreaterThan(1200);
-  expect(result.rectH).toBeGreaterThan(700);
-  expect(result.range).toBeGreaterThan(80);
-  expect(result.variance).toBeGreaterThan(250);
+}
+
+test('homepage picture exposes all responsive hero sources', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, '/');
+  const sources = await page.locator('.home-hero__picture source').evaluateAll(nodes => nodes.map(n => ({ media: n.media, srcset: n.srcset })));
+  expect(sources).toHaveLength(3);
+  expect(sources.some(s => s.srcset.includes('hero-mobile.webp'))).toBeTruthy();
+  expect(sources.some(s => s.srcset.includes('hero-tablet-portrait.webp'))).toBeTruthy();
+  expect(sources.some(s => s.srcset.includes('hero-tablet-landscape.webp'))).toBeTruthy();
+  await expect(page.locator('.home-hero__image')).toHaveAttribute('src', /hero-desktop\.webp$/);
 });
 
 test('desktop navigation buttons have outlines and CTA has gold fill', async ({ page }) => {
