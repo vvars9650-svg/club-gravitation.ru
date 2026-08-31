@@ -44,7 +44,6 @@
   .site-nav__cta{justify-content:center;margin-top:4px}
 
   .home-hero__image{object-position:32% center!important}
-  .home-hero__wash{background:linear-gradient(180deg,rgba(13,13,15,.04) 0%,rgba(13,13,15,.01) 34%,rgba(20,14,11,.04) 52%,rgba(20,14,11,.55) 100%)!important}
 
   .site-footer{grid-template-columns:1fr;grid-template-areas:"top" "links" "brand" "meta" "copy";gap:14px;padding:28px 20px}
   .back-to-top{grid-area:top;width:100%;height:44px;border-radius:999px;font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;display:flex;align-items:center;justify-content:center;gap:9px}
@@ -63,6 +62,44 @@
   .legal p{max-width:100%}
 }
 
+/* Responsive hero copy: layout follows the supplied landscape/portrait/mobile crops. */
+@media(max-width:1199px){
+  .home-hero .hero-kicker{display:none!important}
+}
+
+@media(min-width:768px) and (max-width:1199px) and (orientation:landscape){
+  .home-hero__content{width:min(48vw,560px);padding-top:clamp(118px,15vh,145px);padding-right:4vw}
+  .home-hero .hero-title-block{position:relative;transform:translateY(-26px)}
+  .home-hero .hero-body-block{position:relative;transform:translateY(-34px);max-width:520px}
+  .home-hero .hero-actions{margin-top:2px}
+}
+
+@media(min-width:768px) and (max-width:1199px) and (orientation:portrait){
+  .home-hero__content{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;margin:0!important;padding:0!important;color:#2b211b!important;pointer-events:none}
+  .home-hero .hero-title-block{position:absolute;top:14svh;right:5vw;width:min(54vw,500px)}
+  .home-hero h1{font-size:clamp(2.8rem,6vw,4.4rem);line-height:1.02;color:#2b211b}
+  .home-hero .hero-body-block{position:absolute;top:35svh;right:5vw;width:min(38vw,360px);color:#2b211b}
+  .home-hero .hero-intro{margin:0;font-size:clamp(.96rem,1.75vw,1.12rem);line-height:1.55}
+  .home-hero .hero-steps{margin-top:18px;color:#59463a}
+  .home-hero .hero-final{margin-top:16px;color:#2b211b}
+  .home-hero .hero-actions{position:absolute;top:64svh;right:5vw;width:min(42vw,400px);margin:0;pointer-events:auto;flex-wrap:wrap}
+  .home-hero .text-link{color:#2b211b}
+  .home-hero__wash{background:linear-gradient(90deg,rgba(15,12,10,.015) 0%,rgba(15,12,10,0) 36%,rgba(247,244,238,.06) 52%,rgba(247,244,238,.2) 100%)!important}
+}
+
+@media(max-width:767px) and (orientation:portrait){
+  .home-hero__content{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;margin:0!important;padding:0!important;color:#2b211b!important;pointer-events:none}
+  .home-hero .hero-title-block{position:absolute;top:16svh;right:5vw;width:72vw;max-width:300px}
+  .home-hero h1{font-size:clamp(2rem,8.7vw,2.9rem);line-height:1.02;color:#2b211b}
+  .home-hero .hero-body-block{position:absolute;top:42svh;right:5vw;width:49vw;max-width:215px;color:#2b211b}
+  .home-hero .hero-intro{margin:0;font-size:clamp(.78rem,3.35vw,.9rem);line-height:1.46}
+  .home-hero .hero-steps{margin-top:14px;font-size:clamp(.76rem,3.15vw,.86rem);line-height:1.45;color:#59463a}
+  .home-hero .hero-final{margin-top:12px;font-size:clamp(.76rem,3.15vw,.86rem);line-height:1.45;color:#2b211b}
+  .home-hero .hero-actions{position:absolute;top:73svh;left:5vw;right:5vw;width:auto;margin:0;pointer-events:auto;flex-wrap:wrap;gap:16px}
+  .home-hero .text-link{color:#2b211b}
+  .home-hero__wash{background:linear-gradient(90deg,rgba(15,12,10,.01) 0%,rgba(15,12,10,0) 34%,rgba(247,244,238,.06) 58%,rgba(247,244,238,.18) 100%)!important}
+}
+
 @media(max-width:390px){
   .site-footer{padding-left:18px;padding-right:18px}
   .site-footer .footer-links{grid-template-columns:1fr 1fr}
@@ -70,9 +107,15 @@
   .legal{padding-left:18px;padding-right:18px}
   .legal-brand-art{max-width:270px;margin-bottom:26px}
   .legal h1{font-size:clamp(1.85rem,8vw,2.2rem)}
+  .home-hero .hero-title-block{right:4vw;width:74vw}
+  .home-hero .hero-body-block{right:4vw;width:50vw}
+  .home-hero .hero-actions{left:4vw;right:4vw;gap:12px}
 }
 
 @media(max-width:350px){
   .site-footer .footer-links{grid-template-columns:1fr}
   .legal h1{font-size:1.8rem}
+  .home-hero .hero-title-block{top:15svh;width:76vw}
+  .home-hero .hero-body-block{top:40svh;width:52vw}
+  .home-hero .hero-actions{top:75svh}
 }
