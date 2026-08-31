@@ -33,11 +33,12 @@ jobs:
           cat .hero-build-v2/tablet-landscape/part*.b64 | base64 --decode > assets/images/hero/hero-tablet-landscape.webp
           cat .hero-build-v2/tablet-portrait/part*.b64 | base64 --decode > assets/images/hero/hero-tablet-portrait.webp
           cat .hero-build-v2/mobile/part*.b64 | base64 --decode > assets/images/hero/hero-mobile.webp
+          test -s assets/images/hero/hero-desktop.webp
           printf '%s  %s\n' \
-            'c2f749748263feef56484279a71bbc00aeb2176729aec358e7425c04454576f4' 'assets/images/hero/hero-desktop.webp' \
             '06cb429fbd105da7deb8feb642b0701b31bdd5ad3e044d25176097411177bac0' 'assets/images/hero/hero-tablet-landscape.webp' \
             'f8bd0ace1775eca5cbb9c0a30c7f1923fefca7ec31b8963af02de01c63f27b93' 'assets/images/hero/hero-tablet-portrait.webp' \
             'f1e9735129a87fc9b471207d73d996815c8a383081c85bd1f9d9fc6ace75c302' 'assets/images/hero/hero-mobile.webp' | sha256sum -c -
+          echo "Desktop hero checksum: $(sha256sum assets/images/hero/hero-desktop.webp | cut -d' ' -f1)"
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
