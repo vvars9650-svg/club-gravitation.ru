@@ -1,13 +1,15 @@
 (() => {
 'use strict';
 
-const polishHref = '/assets/css/polish.css';
-if (!document.querySelector(`link[href="${polishHref}"]`)) {
-  const polish = document.createElement('link');
-  polish.rel = 'stylesheet';
-  polish.href = polishHref;
-  document.head.appendChild(polish);
-}
+const cssLayers = ['/assets/css/polish.css', '/assets/css/tz-20260831.css'];
+cssLayers.forEach(href => {
+  if (!document.querySelector(`link[href="${href}"]`)) {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = href;
+    document.head.appendChild(link);
+  }
+});
 
 const menu = document.querySelector('.menu-toggle');
 const nav = document.querySelector('.site-nav');
