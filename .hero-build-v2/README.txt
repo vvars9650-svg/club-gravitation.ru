@@ -1,0 +1,1 @@
+Generated responsive hero assets are reconstructed during GitHub Pages deploy from base64 chunks. Do not edit manually.
