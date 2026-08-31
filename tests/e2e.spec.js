@@ -81,7 +81,7 @@ for (const [path, text] of pages) {
 }
 
 const heroCases = [
-  { label: 'desktop', width: 1600, height: 900, asset: 'hero-desktop.png', portrait: false },
+  { label: 'desktop', width: 1600, height: 900, asset: 'hero-desktop.webp', portrait: false },
   { label: 'tablet landscape', width: 1024, height: 768, asset: 'hero-tablet-landscape.webp', portrait: false },
   { label: 'tablet portrait', width: 900, height: 1200, asset: 'hero-tablet-portrait.webp', portrait: true },
   { label: 'mobile portrait', width: 390, height: 844, asset: 'hero-mobile.webp', portrait: true }
@@ -114,7 +114,7 @@ test('homepage picture exposes all responsive hero sources', async ({ page }) =>
   expect(sources.some(s => s.srcset.includes('hero-mobile.webp'))).toBeTruthy();
   expect(sources.some(s => s.srcset.includes('hero-tablet-portrait.webp'))).toBeTruthy();
   expect(sources.some(s => s.srcset.includes('hero-tablet-landscape.webp'))).toBeTruthy();
-  await expect(page.locator('.home-hero__image')).toHaveAttribute('src', /hero-desktop\.png$/);
+  await expect(page.locator('.home-hero__image')).toHaveAttribute('src', /hero-desktop\.webp$/);
 });
 
 test('tablet and mobile hero copy follows approved responsive zones', async ({ page }) => {
