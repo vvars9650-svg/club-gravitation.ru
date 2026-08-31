@@ -1,0 +1,100 @@
+/* Final visual corrections from the approved 31 Aug layout references. */
+
+/* ABOUT: how it works */
+.principle-grid article{display:flex;flex-direction:column}
+.principle-grid article>span{display:none!important}
+.principle-grid h3{margin:0 0 22px!important;text-align:center;font-size:clamp(1.4rem,1.65vw,1.75rem)!important;line-height:1.25;font-weight:500}
+.principle-grid p{font-size:clamp(1rem,1.05vw,1.12rem);line-height:1.72!important}
+
+/* ABOUT: outcomes */
+.outcome-grid article{display:flex;flex-direction:column}
+.outcome-grid i{display:block;width:100%;text-align:center;font-size:clamp(3.6rem,4vw,4.8rem)!important;line-height:1;color:#a97942}
+.outcome-grid h3{font-size:clamp(1.25rem,1.4vw,1.45rem)!important;margin:28px 0 11px!important}
+.outcome-grid p{font-size:clamp(.98rem,1vw,1.08rem);line-height:1.62!important}
+
+/* FOUNDERS: readable gold on cream */
+.founders-hero h1 em{color:#ad7436!important;text-shadow:0 0 1px rgba(32,27,23,.08)}
+
+@media(min-width:981px){
+  .principle-grid{align-items:stretch}
+  .principle-grid article{min-height:310px!important;padding:34px 36px!important}
+  .principle-grid h3{min-height:2.5em;display:flex;align-items:flex-start;justify-content:center}
+  .outcome-grid{align-items:stretch}
+  .outcome-grid article{min-height:260px!important;padding:30px 28px!important}
+}
+
+/* DESKTOP HERO: whole clean Drive image + compact aligned live copy. */
+@media(min-width:1200px){
+  .home-hero__image{object-position:center center!important}
+  .home-hero__wash{background:linear-gradient(90deg,rgba(13,13,15,.025) 0%,rgba(13,13,15,0) 44%,rgba(247,244,238,.04) 58%,rgba(247,244,238,.16) 100%)!important}
+  .home-hero__content{width:min(49vw,760px)!important;margin-left:auto!important;padding:clamp(105px,12vh,132px) 5vw 68px 18px!important}
+  .home-hero .hero-kicker{margin:0 0 14px!important}
+  .home-hero .hero-title-block{width:100%;max-width:760px}
+  .home-hero h1{max-width:none!important;font-size:clamp(3.45rem,4.4vw,5rem)!important;line-height:1!important}
+  .home-hero .hero-body-block{width:100%;max-width:700px;margin-top:clamp(22px,2.8vh,30px)}
+  .home-hero .hero-intro{max-width:700px!important;margin:0!important;font-size:clamp(.98rem,1.04vw,1.15rem)!important;line-height:1.45!important}
+  .home-hero .hero-steps{margin:14px 0 0!important;line-height:1.42!important}
+  .home-hero .hero-final{margin:11px 0 0!important;line-height:1.42!important}
+  .home-hero .hero-actions{margin-top:22px!important;gap:24px!important}
+  .home-hero .hero-actions .button--gold{min-width:164px;min-height:50px;padding:14px 28px;font-size:.82rem}
+}
+
+/* TABLET LANDSCAPE: lift copy above the ship. */
+@media(min-width:768px) and (max-width:1199px) and (orientation:landscape){
+  .home-hero__content{width:min(51vw,590px)!important;margin-left:auto!important;padding:clamp(88px,10.5vh,112px) 4vw 52px 14px!important;color:#2b211b!important}
+  .home-hero .hero-title-block{position:relative!important;transform:none!important;width:100%}
+  .home-hero h1{font-size:clamp(2.75rem,5vw,4rem)!important;line-height:1!important;color:#2b211b!important}
+  .home-hero .hero-body-block{position:relative!important;transform:none!important;width:100%;max-width:540px!important;margin-top:16px}
+  .home-hero .hero-intro{margin:0!important;font-size:clamp(.9rem,1.4vw,1.05rem)!important;line-height:1.4!important;color:#2b211b!important}
+  .home-hero .hero-steps{margin:12px 0 0!important;line-height:1.38!important;color:#59463a!important}
+  .home-hero .hero-final{margin:10px 0 0!important;line-height:1.38!important;color:#2b211b!important}
+  .home-hero .hero-actions{margin-top:16px!important;gap:20px!important}
+  .home-hero .hero-actions .button--gold{min-width:150px;min-height:48px}
+  .home-hero .text-link{color:#2b211b!important}
+}
+
+/* TABLET PORTRAIT: one right-aligned vertical system. */
+@media(min-width:768px) and (max-width:1199px) and (orientation:portrait){
+  .home-hero__content{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;margin:0!important;padding:0!important;color:#2b211b!important;pointer-events:none}
+  .home-hero .hero-title-block{position:absolute!important;top:10.5svh!important;right:4.5vw!important;width:min(43vw,410px)!important;max-width:none!important}
+  .home-hero h1{font-size:clamp(2.75rem,5.35vw,4.35rem)!important;line-height:1.01!important;color:#2b211b!important}
+  .home-hero .hero-body-block{position:absolute!important;top:34svh!important;right:4.5vw!important;width:min(39vw,370px)!important;max-width:none!important;color:#2b211b!important}
+  .home-hero .hero-intro{margin:0!important;font-size:clamp(.95rem,1.7vw,1.12rem)!important;line-height:1.48!important;color:#2b211b!important}
+  .home-hero .hero-steps{margin:15px 0 0!important;font-size:clamp(.9rem,1.55vw,1.04rem)!important;line-height:1.45!important;color:#59463a!important}
+  .home-hero .hero-final{margin:13px 0 0!important;font-size:clamp(.9rem,1.55vw,1.04rem)!important;line-height:1.45!important;color:#2b211b!important;font-weight:600}
+  .home-hero .hero-actions{position:absolute!important;top:auto!important;bottom:11svh!important;right:4.5vw!important;left:auto!important;width:min(48vw,450px)!important;margin:0!important;pointer-events:auto;display:flex!important;align-items:center!important;gap:22px!important;flex-wrap:nowrap!important}
+  .home-hero .hero-actions .button--gold{min-width:178px;min-height:52px;padding:14px 26px;font-size:.82rem}
+  .home-hero .text-link{color:#2b211b!important;white-space:nowrap}
+  .home-hero__wash{background:linear-gradient(90deg,rgba(13,13,15,.01) 0%,rgba(13,13,15,0) 38%,rgba(247,244,238,.05) 58%,rgba(247,244,238,.16) 100%)!important}
+}
+
+/* MOBILE PORTRAIT: title defines the right edge for every lower block. */
+@media(max-width:767px) and (orientation:portrait){
+  .home-hero__content{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;margin:0!important;padding:0!important;color:#2b211b!important;pointer-events:none}
+  .home-hero .hero-title-block{position:absolute!important;top:13.5svh!important;right:4vw!important;width:82vw!important;max-width:360px!important}
+  .home-hero h1{font-size:clamp(1.95rem,8.15vw,2.7rem)!important;line-height:1.02!important;color:#2b211b!important}
+  .home-hero .hero-body-block{position:absolute!important;top:31.5svh!important;right:4vw!important;width:64vw!important;max-width:280px!important;color:#2b211b!important}
+  .home-hero .hero-intro{margin:0!important;font-size:clamp(.78rem,3.25vw,.9rem)!important;line-height:1.44!important;color:#2b211b!important}
+  .home-hero .hero-steps{margin:12px 0 0!important;font-size:clamp(.75rem,3.05vw,.86rem)!important;line-height:1.42!important;color:#59463a!important}
+  .home-hero .hero-final{margin:11px 0 0!important;font-size:clamp(.76rem,3.05vw,.86rem)!important;line-height:1.42!important;color:#2b211b!important;font-weight:600}
+  .home-hero .hero-actions{position:absolute!important;top:auto!important;bottom:9.5svh!important;left:4vw!important;right:4vw!important;width:auto!important;margin:0!important;pointer-events:auto;display:flex!important;align-items:center!important;justify-content:space-between!important;gap:12px!important;flex-wrap:nowrap!important}
+  .home-hero .hero-actions .button--gold{min-width:44vw;min-height:52px;padding:14px 18px;font-size:.78rem;white-space:nowrap}
+  .home-hero .text-link{color:#2b211b!important;white-space:nowrap;font-size:.78rem}
+  .home-hero__wash{background:linear-gradient(90deg,rgba(13,13,15,.008) 0%,rgba(13,13,15,0) 36%,rgba(247,244,238,.04) 62%,rgba(247,244,238,.12) 100%)!important}
+}
+
+@media(max-width:390px) and (orientation:portrait){
+  .home-hero .hero-title-block{right:4vw!important;width:84vw!important}
+  .home-hero .hero-body-block{right:4vw!important;width:66vw!important}
+  .home-hero .hero-actions{left:4vw!important;right:4vw!important;gap:10px!important}
+  .home-hero .hero-actions .button--gold{min-width:45vw;padding-left:14px;padding-right:14px}
+  .home-hero .text-link{font-size:.74rem}
+}
+
+@media(max-width:350px) and (orientation:portrait){
+  .home-hero .hero-title-block{top:13svh!important;width:86vw!important}
+  .home-hero .hero-body-block{top:31svh!important;width:68vw!important}
+  .home-hero .hero-actions{bottom:8.5svh!important}
+  .home-hero .hero-actions .button--gold{font-size:.72rem}
+  .home-hero .text-link{font-size:.7rem}
+}
