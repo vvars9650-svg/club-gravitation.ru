@@ -1,6 +1,6 @@
 -- GRAVITATION V3 YDB preflight
 -- Run before 001_indexes.sql.
--- Expected result for duplicate phone query: zero rows.
+-- The duplicate-phone query MUST return zero rows.
 
 SELECT
     phone,
@@ -10,7 +10,8 @@ WHERE phone IS NOT NULL AND phone != ""
 GROUP BY phone
 HAVING COUNT(*) > 1;
 
--- Informational: participants without phone should be reviewed separately.
+-- Informational only. Existing test/system participants without phone are not
+-- backfilled into participant_phone_keys. New website applications require phone.
 SELECT
     participant_id,
     full_name,
