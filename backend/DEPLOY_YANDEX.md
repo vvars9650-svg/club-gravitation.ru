@@ -18,9 +18,10 @@ Controlled deployment sequence for the existing Yandex Cloud resources. Infrastr
 3. Production frontend on `main` remains unchanged.
 4. Run `backend/migrations/000_preflight.sql` in YDB.
 5. Duplicate-phone query must return zero rows.
-6. Run `backend/migrations/001_indexes.sql` to create/backfill `participant_phone_keys`.
-7. Run `backend/migrations/002_verify_phone_registry.sql`.
-8. Both verification result sets must be empty.
+6. Run `backend/migrations/001_indexes.sql` to create `participant_phone_keys`.
+7. Run `backend/migrations/002_backfill_phone_registry.sql`.
+8. Run `backend/migrations/003_verify_phone_registry.sql`.
+9. Both verification result sets must be empty.
 
 Do not attempt to add `GLOBAL UNIQUE` index to the existing `participants` table. YDB rejected this operation with `Adding a unique index to an existing table is disabled`. Phone uniqueness is enforced through `participant_phone_keys.phone PRIMARY KEY`.
 
@@ -151,7 +152,7 @@ Two simultaneous first applications with the same phone race on the same `partic
 If a V3 test fails:
 
 1. do not switch frontend;
-2. point API Gateway/function routing back to the previous known-good function version if necessary;
+2. point routing back to the previous known-good function version if necessary;
 3. keep `main` unchanged;
 4. inspect logs by `request_id`;
 5. fix GitHub `v3`, rerun CI, then create another function version.
