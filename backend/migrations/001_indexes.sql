@@ -1,21 +1,25 @@
--- GRAVITATION V3 backend indexes
--- Apply to YDB gravitation-v3 before deploying backend/src/index_v3.py.
--- Existing test data must not contain duplicate non-NULL phone values.
+-- GRAVITATION V3 participant phone registry
+-- YDB does not allow adding a UNIQUE secondary index to this existing table.
+-- We enforce phone uniqueness with a dedicated table whose PRIMARY KEY is phone.
+-- Run after 000_preflight.sql returns zero duplicate non-empty phones.
 
-ALTER TABLE participants
-ADD INDEX idx_participants_phone GLOBAL UNIQUE SYNC ON (phone);
+CREATE TABLE participant_phone_keys (
+    phone Utf8 NOT NULL,
+    participant_id Utf8 NOT NULL,
+    created_at Timestamp NOT NULL,
+    PRIMARY KEY (phone)
+);
 
-ALTER TABLE participants
-ADD INDEX idx_participants_email GLOBAL SYNC ON (email);
-
-ALTER TABLE participants
-ADD INDEX idx_participants_telegram GLOBAL SYNC ON (telegram);
-
-ALTER TABLE applications
-ADD INDEX idx_applications_participant GLOBAL SYNC ON (participant_id);
-
-ALTER TABLE files
-ADD INDEX idx_files_application GLOBAL SYNC ON (application_id);
-
-ALTER TABLE consents
-ADD INDEX idx_consents_application GLOBAL SYNC ON (application_id);
+-- Backfill existing participants that already have a phone.
+-- The preflight duplicate check must be clean before this statement is run.
+UPSERT INTO participant_phone_keys (
+    phone,
+    participant_id,
+    created_at
+)
+SELECT
+    phone,
+    participant_id,
+    CurrentUtcTimestamp()
+FROM participants
+WHERE phone IS NOT NULL AND phone != "";
