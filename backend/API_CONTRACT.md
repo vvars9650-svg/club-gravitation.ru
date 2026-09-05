@@ -53,6 +53,20 @@ Content-Type: `application/json`
 - `user_agent`
 - `client_timestamp`
 
+## Participant resolution
+
+Before a new `Participant` is created, the backend searches existing participants by exact submitted contacts:
+
+1. phone;
+2. email when present;
+3. Telegram when present.
+
+If exactly one participant matches, that `participant_id` is reused and a new `Application` is linked to it.
+
+If submitted contacts point to more than one existing participant, the backend must not merge records automatically and returns HTTP `409` with code `participant_conflict` for manual review.
+
+A repeat application must not reset lifecycle fields such as status, priority, owner, next action or original `created_at` of an existing participant.
+
 ### Success response
 
 HTTP 201
@@ -63,11 +77,26 @@ HTTP 201
   "message": "Заявка принята",
   "participant_id": "GR-...",
   "application_id": "APP-...",
-  "file_id": "FILE-..."
+  "file_id": "FILE-...",
+  "participant_reused": false
 }
 ```
 
-### Error response
+`participant_reused` is `true` when the application is linked to an already existing participant.
+
+### Contact conflict
+
+HTTP 409
+
+```json
+{
+  "success": false,
+  "error": "Контактные данные требуют ручной проверки",
+  "code": "participant_conflict"
+}
+```
+
+### Other errors
 
 ```json
 {
