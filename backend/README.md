@@ -10,19 +10,19 @@ GitHub является источником истины по backend-коду.
 
 ## Файлы
 
-- `backend/src/index.py` — точный baseline Cloud Function, скопированный из Yandex Cloud до V3-рефакторинга.
-- `backend/src/index_v3.py` — предыдущий V3 prototype/release candidate, сохранён для истории разработки.
-- `backend/src/index_v3_release.py` — актуальный release candidate после обнаружения ограничения YDB на добавление UNIQUE secondary index к существующей таблице.
-- `backend/tests/` — unit tests.
-- `backend/API_CONTRACT.md` — API-контракт `POST /applications`.
-- `backend/BASELINE.md` — исходное состояние Yandex Cloud backend.
-- `backend/migrations/000_preflight.sql` — проверка данных перед миграцией.
-- `backend/migrations/001_indexes.sql` — создание таблицы `participant_phone_keys`.
-- `backend/migrations/002_backfill_phone_registry.sql` — backfill существующих телефонов.
-- `backend/migrations/003_verify_phone_registry.sql` — проверка результата backfill.
+- `backend/src/index.py` — точный baseline Cloud Function до V3-рефакторинга;
+- `backend/src/index_v3.py` — общий V3 core/helper layer;
+- `backend/src/index_v3_release.py` — актуальный release candidate и entrypoint module;
+- `backend/tests/` — unit tests;
+- `backend/API_CONTRACT.md` — API-контракт `POST /applications`;
+- `backend/BASELINE.md` — исходное состояние Yandex Cloud backend;
+- `backend/migrations/000_preflight.sql` — проверка исходных данных;
+- `backend/migrations/001_indexes.sql` — создание `participant_phone_keys`;
+- `backend/migrations/002_backfill_phone_registry.sql` — backfill телефонов;
+- `backend/migrations/003_verify_phone_registry.sql` — контроль backfill;
 - `backend/DEPLOY_YANDEX.md` — controlled deploy и rollback.
 
-## Что реализовано в актуальном release candidate
+## Что реализовано
 
 - canonical JSON API contract;
 - backward-compatible aliases для текущих V2 field names;
@@ -31,40 +31,52 @@ GitHub является источником истины по backend-коду.
 - обязательный `Idempotency-Key`;
 - deterministic Application/Consent/File/Audit IDs;
 - idempotent replay without duplicate records;
-- detection of same idempotency key with changed payload;
+- конфликт при повторном idempotency key с другим payload;
 - phone-authoritative participant resolution;
-- database-level phone uniqueness through `participant_phone_keys(phone PRIMARY KEY)`;
-- protection from ambiguous email/Telegram matches;
-- preservation of existing CRM lifecycle fields on repeat application;
-- application-scoped immutable photo path based on application ID + request fingerprint;
-- Yandex Disk access-token refresh through Lockbox OAuth credentials;
+- database-level phone uniqueness через `participant_phone_keys(phone PRIMARY KEY)`;
+- защита от конфликтов email/Telegram;
+- сохранение lifecycle-полей Participant при повторной заявке;
+- application-scoped photo path на основе application ID + request fingerprint;
+- Yandex Disk access-token refresh через Lockbox OAuth credentials;
 - honeypot rejection;
-- structured technical logging with `request_id`;
-- HTTP error codes and machine-readable error codes;
-- lazy YDB client initialization for testability;
-- unit tests and GitHub Actions CI.
+- structured logging с `request_id`;
+- machine-readable HTTP error codes;
+- unit tests и GitHub Actions CI.
+
+## YDB migration status
+
+Миграция реестра телефона завершена и проверена вручную в YDB:
+
+1. preflight показал 0 дублей непустого телефона;
+2. `participant_phone_keys` создана;
+3. существующие телефоны перенесены;
+4. обе verification-проверки вернули пустой результат.
+
+Участники без телефона в registry не входят. Новая web-заявка без телефона backend не принимает.
 
 ## Почему используется `participant_phone_keys`
 
-YDB вернул фактическое ограничение: `Adding a unique index to an existing table is disabled` при попытке добавить UNIQUE secondary index к существующей `participants`.
+YDB фактически отклонил попытку добавить UNIQUE secondary index к существующей `participants`: `Adding a unique index to an existing table is disabled`.
 
-Поэтому production V3 не зависит от UNIQUE secondary index. Вместо этого создаётся отдельная таблица:
+Поэтому production V3 использует отдельную таблицу:
 
 `participant_phone_keys(phone PRIMARY KEY -> participant_id)`
 
-Телефон обязателен для анкеты. Primary Key физически не позволяет двум параллельным first-submit операциям закрепить один и тот же телефон за разными участниками.
+Primary Key не позволяет двум параллельным first-submit операциям закрепить один телефон за разными участниками.
 
-## YDB deployment prerequisite
+## Release artifact
 
-Перед развёртыванием release candidate:
+Каждый успешный `V3 Backend CI` в ветке `v3` собирает готовый ZIP для Yandex Cloud и публикует его как GitHub Actions artifact:
 
-1. `backend/migrations/000_preflight.sql` должен показать 0 дублей непустого телефона;
-2. выполнить `backend/migrations/001_indexes.sql`;
-3. выполнить `backend/migrations/002_backfill_phone_registry.sql`;
-4. выполнить `backend/migrations/003_verify_phone_registry.sql`;
-5. обе проверки в шаге 4 должны вернуть пустой результат.
+`gravitation-v3-backend-<commit-sha>`
 
-Участники без телефона не включаются в registry. Новая web-заявка без телефона backend не принимает.
+ZIP содержит:
+
+- `index_v3.py`;
+- `index_v3_release.py`;
+- `requirements.txt`.
+
+Entrypoint для Cloud Function: `index_v3_release.handler`.
 
 ## Existing Yandex Cloud resources
 
@@ -87,4 +99,4 @@ YDB вернул фактическое ограничение: `Adding a unique
 
 ## Current stopping point
 
-GitHub-side release candidate подготовлен. Следующее действие выполняется в Yandex Cloud: создать `participant_phone_keys`, сделать backfill и verification, затем создать новую Cloud Function version с entrypoint `index_v3_release.handler`.
+GitHub-side release candidate и YDB migration готовы. Следующее действие выполняется в Yandex Cloud: создать новую версию существующей `gravitation-v3-api` из последнего успешного ZIP artifact с entrypoint `index_v3_release.handler`, сохранив текущие env vars, Lockbox bindings и service account.
