@@ -11,25 +11,69 @@ Controlled deployment sequence for the existing Yandex Cloud resources. Infrastr
 - Gateway service account: `gravitation-v3-gateway`
 - Lockbox: `gravitation-v3-disk-oauth`
 
-## Preconditions
+## YDB migration status
 
-1. GitHub branch is `v3`.
-2. `V3 Backend CI` is green.
-3. Production frontend on `main` remains unchanged.
-4. Run `backend/migrations/000_preflight.sql` in YDB.
-5. Duplicate-phone query must return zero rows.
-6. Run `backend/migrations/001_indexes.sql` to create `participant_phone_keys`.
-7. Run `backend/migrations/002_backfill_phone_registry.sql`.
-8. Run `backend/migrations/003_verify_phone_registry.sql`.
-9. Both verification result sets must be empty.
+Completed and verified:
+
+1. `backend/migrations/000_preflight.sql` — zero duplicate non-empty phones;
+2. `backend/migrations/001_indexes.sql` — `participant_phone_keys` created;
+3. `backend/migrations/002_backfill_phone_registry.sql` — existing non-empty phones backfilled;
+4. `backend/migrations/003_verify_phone_registry.sql` — both verification queries returned empty results.
 
 Do not attempt to add `GLOBAL UNIQUE` index to the existing `participants` table. YDB rejected this operation with `Adding a unique index to an existing table is disabled`. Phone uniqueness is enforced through `participant_phone_keys.phone PRIMARY KEY`.
+
+## Release artifact
+
+`V3 Backend CI` builds a deployment ZIP on every backend commit in branch `v3`.
+
+The ZIP contains exactly:
+
+- `index_v3.py` — shared V3 core;
+- `index_v3_release.py` — active release handler;
+- `requirements.txt` — Python dependencies.
+
+The workflow artifact is named `gravitation-v3-backend-<commit-sha>` and is retained for 14 days.
+
+Entrypoint: `index_v3_release.handler`.
+
+## Cloud Function deployment
+
+Keep current resource settings:
+
+- runtime: Python 3.14;
+- timeout: 10 seconds initially;
+- memory: 128 MB initially;
+- service account: `gravitation-v3-api`;
+- environment variables: `YDB_DATABASE`, `YDB_ENDPOINT`;
+- Lockbox bindings:
+  - `YANDEX_DISK_ACCESS_TOKEN`;
+  - `YANDEX_DISK_REFRESH_TOKEN`;
+  - `YANDEX_OAUTH_CLIENT_ID`;
+  - `YANDEX_OAUTH_CLIENT_SECRET`.
+
+Controlled deploy:
+
+1. Keep the currently active function version available for rollback.
+2. Open the existing function `gravitation-v3-api` and create a **new version**.
+3. Use the **ZIP archive** source option rather than copying large Python files by hand.
+4. Upload the ZIP produced by the latest successful `V3 Backend CI` run.
+5. Set entrypoint to `index_v3_release.handler`.
+6. Preserve the existing service account, YDB environment variables and Lockbox bindings.
+7. Do not make the function public.
+8. Do not switch production frontend yet.
+
+Optional environment variables, not required for the first controlled test:
+
+- `PD_CONSENT_VERSION`;
+- `RULES_VERSION`;
+- `CONTACT_CONSENT_VERSION`;
+- `YANDEX_DISK_PHOTO_DIR`.
 
 ## API Gateway change required before browser testing
 
 Current Gateway CORS allows only `Content-Type`.
 
-V3 frontend sends an `Idempotency-Key` header, so edit the existing `/applications` CORS block:
+V3 frontend sends an `Idempotency-Key` header, so edit the existing `/applications` CORS block before browser E2E:
 
 ```yaml
 x-yc-apigateway-cors:
@@ -47,60 +91,27 @@ x-yc-apigateway-cors:
 
 Do not recreate the API Gateway.
 
-## Cloud Function deployment
-
-Current resource settings remain:
-
-- runtime: Python 3.14
-- service account: `gravitation-v3-api`
-- requirements: `ydb`, `requests`
-- environment: `YDB_DATABASE`, `YDB_ENDPOINT`
-- Lockbox bindings:
-  - `YANDEX_DISK_ACCESS_TOKEN`
-  - `YANDEX_DISK_REFRESH_TOKEN`
-  - `YANDEX_OAUTH_CLIENT_ID`
-  - `YANDEX_OAUTH_CLIENT_SECRET`
-
-For the controlled V3 deploy:
-
-1. Keep the current active function version available for rollback.
-2. Create a **new version** of the existing function `gravitation-v3-api`.
-3. Add both source files from GitHub:
-   - `backend/src/index_v3.py` as `index_v3.py` (shared helpers/core);
-   - `backend/src/index_v3_release.py` as `index_v3_release.py` (active release handler).
-4. Add `backend/requirements.txt` unchanged.
-5. Set entrypoint to `index_v3_release.handler`.
-6. Keep existing service account, YDB env vars and Lockbox bindings.
-7. Do not switch production frontend yet.
-
-Optional configuration may later be supplied through environment variables:
-
-- `PD_CONSENT_VERSION`
-- `RULES_VERSION`
-- `CONTACT_CONSENT_VERSION`
-- `YANDEX_DISK_PHOTO_DIR`
-
 ## First backend test
 
 Test through the existing API Gateway, not by exposing Cloud Function publicly.
 
 Request requirements:
 
-- POST `/applications`
-- `Content-Type: application/json`
-- `Idempotency-Key: <unique value with at least 16 chars>`
-- synthetic test data only
-- valid small JPG/PNG/WEBP in `photo_data`
+- POST `/applications`;
+- `Content-Type: application/json`;
+- `Idempotency-Key: <unique value with at least 16 chars>`;
+- synthetic test data only;
+- valid small JPG/PNG/WEBP in `photo_data`.
 
 Expected first request:
 
-- HTTP 201
-- `success: true`
-- `participant_id`
-- `application_id`
-- `file_id`
-- `idempotent_replay: false`
-- `request_id`
+- HTTP 201;
+- `success: true`;
+- `participant_id`;
+- `application_id`;
+- `file_id`;
+- `idempotent_replay: false`;
+- `request_id`.
 
 Verify:
 
@@ -152,7 +163,7 @@ Two simultaneous first applications with the same phone race on the same `partic
 If a V3 test fails:
 
 1. do not switch frontend;
-2. point routing back to the previous known-good function version if necessary;
+2. restore routing to the previous known-good function version/tag if necessary;
 3. keep `main` unchanged;
 4. inspect logs by `request_id`;
 5. fix GitHub `v3`, rerun CI, then create another function version.
