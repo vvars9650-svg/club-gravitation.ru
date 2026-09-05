@@ -6,7 +6,7 @@ Status: working production contract for backend migration.
 
 Primary content type: `application/json`.
 
-Compatibility parsing for `application/x-www-form-urlencoded` remains in the backend during migration, but the V3 frontend must use JSON.
+Compatibility parsing for `application/x-www-form-urlencoded` remains during migration, but the V3 frontend must use JSON.
 
 ### Required request header
 
@@ -14,7 +14,7 @@ Compatibility parsing for `application/x-www-form-urlencoded` remains in the bac
 
 Allowed characters: latin letters, digits, `.`, `_`, `:`, `-`.
 
-The same key must be reused when the browser retries the same submission. A new edited submission must receive a new key.
+The same key must be reused when the browser retries the same submission. An edited/new submission receives a new key.
 
 ### Required fields
 
@@ -68,8 +68,6 @@ The same key must be reused when the browser retries the same submission. A new 
 
 ## Legacy V2 aliases accepted by backend
 
-During migration the backend also accepts current V2 field names and maps them internally:
-
 - `name` → `full_name`
 - `city_visit` → `visit_krasnodar`
 - `life_beyond_work` → `life_outside_work`
@@ -91,43 +89,43 @@ Backend is authoritative for validation and normalization.
 
 - Russian phone numbers are normalized to `+7XXXXXXXXXX` when possible.
 - Email is trimmed and lower-cased.
-- Telegram username is normalized to lower-case `@username` and `t.me/...` is accepted.
+- Telegram is normalized to lower-case `@username`; `t.me/...` is accepted.
 
 ## Participant resolution
 
-Before a new `Participant` is created, backend searches existing participants by normalized contacts:
+Phone is the authoritative identity key because it is mandatory for an application.
 
-1. phone;
-2. email when present;
-3. Telegram when present.
+A dedicated YDB table `participant_phone_keys` has `phone` as its primary key and maps each normalized phone to exactly one `participant_id`. This replaces the unsupported attempt to add a UNIQUE secondary index to the existing `participants` table.
 
-If exactly one participant matches, its `participant_id` is reused and a new `Application` is linked to it.
+Resolution rules:
 
-If submitted contacts point to more than one participant, backend returns HTTP `409` with code `participant_conflict` and does not auto-merge records.
+1. if the submitted phone exists in `participant_phone_keys`, that participant is reused;
+2. email and Telegram may confirm the same participant;
+3. if email or Telegram points to a different participant, backend returns HTTP `409 participant_conflict`;
+4. if a new phone matches email/Telegram of an existing participant, backend does not silently change the phone and returns `409 participant_conflict` for manual review;
+5. if no contact points to an existing participant, a new Participant is created and its phone key is inserted in the same YDB write transaction.
 
-A repeat application does not reset lifecycle fields such as status, priority, owner, next action or original `created_at` of an existing participant. Empty optional contact fields do not erase existing non-empty values.
+The primary key on `participant_phone_keys.phone` is the database-level concurrency guard. Two simultaneous first applications with the same phone cannot create two canonical phone owners. A losing concurrent request retries against the winner.
 
-A synchronous unique YDB index on `participants.phone` is a deployment prerequisite for V3.
+Repeat applications do not reset lifecycle fields such as status, priority, owner, next action or original `created_at`. Empty optional contact fields do not erase existing non-empty values.
 
 ## Idempotency
 
 `application_id`, consent IDs, file ID and audit ID are deterministically derived from `Idempotency-Key`.
 
-The backend stores an idempotency fingerprint in `applications.raw_payload` based on the normalized request and photo hash.
+The backend stores an idempotency fingerprint in `applications.raw_payload`, based on the normalized request and photo hash.
 
-- First accepted request: HTTP `201`.
-- Exact retry with the same key and payload: HTTP `200`, `idempotent_replay: true`, no new Application/Consent/File/Audit rows.
-- Same key with a different payload: HTTP `409`, code `idempotency_conflict`.
+- first accepted request: HTTP `201`;
+- exact retry with same key and payload: HTTP `200`, `idempotent_replay: true`, no duplicate Application/Consent/File/Audit rows;
+- same key with different payload: HTTP `409 idempotency_conflict`.
 
 ## Photo storage
 
 Photo is validated server-side as JPG, PNG or WEBP and limited to 1.5 MB after browser processing.
 
-Yandex Disk path includes both `participant_id` and `application_id`, so a new application never overwrites the participant's older photo.
+The Yandex Disk path is derived from `application_id` plus the request fingerprint, not from `participant_id`. This prevents a concurrent changed payload using the same idempotency key from overwriting the photo accepted for another payload, and it also avoids moving files when a concurrent phone claim resolves to another participant.
 
-A retry of the same idempotent application may safely overwrite the same application file path.
-
-If the configured Yandex Disk access token returns `401`, backend uses the refresh token/client credentials from Lockbox to obtain a fresh access token for the running function instance.
+If the configured Yandex Disk access token returns `401`, backend uses refresh token/client credentials from Lockbox to obtain a fresh access token for the running function instance.
 
 ## Success responses
 
@@ -163,46 +161,13 @@ Idempotent replay, HTTP `200`:
 
 ## Errors
 
-Validation, HTTP `400`:
-
-```json
-{
-  "success": false,
-  "error": "...",
-  "code": "validation_error",
-  "request_id": "..."
-}
-```
-
-Contact conflict, HTTP `409`:
-
-```json
-{
-  "success": false,
-  "error": "Контактные данные требуют ручной проверки",
-  "code": "participant_conflict",
-  "request_id": "..."
-}
-```
-
-Idempotency conflict, HTTP `409`:
-
-```json
-{
-  "success": false,
-  "error": "Idempotency-Key уже использован для другой заявки",
-  "code": "idempotency_conflict",
-  "request_id": "..."
-}
-```
-
-Other statuses used by the backend:
-
-- `405` method not allowed;
-- `413` request too large;
-- `415` unsupported content type;
-- `502` Yandex Disk failure;
-- `500` unexpected backend failure.
+- `400 validation_error` — invalid request;
+- `405 method_not_allowed` — wrong HTTP method;
+- `409 participant_conflict` — contacts require manual review;
+- `409 idempotency_conflict` — same idempotency key with changed payload;
+- `413 payload_too_large` — request too large;
+- `502 storage_error` — Yandex Disk failure;
+- `500 internal_error` — unexpected backend failure.
 
 ## Request tracing
 
