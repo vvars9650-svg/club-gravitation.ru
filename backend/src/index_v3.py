@@ -1,10 +1,12 @@
+import base64
+import hashlib
+import json
 import os
 import re
-import json
-import uuid
-import base64
 import secrets
+import uuid
 from datetime import datetime, timezone
+from urllib.parse import parse_qs
 
 import requests
 import ydb
@@ -15,13 +17,16 @@ import ydb.iam
 # CONFIG
 # =========================================================
 
-PD_CONSENT_VERSION = "pd-test-v1"
-RULES_VERSION = "rules-test-v1"
-CONTACT_CONSENT_VERSION = "contact-test-v1"
+PD_CONSENT_VERSION = os.getenv("PD_CONSENT_VERSION", "pd-test-v1")
+RULES_VERSION = os.getenv("RULES_VERSION", "rules-test-v1")
+CONTACT_CONSENT_VERSION = os.getenv("CONTACT_CONSENT_VERSION", "contact-test-v1")
 
-MAX_REQUEST_BYTES = 2_300_000
-MAX_PHOTO_BYTES = 1_500_000
-DISK_PHOTO_DIR = "/ГРАВИТАЦИЯ/Участники/Фото"
+MAX_REQUEST_BYTES = int(os.getenv("MAX_REQUEST_BYTES", "2300000"))
+MAX_PHOTO_BYTES = int(os.getenv("MAX_PHOTO_BYTES", "1500000"))
+DISK_PHOTO_DIR = os.getenv(
+    "YANDEX_DISK_PHOTO_DIR",
+    "/ГРАВИТАЦИЯ/Участники/Фото",
+)
 
 PHONE_RE = re.compile(r"^\+7\d{10}$")
 EMAIL_RE = re.compile(
@@ -29,13 +34,17 @@ EMAIL_RE = re.compile(
     r"@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
     r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
 )
+IDEMPOTENCY_KEY_RE = re.compile(r"^[A-Za-z0-9._:-]{16,128}$")
 
 FIELD_LIMITS = {
     "full_name": 150,
     "gender": 50,
     "city": 150,
+    "visit_krasnodar": 100,
     "phone": 12,
     "telegram": 150,
+    "vk": 300,
+    "instagram": 300,
     "email": 254,
     "preferred_contact": 100,
     "occupation": 1000,
@@ -67,19 +76,46 @@ FIELD_LIMITS = {
     "user_agent": 2000,
 }
 
+ALIASES = {
+    "name": "full_name",
+    "city_visit": "visit_krasnodar",
+    "life_beyond_work": "life_outside_work",
+    "interest_reason": "what_interested",
+    "expectations": "event_expectations",
+    "connection_goal": "desired_connections",
+    "values_people": "values_in_people",
+    "meeting_barriers": "barriers_to_meeting",
+    "introduction_scenario": "acquaintance_scenario",
+    "personal_data_consent": "pd_consent",
+    "rules_consent": "rules_accepted",
+    "submitted_at_client": "client_timestamp",
+}
+
 
 # =========================================================
-# YDB
+# LAZY YDB CLIENT
 # =========================================================
 
-driver = ydb.Driver(
-    endpoint=os.getenv("YDB_ENDPOINT"),
-    database=os.getenv("YDB_DATABASE"),
-    credentials=ydb.iam.MetadataUrlCredentials(),
-)
+_driver = None
+_pool = None
 
-driver.wait(fail_fast=True, timeout=5)
-pool = ydb.QuerySessionPool(driver)
+
+def get_pool():
+    global _driver, _pool
+    if _pool is None:
+        endpoint = os.getenv("YDB_ENDPOINT")
+        database = os.getenv("YDB_DATABASE")
+        if not endpoint or not database:
+            raise RuntimeError("YDB_ENDPOINT and YDB_DATABASE must be configured")
+
+        _driver = ydb.Driver(
+            endpoint=endpoint,
+            database=database,
+            credentials=ydb.iam.MetadataUrlCredentials(),
+        )
+        _driver.wait(fail_fast=True, timeout=5)
+        _pool = ydb.QuerySessionPool(_driver)
+    return _pool
 
 
 # =========================================================
@@ -90,16 +126,41 @@ class ParticipantConflictError(RuntimeError):
     """Submitted contacts match more than one participant."""
 
 
+class IdempotencyConflictError(RuntimeError):
+    """An idempotency key was already used with another payload."""
+
+
+class SpamDetectedError(RuntimeError):
+    """Honeypot was filled."""
+
+
 # =========================================================
 # HELPERS
 # =========================================================
 
-def json_response(status_code, data):
+def log_event(request_id, event, level="INFO", **fields):
+    record = {
+        "level": level,
+        "event": event,
+        "request_id": request_id,
+        "ts": datetime.now(timezone.utc).isoformat(),
+    }
+    record.update(fields)
+    print(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
+
+
+def json_response(status_code, data, request_id=""):
+    headers = {
+        "Content-Type": "application/json; charset=utf-8",
+    }
+    if request_id:
+        headers["X-Request-Id"] = request_id
+        data = dict(data)
+        data.setdefault("request_id", request_id)
+
     return {
         "statusCode": status_code,
-        "headers": {
-            "Content-Type": "application/json; charset=utf-8",
-        },
+        "headers": headers,
         "body": json.dumps(data, ensure_ascii=False),
     }
 
@@ -132,78 +193,133 @@ def validate_string(name, value):
     return value
 
 
+def normalize_phone(value):
+    raw = clean_string(value)
+    digits = re.sub(r"\D", "", raw)
+
+    if len(digits) == 11 and digits[0] in ("7", "8"):
+        digits = digits[1:]
+    if len(digits) == 10:
+        return "+7" + digits
+    return raw
+
+
+def normalize_email(value):
+    return clean_string(value).lower()
+
+
+def normalize_telegram(value):
+    value = clean_string(value)
+    if not value:
+        return ""
+
+    lower = value.lower()
+    for prefix in ("https://t.me/", "http://t.me/", "t.me/"):
+        if lower.startswith(prefix):
+            value = value[len(prefix):]
+            break
+
+    value = value.strip().lstrip("@").strip()
+    return f"@{value.lower()}" if value else ""
+
+
+def normalize_payload(data):
+    normalized = dict(data)
+
+    for old_name, canonical_name in ALIASES.items():
+        if canonical_name not in normalized and old_name in normalized:
+            normalized[canonical_name] = normalized[old_name]
+
+    normalized["phone"] = normalize_phone(normalized.get("phone"))
+    normalized["email"] = normalize_email(normalized.get("email"))
+    normalized["telegram"] = normalize_telegram(normalized.get("telegram"))
+
+    return normalized
+
+
+def header_value(event, name):
+    headers = event.get("headers") or {}
+    target = name.lower()
+    for key, value in headers.items():
+        if str(key).lower() == target:
+            return clean_string(value)
+    return ""
+
+
+def request_id_from_context(context):
+    for attr in ("request_id", "requestId"):
+        value = getattr(context, attr, None)
+        if value:
+            return str(value)
+    return "REQ-" + uuid.uuid4().hex[:20].upper()
+
+
+def validate_idempotency_key(value):
+    key = clean_string(value)
+    if not key:
+        raise ValueError("Не указан Idempotency-Key")
+    if not IDEMPOTENCY_KEY_RE.fullmatch(key):
+        raise ValueError(
+            "Idempotency-Key должен содержать 16–128 символов: "
+            "латинские буквы, цифры, '.', '_', ':', '-'"
+        )
+    return key
+
+
+def stable_id(prefix, idempotency_key, purpose, length=20):
+    digest = hashlib.sha256(
+        f"{purpose}:{idempotency_key}".encode("utf-8")
+    ).hexdigest().upper()
+    return f"{prefix}-{digest[:length]}"
+
+
 def create_participant_id():
     now = datetime.now(timezone.utc)
-    suffix = secrets.token_hex(3).upper()
+    suffix = secrets.token_hex(4).upper()
     return f"GR-{now:%y%m%d-%H%M%S}-{suffix}"
 
 
-def create_application_id():
-    return "APP-" + uuid.uuid4().hex[:16].upper()
+def parse_event_body(event):
+    body = event.get("body")
+    if body is None or body == "":
+        raise ValueError("Пустое тело запроса")
 
+    if isinstance(body, dict):
+        return body
 
-def create_consent_id():
-    return "CONS-" + uuid.uuid4().hex[:20].upper()
+    if not isinstance(body, str):
+        raise ValueError("Некорректный формат тела запроса")
 
+    if event.get("isBase64Encoded"):
+        try:
+            body_bytes = base64.b64decode(body, validate=True)
+            body = body_bytes.decode("utf-8")
+        except Exception as exc:
+            raise ValueError("Некорректное base64-тело запроса") from exc
 
-def create_audit_id():
-    return "AUD-" + uuid.uuid4().hex[:20].upper()
+    if len(body.encode("utf-8")) > MAX_REQUEST_BYTES:
+        raise OverflowError("Размер заявки превышает допустимый")
 
+    content_type = header_value(event, "content-type").split(";", 1)[0].strip().lower()
 
-def create_file_id():
-    return "FILE-" + uuid.uuid4().hex[:20].upper()
+    if content_type in ("", "application/json", "text/json"):
+        try:
+            parsed = json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise ValueError("Некорректный JSON") from exc
+        if not isinstance(parsed, dict):
+            raise ValueError("JSON должен содержать объект")
+        return parsed
 
+    if content_type == "application/x-www-form-urlencoded":
+        parsed_qs = parse_qs(body, keep_blank_values=True)
+        return {key: values[-1] if values else "" for key, values in parsed_qs.items()}
 
-def find_existing_participant(phone, email="", telegram=""):
-    """
-    Resolve one existing participant by submitted contacts.
-
-    Phone is required and is the strongest match. Email and Telegram are used
-    as additional exact-match signals. If the submitted contacts point to more
-    than one participant, the backend refuses to auto-merge and returns 409.
-    """
-    query = """
-    DECLARE $phone AS Utf8;
-    DECLARE $email AS Utf8;
-    DECLARE $telegram AS Utf8;
-
-    SELECT participant_id, phone, email, telegram
-    FROM participants
-    WHERE phone = $phone
-       OR ($email != "" AND email = $email)
-       OR ($telegram != "" AND telegram = $telegram)
-    LIMIT 3;
-    """
-
-    result_sets = pool.execute_with_retries(
-        query,
-        {
-            "$phone": phone,
-            "$email": email,
-            "$telegram": telegram,
-        },
-    )
-
-    rows = result_sets[0].rows if result_sets else []
-    participant_ids = {
-        clean_string(row["participant_id"])
-        for row in rows
-        if clean_string(row["participant_id"])
-    }
-
-    if len(participant_ids) > 1:
-        raise ParticipantConflictError(
-            "Контактные данные совпадают с несколькими участниками"
-        )
-
-    if participant_ids:
-        return next(iter(participant_ids))
-
-    return None
+    raise TypeError("Поддерживается только application/json")
 
 
 # =========================================================
-# PHOTO
+# PHOTO + IDEMPOTENCY FINGERPRINT
 # =========================================================
 
 def detect_image_type(photo_bytes):
@@ -246,29 +362,222 @@ def decode_photo(data):
     return photo_bytes, mime_type, extension
 
 
-def disk_headers():
+def build_payload_snapshot(data, photo_bytes):
+    snapshot = dict(data)
+    snapshot.pop("photo_data", None)
+    snapshot.pop("idempotency_key", None)
+    snapshot.pop("website", None)
+    snapshot["photo_attached"] = True
+    snapshot["photo_sha256"] = hashlib.sha256(photo_bytes).hexdigest()
+
+    canonical = json.dumps(
+        snapshot,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    fingerprint = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    snapshot["idempotency_fingerprint"] = fingerprint
+    return snapshot, fingerprint
+
+
+def extract_stored_fingerprint(raw_payload):
+    if raw_payload is None:
+        return ""
+
+    if isinstance(raw_payload, dict):
+        data = raw_payload
+    else:
+        try:
+            data = json.loads(str(raw_payload))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return ""
+
+    return clean_string(data.get("idempotency_fingerprint"))
+
+
+# =========================================================
+# YDB LOOKUPS
+# =========================================================
+
+def _rows(result_sets):
+    if not result_sets:
+        return []
+    return result_sets[0].rows or []
+
+
+def _first_value(row, key, default=""):
+    try:
+        value = row[key]
+    except (KeyError, TypeError):
+        return default
+    return value if value is not None else default
+
+
+def find_participant_by_index(index_name, column_name, value):
+    if not value:
+        return []
+
+    allowed = {
+        ("idx_participants_phone", "phone"),
+        ("idx_participants_email", "email"),
+        ("idx_participants_telegram", "telegram"),
+    }
+    if (index_name, column_name) not in allowed:
+        raise RuntimeError("Unsupported participant index")
+
+    query = f"""
+    DECLARE $value AS Utf8;
+
+    SELECT participant_id
+    FROM participants VIEW {index_name}
+    WHERE {column_name} = $value
+    LIMIT 3;
+    """
+
+    result_sets = get_pool().execute_with_retries(query, {"$value": value})
+    return [
+        clean_string(_first_value(row, "participant_id"))
+        for row in _rows(result_sets)
+        if clean_string(_first_value(row, "participant_id"))
+    ]
+
+
+def find_existing_participant(phone, email="", telegram=""):
+    participant_ids = set()
+
+    participant_ids.update(
+        find_participant_by_index("idx_participants_phone", "phone", phone)
+    )
+    if email:
+        participant_ids.update(
+            find_participant_by_index("idx_participants_email", "email", email)
+        )
+    if telegram:
+        participant_ids.update(
+            find_participant_by_index("idx_participants_telegram", "telegram", telegram)
+        )
+
+    if len(participant_ids) > 1:
+        raise ParticipantConflictError(
+            "Контактные данные совпадают с несколькими участниками"
+        )
+
+    return next(iter(participant_ids)) if participant_ids else None
+
+
+def find_existing_application(application_id):
+    query = """
+    DECLARE $application_id AS Utf8;
+
+    SELECT participant_id, raw_payload
+    FROM applications
+    WHERE application_id = $application_id;
+
+    SELECT file_id
+    FROM files VIEW idx_files_application
+    WHERE application_id = $application_id
+    LIMIT 1;
+    """
+
+    result_sets = get_pool().execute_with_retries(
+        query,
+        {"$application_id": application_id},
+    )
+
+    if not result_sets or not result_sets[0].rows:
+        return None
+
+    row = result_sets[0].rows[0]
+    file_id = ""
+    if len(result_sets) > 1 and result_sets[1].rows:
+        file_id = clean_string(_first_value(result_sets[1].rows[0], "file_id"))
+
+    return {
+        "participant_id": clean_string(_first_value(row, "participant_id")),
+        "raw_payload": _first_value(row, "raw_payload", None),
+        "file_id": file_id,
+    }
+
+
+# =========================================================
+# YANDEX DISK OAUTH + FILES
+# =========================================================
+
+_disk_access_token = None
+
+
+def current_disk_access_token():
+    global _disk_access_token
+    if _disk_access_token:
+        return _disk_access_token
+
     token = os.getenv("YANDEX_DISK_ACCESS_TOKEN")
     if not token:
         raise RuntimeError("YANDEX_DISK_ACCESS_TOKEN is not configured")
-    return {"Authorization": f"OAuth {token}"}
+
+    _disk_access_token = token
+    return token
 
 
-def upload_photo_to_disk(photo_bytes, participant_id, application_id, extension):
-    # Application ID is part of the file name so a repeated application does
-    # not overwrite the participant's previous photo.
-    disk_path = f"{DISK_PHOTO_DIR}/{participant_id}-{application_id}{extension}"
+def refresh_disk_access_token():
+    global _disk_access_token
 
-    link_response = requests.get(
-        "https://cloud-api.yandex.net/v1/disk/resources/upload",
-        headers=disk_headers(),
-        params={
-            "path": disk_path,
-            "overwrite": "false",
+    refresh_token = os.getenv("YANDEX_DISK_REFRESH_TOKEN")
+    client_id = os.getenv("YANDEX_OAUTH_CLIENT_ID")
+    client_secret = os.getenv("YANDEX_OAUTH_CLIENT_SECRET")
+
+    if not refresh_token or not client_id or not client_secret:
+        raise RuntimeError("Yandex OAuth refresh credentials are not configured")
+
+    response = requests.post(
+        "https://oauth.yandex.ru/token",
+        data={
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "client_id": client_id,
+            "client_secret": client_secret,
         },
         timeout=15,
     )
-    link_response.raise_for_status()
-    upload_url = link_response.json().get("href")
+    response.raise_for_status()
+
+    token = clean_string(response.json().get("access_token"))
+    if not token:
+        raise RuntimeError("Yandex OAuth did not return access_token")
+
+    _disk_access_token = token
+    return token
+
+
+def disk_api_request(method, url, **kwargs):
+    headers = dict(kwargs.pop("headers", {}) or {})
+    headers["Authorization"] = f"OAuth {current_disk_access_token()}"
+
+    response = requests.request(method, url, headers=headers, **kwargs)
+
+    if response.status_code == 401:
+        headers["Authorization"] = f"OAuth {refresh_disk_access_token()}"
+        response = requests.request(method, url, headers=headers, **kwargs)
+
+    response.raise_for_status()
+    return response
+
+
+def upload_photo_to_disk(photo_bytes, participant_id, application_id, extension):
+    disk_path = f"{DISK_PHOTO_DIR}/{participant_id}-{application_id}{extension}"
+
+    link_response = disk_api_request(
+        "GET",
+        "https://cloud-api.yandex.net/v1/disk/resources/upload",
+        params={
+            "path": disk_path,
+            "overwrite": "true",
+        },
+        timeout=15,
+    )
+
+    upload_url = clean_string(link_response.json().get("href"))
     if not upload_url:
         raise RuntimeError("Yandex Disk did not return upload URL")
 
@@ -283,89 +592,53 @@ def upload_photo_to_disk(photo_bytes, participant_id, application_id, extension)
     return disk_path
 
 
-def delete_disk_file(disk_path):
+def delete_disk_file(disk_path, request_id=""):
     if not disk_path:
         return
+
     try:
-        response = requests.delete(
+        disk_api_request(
+            "DELETE",
             "https://cloud-api.yandex.net/v1/disk/resources",
-            headers=disk_headers(),
             params={
                 "path": disk_path,
                 "permanently": "true",
             },
             timeout=15,
         )
-        response.raise_for_status()
     except Exception as error:
-        print("DISK CLEANUP ERROR:", repr(error))
+        log_event(
+            request_id,
+            "disk_cleanup_failed",
+            level="ERROR",
+            error_type=type(error).__name__,
+        )
 
 
 # =========================================================
-# SAVE APPLICATION
+# VALIDATION
 # =========================================================
 
-def save_application(data):
-    application_id = create_application_id()
-    pd_consent_id = create_consent_id()
-    rules_consent_id = create_consent_id()
-    contact_consent_id = create_consent_id()
-    audit_id = create_audit_id()
-    file_id = create_file_id()
-
-    payload_snapshot = dict(data)
-    payload_snapshot.pop("photo_data", None)
-    payload_snapshot["photo_attached"] = bool(data.get("photo_data"))
-    raw_payload_json = json.dumps(
-        payload_snapshot,
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
-
+def validate_application(data):
     full_name = validate_string("full_name", data.get("full_name"))
     gender = validate_string("gender", data.get("gender"))
     city = validate_string("city", data.get("city"))
-    phone = validate_string("phone", data.get("phone"))
-    telegram = validate_string("telegram", data.get("telegram"))
-    email = validate_string("email", data.get("email"))
-    preferred_contact = validate_string("preferred_contact", data.get("preferred_contact"))
-    occupation = validate_string("occupation", data.get("occupation"))
-    life_outside_work = validate_string("life_outside_work", data.get("life_outside_work"))
-    interests = validate_string("interests", data.get("interests"))
-    relationship_context = validate_string("relationship_context", data.get("relationship_context"))
-    desired_connections = validate_string("desired_connections", data.get("desired_connections"))
-    values_in_people = validate_string("values_in_people", data.get("values_in_people"))
-    barriers_to_meeting = validate_string("barriers_to_meeting", data.get("barriers_to_meeting"))
-    source = validate_string("source", data.get("source"))
-    what_interested = validate_string("what_interested", data.get("what_interested"))
-    event_expectations = validate_string("event_expectations", data.get("event_expectations"))
-    successful_evening = validate_string("successful_evening", data.get("successful_evening"))
-    return_reason = validate_string("return_reason", data.get("return_reason"))
-    social_comfort = validate_string("social_comfort", data.get("social_comfort"))
-    initiative = validate_string("initiative", data.get("initiative"))
-    acquaintance_scenario = validate_string("acquaintance_scenario", data.get("acquaintance_scenario"))
-    unacceptable_behavior = validate_string("unacceptable_behavior", data.get("unacceptable_behavior"))
-    convenient_days = validate_string("convenient_days", data.get("convenient_days"))
-    comfortable_price = validate_string("comfortable_price", data.get("comfortable_price"))
-
-    application_channel = validate_string(
-        "application_channel",
-        data.get("application_channel") or "website",
+    visit_krasnodar = validate_string(
+        "visit_krasnodar",
+        data.get("visit_krasnodar"),
     )
-    page_url = validate_string("page_url", data.get("page_url"))
-    utm_source = validate_string("utm_source", data.get("utm_source"))
-    utm_medium = validate_string("utm_medium", data.get("utm_medium"))
-    utm_campaign = validate_string("utm_campaign", data.get("utm_campaign"))
-    utm_content = validate_string("utm_content", data.get("utm_content"))
-    utm_term = validate_string("utm_term", data.get("utm_term"))
-    referrer = validate_string("referrer", data.get("referrer"))
-    user_agent = validate_string("user_agent", data.get("user_agent"))
+    phone = validate_string("phone", normalize_phone(data.get("phone")))
+    telegram = validate_string("telegram", normalize_telegram(data.get("telegram")))
+    vk = validate_string("vk", data.get("vk"))
+    instagram = validate_string("instagram", data.get("instagram"))
+    email = validate_string("email", normalize_email(data.get("email")))
+    preferred_contact = validate_string(
+        "preferred_contact",
+        data.get("preferred_contact"),
+    )
 
-    if not full_name:
+    if not full_name or len(full_name) < 2:
         raise ValueError("Не указаны имя и фамилия")
-    if len(full_name) < 2:
-        raise ValueError("Имя указано некорректно")
-
     try:
         age = int(data.get("age"))
     except (TypeError, ValueError) as exc:
@@ -393,24 +666,126 @@ def save_application(data):
     if not rules_accepted:
         raise ValueError("Необходимо принять правила участия")
 
+    validated = {
+        "full_name": full_name,
+        "age": age,
+        "gender": gender,
+        "city": city,
+        "visit_krasnodar": visit_krasnodar,
+        "phone": phone,
+        "telegram": telegram,
+        "vk": vk,
+        "instagram": instagram,
+        "email": email,
+        "preferred_contact": preferred_contact,
+        "pd_consent": pd_consent,
+        "rules_accepted": rules_accepted,
+        "contact_consent": contact_consent,
+    }
+
+    for name in (
+        "occupation",
+        "life_outside_work",
+        "interests",
+        "relationship_context",
+        "desired_connections",
+        "values_in_people",
+        "barriers_to_meeting",
+        "source",
+        "what_interested",
+        "event_expectations",
+        "successful_evening",
+        "return_reason",
+        "social_comfort",
+        "initiative",
+        "acquaintance_scenario",
+        "unacceptable_behavior",
+        "convenient_days",
+        "comfortable_price",
+        "application_channel",
+        "page_url",
+        "utm_source",
+        "utm_medium",
+        "utm_campaign",
+        "utm_content",
+        "utm_term",
+        "referrer",
+        "user_agent",
+    ):
+        value = data.get(name)
+        if name == "application_channel" and not clean_string(value):
+            value = "website"
+        validated[name] = validate_string(name, value)
+
+    return validated
+
+
+# =========================================================
+# SAVE APPLICATION
+# =========================================================
+
+def save_application(data, idempotency_key, request_id):
+    if clean_string(data.get("website")):
+        raise SpamDetectedError()
+
+    normalized = normalize_payload(data)
+    validated = validate_application(normalized)
+    photo_bytes, mime_type, extension = decode_photo(normalized)
+
+    snapshot_source = dict(normalized)
+    snapshot_source.update(validated)
+    payload_snapshot, request_fingerprint = build_payload_snapshot(
+        snapshot_source,
+        photo_bytes,
+    )
+    raw_payload_json = json.dumps(
+        payload_snapshot,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+    application_id = stable_id("APP", idempotency_key, "application", 20)
+    pd_consent_id = stable_id("CONS", idempotency_key, "consent-pd", 20)
+    rules_consent_id = stable_id("CONS", idempotency_key, "consent-rules", 20)
+    contact_consent_id = stable_id("CONS", idempotency_key, "consent-contact", 20)
+    audit_id = stable_id("AUD", idempotency_key, "audit-application", 20)
+    file_id = stable_id("FILE", idempotency_key, "profile-photo", 20)
+
+    existing_application = find_existing_application(application_id)
+    if existing_application:
+        stored_fingerprint = extract_stored_fingerprint(
+            existing_application.get("raw_payload")
+        )
+        if not stored_fingerprint or stored_fingerprint != request_fingerprint:
+            raise IdempotencyConflictError(
+                "Idempotency-Key уже использован для другой заявки"
+            )
+
+        return {
+            "participant_id": existing_application["participant_id"],
+            "application_id": application_id,
+            "file_id": existing_application.get("file_id") or file_id,
+            "participant_reused": True,
+            "idempotent_replay": True,
+        }
+
     participant_id = find_existing_participant(
-        phone=phone,
-        email=email,
-        telegram=telegram,
+        phone=validated["phone"],
+        email=validated["email"],
+        telegram=validated["telegram"],
     )
     participant_reused = participant_id is not None
     if not participant_id:
         participant_id = create_participant_id()
 
-    photo_bytes, mime_type, extension = decode_photo(data)
-
     audit_changes_json = json.dumps(
         {
             "application_id": application_id,
-            "channel": application_channel,
+            "channel": validated["application_channel"],
             "status": "new",
             "photo_storage": "yandex_disk",
             "participant_reused": participant_reused,
+            "request_id": request_id,
         },
         ensure_ascii=False,
         separators=(",", ":"),
@@ -438,8 +813,11 @@ def save_application(data):
         DECLARE $age AS Int64;
         DECLARE $gender AS Utf8;
         DECLARE $city AS Utf8;
+        DECLARE $visit_krasnodar AS Utf8;
         DECLARE $phone AS Utf8;
         DECLARE $telegram AS Utf8;
+        DECLARE $vk AS Utf8;
+        DECLARE $instagram AS Utf8;
         DECLARE $email AS Utf8;
         DECLARE $preferred_contact AS Utf8;
         DECLARE $photo_path AS Utf8;
@@ -492,23 +870,36 @@ def save_application(data):
                 age = CAST($age AS Uint16),
                 gender = $gender,
                 city = $city,
+                visit_krasnodar = IF(
+                    $visit_krasnodar != "",
+                    $visit_krasnodar,
+                    visit_krasnodar
+                ),
                 phone = $phone,
-                telegram = $telegram,
-                email = $email,
-                preferred_contact = $preferred_contact,
+                telegram = IF($telegram != "", $telegram, telegram),
+                vk = IF($vk != "", $vk, vk),
+                instagram = IF($instagram != "", $instagram, instagram),
+                email = IF($email != "", $email, email),
+                preferred_contact = IF(
+                    $preferred_contact != "",
+                    $preferred_contact,
+                    preferred_contact
+                ),
                 photo_path = $photo_path,
                 updated_at = CurrentUtcTimestamp()
             WHERE participant_id = $participant_id;
             """
         else:
             participant_write = """
-            UPSERT INTO participants (
+            INSERT INTO participants (
                 participant_id, full_name, age, gender, city,
-                phone, telegram, email, preferred_contact, photo_path,
+                visit_krasnodar, phone, telegram, vk, instagram,
+                email, preferred_contact, photo_path,
                 status, created_at, updated_at
             ) VALUES (
                 $participant_id, $full_name, CAST($age AS Uint16), $gender, $city,
-                $phone, $telegram, $email, $preferred_contact, $photo_path,
+                $visit_krasnodar, $phone, $telegram, $vk, $instagram,
+                $email, $preferred_contact, $photo_path,
                 "new", CurrentUtcTimestamp(), CurrentUtcTimestamp()
             );
             """
@@ -516,8 +907,8 @@ def save_application(data):
         dependent_writes = """
         UPSERT INTO applications (
             application_id, participant_id, submitted_at,
-            full_name, age, gender, city,
-            phone, telegram, email, preferred_contact,
+            full_name, age, gender, city, visit_krasnodar,
+            phone, telegram, vk, instagram, email, preferred_contact,
             occupation, life_outside_work, interests, relationship_context,
             desired_connections, values_in_people, barriers_to_meeting,
             source, what_interested, event_expectations, successful_evening,
@@ -529,8 +920,8 @@ def save_application(data):
             referrer, user_agent, raw_payload, created_at
         ) VALUES (
             $application_id, $participant_id, CurrentUtcTimestamp(),
-            $full_name, CAST($age AS Uint16), $gender, $city,
-            $phone, $telegram, $email, $preferred_contact,
+            $full_name, CAST($age AS Uint16), $gender, $city, $visit_krasnodar,
+            $phone, $telegram, $vk, $instagram, $email, $preferred_contact,
             $occupation, $life_outside_work, $interests, $relationship_context,
             $desired_connections, $values_in_people, $barriers_to_meeting,
             $source, $what_interested, $event_expectations, $successful_evening,
@@ -599,57 +990,66 @@ def save_application(data):
             "$contact_consent_id": contact_consent_id,
             "$audit_id": audit_id,
             "$file_id": file_id,
-            "$full_name": full_name,
-            "$age": age,
-            "$gender": gender,
-            "$city": city,
-            "$phone": phone,
-            "$telegram": telegram,
-            "$email": email,
-            "$preferred_contact": preferred_contact,
+            "$full_name": validated["full_name"],
+            "$age": validated["age"],
+            "$gender": validated["gender"],
+            "$city": validated["city"],
+            "$visit_krasnodar": validated["visit_krasnodar"],
+            "$phone": validated["phone"],
+            "$telegram": validated["telegram"],
+            "$vk": validated["vk"],
+            "$instagram": validated["instagram"],
+            "$email": validated["email"],
+            "$preferred_contact": validated["preferred_contact"],
             "$photo_path": disk_path,
-            "$occupation": occupation,
-            "$life_outside_work": life_outside_work,
-            "$interests": interests,
-            "$relationship_context": relationship_context,
-            "$desired_connections": desired_connections,
-            "$values_in_people": values_in_people,
-            "$barriers_to_meeting": barriers_to_meeting,
-            "$source": source,
-            "$what_interested": what_interested,
-            "$event_expectations": event_expectations,
-            "$successful_evening": successful_evening,
-            "$return_reason": return_reason,
-            "$social_comfort": social_comfort,
-            "$initiative": initiative,
-            "$acquaintance_scenario": acquaintance_scenario,
-            "$unacceptable_behavior": unacceptable_behavior,
-            "$convenient_days": convenient_days,
-            "$comfortable_price": comfortable_price,
-            "$contact_consent": contact_consent,
-            "$pd_consent": pd_consent,
-            "$rules_accepted": rules_accepted,
+            "$occupation": validated["occupation"],
+            "$life_outside_work": validated["life_outside_work"],
+            "$interests": validated["interests"],
+            "$relationship_context": validated["relationship_context"],
+            "$desired_connections": validated["desired_connections"],
+            "$values_in_people": validated["values_in_people"],
+            "$barriers_to_meeting": validated["barriers_to_meeting"],
+            "$source": validated["source"],
+            "$what_interested": validated["what_interested"],
+            "$event_expectations": validated["event_expectations"],
+            "$successful_evening": validated["successful_evening"],
+            "$return_reason": validated["return_reason"],
+            "$social_comfort": validated["social_comfort"],
+            "$initiative": validated["initiative"],
+            "$acquaintance_scenario": validated["acquaintance_scenario"],
+            "$unacceptable_behavior": validated["unacceptable_behavior"],
+            "$convenient_days": validated["convenient_days"],
+            "$comfortable_price": validated["comfortable_price"],
+            "$contact_consent": validated["contact_consent"],
+            "$pd_consent": validated["pd_consent"],
+            "$rules_accepted": validated["rules_accepted"],
             "$pd_consent_version": PD_CONSENT_VERSION,
             "$rules_version": RULES_VERSION,
             "$contact_consent_version": CONTACT_CONSENT_VERSION,
-            "$application_channel": application_channel,
-            "$page_url": page_url,
-            "$utm_source": utm_source,
-            "$utm_medium": utm_medium,
-            "$utm_campaign": utm_campaign,
-            "$utm_content": utm_content,
-            "$utm_term": utm_term,
-            "$referrer": referrer,
-            "$user_agent": user_agent,
+            "$application_channel": validated["application_channel"],
+            "$page_url": validated["page_url"],
+            "$utm_source": validated["utm_source"],
+            "$utm_medium": validated["utm_medium"],
+            "$utm_campaign": validated["utm_campaign"],
+            "$utm_content": validated["utm_content"],
+            "$utm_term": validated["utm_term"],
+            "$referrer": validated["referrer"],
+            "$user_agent": validated["user_agent"],
             "$mime_type": mime_type,
-            "$raw_payload": ydb.TypedValue(raw_payload_json, ydb.PrimitiveType.JsonDocument),
-            "$audit_changes": ydb.TypedValue(audit_changes_json, ydb.PrimitiveType.JsonDocument),
+            "$raw_payload": ydb.TypedValue(
+                raw_payload_json,
+                ydb.PrimitiveType.JsonDocument,
+            ),
+            "$audit_changes": ydb.TypedValue(
+                audit_changes_json,
+                ydb.PrimitiveType.JsonDocument,
+            ),
         }
 
-        pool.execute_with_retries(query, params)
+        get_pool().execute_with_retries(query, params)
 
     except Exception:
-        delete_disk_file(disk_path)
+        delete_disk_file(disk_path, request_id=request_id)
         raise
 
     return {
@@ -658,6 +1058,7 @@ def save_application(data):
         "file_id": file_id,
         "photo_path": disk_path,
         "participant_reused": participant_reused,
+        "idempotent_replay": False,
     }
 
 
@@ -666,38 +1067,45 @@ def save_application(data):
 # =========================================================
 
 def handler(event, context):
+    request_id = request_id_from_context(context)
+
     try:
-        method = event.get("httpMethod", "")
+        method = clean_string(event.get("httpMethod")).upper()
         if method != "POST":
-            return json_response(405, {"success": False, "error": "Method not allowed"})
-
-        body = event.get("body")
-        if not body:
-            return json_response(400, {"success": False, "error": "Пустое тело запроса"})
-
-        if isinstance(body, str):
-            body_size = len(body.encode("utf-8"))
-            if body_size > MAX_REQUEST_BYTES:
-                return json_response(
-                    413,
-                    {"success": False, "error": "Размер заявки превышает допустимый"},
-                )
-            data = json.loads(body)
-        elif isinstance(body, dict):
-            data = body
-        else:
             return json_response(
-                400,
-                {"success": False, "error": "Некорректный формат тела запроса"},
+                405,
+                {
+                    "success": False,
+                    "error": "Method not allowed",
+                    "code": "method_not_allowed",
+                },
+                request_id,
             )
 
-        if not isinstance(data, dict):
-            return json_response(400, {"success": False, "error": "JSON должен содержать объект"})
+        data = parse_event_body(event)
+        idempotency_key = validate_idempotency_key(
+            header_value(event, "idempotency-key")
+            or data.get("idempotency_key")
+        )
 
-        result = save_application(data)
+        result = save_application(
+            data,
+            idempotency_key=idempotency_key,
+            request_id=request_id,
+        )
+
+        status_code = 200 if result["idempotent_replay"] else 201
+        log_event(
+            request_id,
+            "application_accepted",
+            application_id=result["application_id"],
+            participant_id=result["participant_id"],
+            participant_reused=result["participant_reused"],
+            idempotent_replay=result["idempotent_replay"],
+        )
 
         return json_response(
-            201,
+            status_code,
             {
                 "success": True,
                 "message": "Заявка принята",
@@ -705,15 +1113,54 @@ def handler(event, context):
                 "application_id": result["application_id"],
                 "file_id": result["file_id"],
                 "participant_reused": result["participant_reused"],
+                "idempotent_replay": result["idempotent_replay"],
             },
+            request_id,
         )
 
-    except json.JSONDecodeError:
-        return json_response(400, {"success": False, "error": "Некорректный JSON"})
-    except ValueError as error:
-        return json_response(400, {"success": False, "error": str(error)})
-    except ParticipantConflictError as error:
-        print("PARTICIPANT CONFLICT:", repr(error))
+    except OverflowError as error:
+        return json_response(
+            413,
+            {
+                "success": False,
+                "error": str(error),
+                "code": "payload_too_large",
+            },
+            request_id,
+        )
+    except TypeError as error:
+        return json_response(
+            415,
+            {
+                "success": False,
+                "error": str(error),
+                "code": "unsupported_media_type",
+            },
+            request_id,
+        )
+    except SpamDetectedError:
+        log_event(request_id, "honeypot_rejected", level="WARNING")
+        return json_response(
+            201,
+            {
+                "success": True,
+                "message": "Заявка принята",
+            },
+            request_id,
+        )
+    except IdempotencyConflictError as error:
+        log_event(request_id, "idempotency_conflict", level="WARNING")
+        return json_response(
+            409,
+            {
+                "success": False,
+                "error": str(error),
+                "code": "idempotency_conflict",
+            },
+            request_id,
+        )
+    except ParticipantConflictError:
+        log_event(request_id, "participant_conflict", level="WARNING")
         return json_response(
             409,
             {
@@ -721,12 +1168,49 @@ def handler(event, context):
                 "error": "Контактные данные требуют ручной проверки",
                 "code": "participant_conflict",
             },
+            request_id,
+        )
+    except ValueError as error:
+        return json_response(
+            400,
+            {
+                "success": False,
+                "error": str(error),
+                "code": "validation_error",
+            },
+            request_id,
         )
     except requests.HTTPError as error:
         response = error.response
         status = response.status_code if response is not None else "unknown"
-        print("YANDEX DISK HTTP ERROR:", status, repr(error))
-        return json_response(502, {"success": False, "error": "Не удалось сохранить фотографию"})
+        log_event(
+            request_id,
+            "yandex_disk_http_error",
+            level="ERROR",
+            upstream_status=status,
+        )
+        return json_response(
+            502,
+            {
+                "success": False,
+                "error": "Не удалось сохранить фотографию",
+                "code": "file_storage_error",
+            },
+            request_id,
+        )
     except Exception as error:
-        print("INTERNAL ERROR:", repr(error))
-        return json_response(500, {"success": False, "error": "Внутренняя ошибка сервера"})
+        log_event(
+            request_id,
+            "internal_error",
+            level="ERROR",
+            error_type=type(error).__name__,
+        )
+        return json_response(
+            500,
+            {
+                "success": False,
+                "error": "Внутренняя ошибка сервера",
+                "code": "internal_error",
+            },
+            request_id,
+        )
