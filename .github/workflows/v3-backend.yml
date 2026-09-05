@@ -1,0 +1,29 @@
+name: V3 Backend CI
+
+on:
+  push:
+    branches: ["v3"]
+    paths:
+      - "backend/**"
+      - ".github/workflows/v3-backend.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "backend/**"
+
+permissions:
+  contents: read
+
+jobs:
+  syntax:
+    name: Python syntax check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Compile backend sources
+        run: python -m py_compile backend/src/index.py backend/src/index_v3.py
