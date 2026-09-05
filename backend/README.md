@@ -10,72 +10,79 @@ GitHub является источником истины по backend-коду.
 
 ## Файлы
 
-- `backend/src/index.py` — точный baseline Cloud Function, скопированный из Yandex Cloud до начала V3-рефакторинга.
-- `backend/src/index_v3.py` — текущий release candidate V3 backend.
-- `backend/tests/test_index_v3.py` — unit tests.
+- `backend/src/index.py` — точный baseline Cloud Function, скопированный из Yandex Cloud до V3-рефакторинга.
+- `backend/src/index_v3.py` — предыдущий V3 prototype/release candidate, сохранён для истории разработки.
+- `backend/src/index_v3_release.py` — актуальный release candidate после обнаружения ограничения YDB на добавление UNIQUE secondary index к существующей таблице.
+- `backend/tests/` — unit tests.
 - `backend/API_CONTRACT.md` — API-контракт `POST /applications`.
-- `backend/BASELINE.md` — зафиксированное исходное состояние Yandex Cloud backend.
-- `backend/migrations/000_preflight.sql` — проверка данных перед индексами.
-- `backend/migrations/001_indexes.sql` — необходимые YDB indexes для production V3.
-- `backend/DEPLOY_YANDEX.md` — пошаговый controlled deploy и rollback.
+- `backend/BASELINE.md` — исходное состояние Yandex Cloud backend.
+- `backend/migrations/000_preflight.sql` — проверка данных перед миграцией.
+- `backend/migrations/001_indexes.sql` — создание и backfill `participant_phone_keys`.
+- `backend/migrations/002_verify_phone_registry.sql` — проверка результата backfill.
+- `backend/DEPLOY_YANDEX.md` — controlled deploy и rollback.
 
-## Что уже реализовано в `index_v3.py`
+## Что реализовано в актуальном release candidate
 
 - canonical JSON API contract;
 - backward-compatible aliases для текущих V2 field names;
 - server-side validation;
 - phone/email/Telegram normalization;
-- participant deduplication по phone/email/Telegram;
-- protection from ambiguous contact matches (`participant_conflict`);
-- preservation of existing CRM lifecycle fields on repeat application;
-- required `Idempotency-Key`;
+- обязательный `Idempotency-Key`;
 - deterministic Application/Consent/File/Audit IDs;
 - idempotent replay without duplicate records;
 - detection of same idempotency key with changed payload;
-- photo fingerprint in `raw_payload`;
-- separate photo path per Application;
+- phone-authoritative participant resolution;
+- database-level phone uniqueness through `participant_phone_keys(phone PRIMARY KEY)`;
+- protection from ambiguous email/Telegram matches;
+- preservation of existing CRM lifecycle fields on repeat application;
+- application-scoped immutable photo path based on application ID + request fingerprint;
 - Yandex Disk access-token refresh through Lockbox OAuth credentials;
 - honeypot rejection;
 - structured technical logging with `request_id`;
 - HTTP error codes and machine-readable error codes;
 - lazy YDB client initialization for testability;
-- backend unit tests in GitHub Actions.
+- unit tests and GitHub Actions CI.
+
+## Почему используется `participant_phone_keys`
+
+YDB вернул фактическое ограничение: `Adding a unique index to an existing table is disabled` при попытке добавить UNIQUE secondary index к существующей `participants`.
+
+Поэтому production V3 не зависит от UNIQUE secondary index. Вместо этого создаётся отдельная таблица:
+
+`participant_phone_keys(phone PRIMARY KEY -> participant_id)`
+
+Телефон обязателен для анкеты. Primary Key физически не позволяет двум параллельным first-submit операциям закрепить один и тот же телефон за разными участниками.
 
 ## YDB deployment prerequisite
 
-V3 uses explicit secondary indexes for deterministic and efficient participant resolution.
+Перед развёртыванием release candidate:
 
-Before deployment:
+1. `backend/migrations/000_preflight.sql` должен показать 0 дублей непустого телефона;
+2. выполнить `backend/migrations/001_indexes.sql`;
+3. выполнить `backend/migrations/002_verify_phone_registry.sql`;
+4. обе проверки в шаге 3 должны вернуть пустой результат.
 
-1. run `backend/migrations/000_preflight.sql`;
-2. confirm there are no duplicate non-empty phone values;
-3. apply `backend/migrations/001_indexes.sql`;
-4. confirm indexes exist.
+Участники без телефона не включаются в registry. Новая web-заявка без телефона backend не принимает.
 
-The phone index is synchronous and unique to prevent two participant records from being created with the same phone during concurrent submissions.
+## Existing Yandex Cloud resources
 
-## Current Cloud Function
+Не пересоздавать:
 
-Existing resource, do not recreate:
-
-- Function: `gravitation-v3-api`
-- Runtime: Python 3.14
-- Entrypoint: `index.handler`
-- Service account: `gravitation-v3-api`
-- Environment: `YDB_DATABASE`, `YDB_ENDPOINT`
-- Secrets are supplied through Yandex Lockbox.
-
-The current deployed Yandex function still uses the baseline implementation until controlled V3 deployment is performed.
+- YDB: `gravitation-v3`;
+- Cloud Function: `gravitation-v3-api`;
+- API Gateway: `gravitation-v3-api`;
+- function service account: `gravitation-v3-api`;
+- gateway service account: `gravitation-v3-gateway`;
+- Lockbox: `gravitation-v3-disk-oauth`.
 
 ## Production rules
 
-- `main` remains stable V2 until V3 backend and browser E2E are verified.
-- Development happens in branch `v3`.
-- Tokens, OAuth credentials, service-account keys and participant personal data are never committed.
-- Backend code is changed in GitHub first, checked by CI, and only then copied into a new Cloud Function version.
-- API Gateway and existing Yandex resources are edited in place when required, never recreated casually.
-- Production frontend is switched from Google Apps Script only after Yandex backend tests pass.
+- `main` остаётся стабильной V2 до прохождения V3 backend + browser E2E.
+- разработка идёт в ветке `v3`;
+- токены, OAuth credentials, service-account keys и ПДн не коммитятся;
+- backend меняется сначала в GitHub, затем проходит CI, после чего создаётся новая версия существующей Cloud Function;
+- production frontend не переключается с Google Apps Script до завершения Yandex backend QA.
 
 ## Current stopping point
 
-GitHub-side backend work is prepared and CI is green. The next operation is a controlled YDB migration followed by a new Cloud Function version and API Gateway CORS update. These operations require access to the user's existing Yandex Cloud console and are described in `backend/DEPLOY_YANDEX.md`.
+GitHub-side release candidate подготовлен, CI должен быть green. Следующее действие выполняется в Yandex Cloud: создать и backfill таблицу `participant_phone_keys`, проверить её, затем создать новую Cloud Function version с entrypoint `index_v3_release.handler`.
