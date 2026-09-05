@@ -36,3 +36,26 @@ jobs:
 
       - name: Run backend unit tests
         run: python -m unittest discover -s backend/tests -v
+
+      - name: Build Yandex Cloud deployment ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf dist
+          mkdir -p dist/yandex
+          cp backend/src/index_v3.py dist/yandex/index_v3.py
+          cp backend/src/index_v3_release.py dist/yandex/index_v3_release.py
+          cp backend/requirements.txt dist/yandex/requirements.txt
+          (
+            cd dist/yandex
+            zip -r ../gravitation-v3-backend.zip .
+          )
+          unzip -l dist/gravitation-v3-backend.zip
+
+      - name: Upload Yandex deployment artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gravitation-v3-backend-${{ github.sha }}
+          path: dist/gravitation-v3-backend.zip
+          if-no-files-found: error
+          retention-days: 14
