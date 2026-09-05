@@ -17,8 +17,9 @@ GitHub является источником истины по backend-коду.
 - `backend/API_CONTRACT.md` — API-контракт `POST /applications`.
 - `backend/BASELINE.md` — исходное состояние Yandex Cloud backend.
 - `backend/migrations/000_preflight.sql` — проверка данных перед миграцией.
-- `backend/migrations/001_indexes.sql` — создание и backfill `participant_phone_keys`.
-- `backend/migrations/002_verify_phone_registry.sql` — проверка результата backfill.
+- `backend/migrations/001_indexes.sql` — создание таблицы `participant_phone_keys`.
+- `backend/migrations/002_backfill_phone_registry.sql` — backfill существующих телефонов.
+- `backend/migrations/003_verify_phone_registry.sql` — проверка результата backfill.
 - `backend/DEPLOY_YANDEX.md` — controlled deploy и rollback.
 
 ## Что реализовано в актуальном release candidate
@@ -59,8 +60,9 @@ YDB вернул фактическое ограничение: `Adding a unique
 
 1. `backend/migrations/000_preflight.sql` должен показать 0 дублей непустого телефона;
 2. выполнить `backend/migrations/001_indexes.sql`;
-3. выполнить `backend/migrations/002_verify_phone_registry.sql`;
-4. обе проверки в шаге 3 должны вернуть пустой результат.
+3. выполнить `backend/migrations/002_backfill_phone_registry.sql`;
+4. выполнить `backend/migrations/003_verify_phone_registry.sql`;
+5. обе проверки в шаге 4 должны вернуть пустой результат.
 
 Участники без телефона не включаются в registry. Новая web-заявка без телефона backend не принимает.
 
@@ -77,7 +79,7 @@ YDB вернул фактическое ограничение: `Adding a unique
 
 ## Production rules
 
-- `main` остаётся стабильной V2 до прохождения V3 backend + browser E2E.
+- `main` остаётся стабильной V2 до прохождения V3 backend + browser E2E;
 - разработка идёт в ветке `v3`;
 - токены, OAuth credentials, service-account keys и ПДн не коммитятся;
 - backend меняется сначала в GitHub, затем проходит CI, после чего создаётся новая версия существующей Cloud Function;
@@ -85,4 +87,4 @@ YDB вернул фактическое ограничение: `Adding a unique
 
 ## Current stopping point
 
-GitHub-side release candidate подготовлен, CI должен быть green. Следующее действие выполняется в Yandex Cloud: создать и backfill таблицу `participant_phone_keys`, проверить её, затем создать новую Cloud Function version с entrypoint `index_v3_release.handler`.
+GitHub-side release candidate подготовлен. Следующее действие выполняется в Yandex Cloud: создать `participant_phone_keys`, сделать backfill и verification, затем создать новую Cloud Function version с entrypoint `index_v3_release.handler`.
