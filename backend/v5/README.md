@@ -1,0 +1,3 @@
+# V5 TEST backend
+
+Python 3.14-compatible Cloud Function artifact. It has no production environment selection: `environment` is always server-side `TEST`. Configure `V5_TEST_CONSENT_TEXT_HASH` during TEST deployment; it is explicitly non-canonical until the approved consent text is supplied. Install YDB SDK only for the future YDB adapter; CI uses the fake repository. Deployment prerequisites: package this folder, add a YDB adapter/transaction implementation, set TEST-only configuration, review and apply `schema/001_v5_test.sql` manually, and configure gateway routes `/health` and `/applications`.
