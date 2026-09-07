@@ -17,4 +17,4 @@ jobs:
       - run: node --check tests/v5-contract.test.js
       - run: node tests/application-api.test.js
       - run: node tests/v5-contract.test.js
-      - run: git diff --check HEAD~1 HEAD
+      - run: git diff --check
