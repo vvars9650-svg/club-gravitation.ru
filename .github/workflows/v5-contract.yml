@@ -1,0 +1,20 @@
+name: V5 contract
+on:
+  push:
+    branches: [v5]
+  workflow_dispatch:
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --check assets/js/apply.js
+      - run: node --check api/application.js
+      - run: node --check tests/application-api.test.js
+      - run: node --check tests/v5-contract.test.js
+      - run: node tests/application-api.test.js
+      - run: node tests/v5-contract.test.js
+      - run: git diff --check HEAD~1 HEAD
