@@ -1,3 +1,4 @@
+import threading
 import unittest
 
 import ydb
@@ -91,10 +92,14 @@ class FakePool:
     def __init__(self, session):
         self.session = session
         self.retry_settings = None
+        self.stop_calls = 0
 
     def retry_operation_sync(self, callee, retry_settings=None):
         self.retry_settings = retry_settings
         return callee(self.session)
+
+    def stop(self):
+        self.stop_calls += 1
 
 
 def make_record():
@@ -391,6 +396,28 @@ class YdbRepositoryTests(unittest.TestCase):
         self.assertTrue(tx.streams[0].entered)
         self.assertTrue(tx.streams[0].consumed)
         self.assertTrue(tx.streams[0].exited)
+
+    def test_close_stops_pool_then_driver_once(self):
+        events = []
+
+        class OrderedPool:
+            def stop(self):
+                events.append("pool")
+
+        class OrderedDriver:
+            def stop(self):
+                events.append("driver")
+
+        repo = YdbRepository.__new__(YdbRepository)
+        repo.pool = OrderedPool()
+        repo.driver = OrderedDriver()
+        repo._close_lock = threading.Lock()
+        repo._closed = False
+
+        repo.close()
+        repo.close()
+
+        self.assertEqual(events, ["pool", "driver"])
 
 
 if __name__ == "__main__":

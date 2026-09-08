@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import threading
 
 try:
     import ydb
@@ -42,21 +43,47 @@ class YdbRepository:
                 "consent_hash_must_be_test_marked"
             )
 
-        if driver is None:
-            if ydb is None:
-                raise RepositoryUnavailable("ydb_sdk_not_installed")
-            driver = ydb.Driver(
-                endpoint=self.endpoint,
-                database=self.database,
-                credentials=ydb.iam.MetadataUrlCredentials(),
-            )
-            driver.wait(
-                fail_fast=True,
-                timeout=10,
-            )
+        if driver is None and ydb is None:
+            raise RepositoryUnavailable("ydb_sdk_not_installed")
 
-        self.driver = driver
-        self.pool = ydb.QuerySessionPool(self.driver)
+        try:
+            if driver is None:
+                driver = ydb.Driver(
+                    endpoint=self.endpoint,
+                    database=self.database,
+                    credentials=ydb.iam.MetadataUrlCredentials(),
+                )
+                driver.wait(
+                    fail_fast=True,
+                    timeout=10,
+                )
+
+            self.driver = driver
+            self.pool = ydb.QuerySessionPool(self.driver)
+        except Exception as exc:
+            if driver is not None:
+                try:
+                    driver.stop()
+                except Exception:
+                    pass
+            raise RepositoryUnavailable(
+                "ydb_initialization_failed"
+            ) from exc
+
+        self._close_lock = threading.Lock()
+        self._closed = False
+
+    def close(self):
+        """Explicitly release SDK resources for local/tests lifecycle use."""
+        with self._close_lock:
+            if self._closed:
+                return
+            self._closed = True
+
+            try:
+                self.pool.stop()
+            finally:
+                self.driver.stop()
 
     @staticmethod
     def _rows(result_sets, index=0):
