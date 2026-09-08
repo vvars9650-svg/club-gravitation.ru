@@ -11,6 +11,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r backend/v5/requirements.txt
       - run: node --check assets/js/apply.js
       - run: node --check api/application.js
       - run: node --check tests/application-api.test.js
