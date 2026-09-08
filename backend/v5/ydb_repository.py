@@ -222,14 +222,15 @@ class YdbRepository:
         def transaction_body(session):
             tx = session.transaction(ydb.QuerySerializableReadWrite())
 
-            result_sets = tx.execute(
+            with tx.execute(
                 read_query,
                 {
                     "$environment": ENVIRONMENT,
                     "$application_id": application_id,
                     "$phone": phone,
                 },
-            )
+            ) as result_stream:
+                result_sets = list(result_stream)
 
             application_rows = self._rows(result_sets, 0)
             phone_rows = self._rows(result_sets, 1)
@@ -590,11 +591,13 @@ class YdbRepository:
                 "$audit_id": audit_id,
             }
 
-            tx.execute(
+            with tx.execute(
                 write_query,
                 params,
                 commit_tx=True,
-            )
+            ) as result_stream:
+                for _ in result_stream:
+                    pass
             return True
 
         return self.pool.retry_operation_sync(

@@ -13,7 +13,7 @@ jobs:
           node-version: '24'
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.14'
       - run: pip install -r backend/v5/requirements.txt
       - run: node --check assets/js/apply.js
       - run: node --check api/application.js
@@ -22,5 +22,5 @@ jobs:
       - run: node tests/application-api.test.js
       - run: node tests/v5-contract.test.js
       - run: python -m compileall backend/v5
-      - run: python -m unittest backend.v5.tests.test_v5
+      - run: python -m unittest discover -s backend/v5/tests -v
       - run: git diff --check

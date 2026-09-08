@@ -11,13 +11,34 @@ class FakeResultSet:
 
 
 class FakeExecuteResult:
-    def __init__(self, result_sets):
+    def __init__(self, result_sets, on_success=None):
         self.result_sets = result_sets
+        self.on_success = on_success
+        self.entered = False
+        self.exited = False
+        self.consumed = False
+        self.index = 0
 
     def __enter__(self):
-        return iter(self.result_sets)
+        self.entered = True
+        return self
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.index >= len(self.result_sets):
+            self.consumed = True
+            raise StopIteration
+
+        item = self.result_sets[self.index]
+        self.index += 1
+        return item
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        self.exited = True
+        if exc_type is None and self.consumed and self.on_success:
+            self.on_success()
         return False
 
 
@@ -26,19 +47,33 @@ class FakeTransaction:
         self.read_result_sets = read_result_sets
         self.queries = []
         self.params = []
+        self.commit_flags = []
+        self.streams = []
         self.committed = False
 
     def execute(self, query, params=None, commit_tx=False):
         self.queries.append(query)
         self.params.append(params or {})
+        self.commit_flags.append(commit_tx)
 
         if (
             "FROM applications" in query
             and "participant_phone_keys" in query
         ):
-            return FakeExecuteResult(self.read_result_sets)
+            stream = FakeExecuteResult(self.read_result_sets)
+        else:
+            stream = FakeExecuteResult(
+                [],
+                on_success=(
+                    lambda: setattr(self, "committed", True)
+                ) if commit_tx else None,
+            )
 
-        return FakeExecuteResult([])
+        self.streams.append(stream)
+        return stream
+
+    def commit(self):
+        self.committed = True
 
 
 
@@ -142,6 +177,13 @@ class YdbRepositoryTests(unittest.TestCase):
             repo.pool.session.tx_mode,
             ydb.QuerySerializableReadWrite,
         )
+        self.assertEqual(tx.commit_flags, [False, True])
+        self.assertTrue(tx.committed)
+
+        for stream in tx.streams:
+            self.assertTrue(stream.entered)
+            self.assertTrue(stream.consumed)
+            self.assertTrue(stream.exited)
 
     def test_server_owned_values_override_client(self):
         tx = FakeTransaction(
@@ -345,6 +387,10 @@ class YdbRepositoryTests(unittest.TestCase):
             len(tx.queries),
             1,
         )
+        self.assertEqual(tx.commit_flags, [False])
+        self.assertTrue(tx.streams[0].entered)
+        self.assertTrue(tx.streams[0].consumed)
+        self.assertTrue(tx.streams[0].exited)
 
 
 if __name__ == "__main__":
