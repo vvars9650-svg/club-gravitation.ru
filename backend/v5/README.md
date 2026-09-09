@@ -42,3 +42,25 @@ token, or development bypass in this code. The only mutable fields are
 `decision`, and `internal_comment`. Each PATCH emits a minimal `audit_log` action
 containing a hashed actor token and changed field names, never a participant
 payload. The existing schema is unchanged.
+
+## STEP 7B OIDC/JWT foundation (not deployed)
+
+The Admin SPA has an in-memory OIDC Authorization Code + PKCE client in
+`assets/js/admin-auth.js`. It accepts only a TEST `window.__V5_ADMIN_AUTH_CONFIG__`
+injected by the protected host. Required configuration is `environment: "TEST"`,
+`issuer` or `openid_configuration_url`, `client_id`, `redirect_uri`, and scopes
+(`openid email profile`; `groups` is not requested). Direct endpoint values may
+also be injected as `authorization_endpoint` and `token_endpoint`. No client
+secret, token, or production configuration belongs in the repository.
+
+The access token is memory-only. The transient PKCE verifier/state is held in
+`sessionStorage` solely across the authorization redirect; no `localStorage` is
+used. The Admin API client sends `Authorization: Bearer <token>`, never cookie
+credentials. On 401 it signs out locally and does not retry PATCH; on 403 it
+shows access denied.
+
+For `/admin/*`, `handler.py` reads only
+`requestContext.authorizer.jwt.claims.sub` supplied by a future API Gateway JWT
+authorizer. Missing context or `sub` fails closed. Client headers, cookies,
+query parameters and body fields are ignored as actor sources. The raw `sub` is
+hashed by the existing Admin layer before audit storage.

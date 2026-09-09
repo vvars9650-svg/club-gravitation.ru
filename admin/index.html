@@ -11,6 +11,12 @@
 <body class="admin-page">
   <main class="admin-shell" id="admin-app">
     <header class="admin-header"><div><p class="eyebrow eyebrow--gold">ЗАКРЫТЫЙ ИНТЕРФЕЙС</p><h1>ГРАВИТАЦИЯ <span>ADMIN</span></h1></div><strong class="env-badge">TEST</strong></header>
+    <section class="admin-auth" id="admin-auth" aria-live="polite">
+      <p data-auth-state>Проверяем авторизацию…</p>
+      <button class="admin-login" id="admin-login" type="button">ВОЙТИ ЧЕРЕЗ IDENTITY HUB</button>
+    </section>
+    <section id="admin-workspace" hidden>
+    <div class="admin-session"><span id="admin-identity"></span><button id="admin-logout" type="button">Выйти</button></div>
     <section class="admin-controls" aria-label="Фильтры заявок">
       <input id="admin-search" type="search" placeholder="Поиск: имя, телефон, Telegram, город">
       <select id="admin-status"><option value="">Все статусы</option></select>
@@ -21,7 +27,9 @@
     <p class="admin-state" id="admin-state" aria-live="polite">Загрузка заявок…</p>
     <div class="admin-table-wrap"><table><thead><tr><th>Дата заявки</th><th>Имя</th><th>Возраст</th><th>Город</th><th>Телефон</th><th>Telegram</th><th>Связь</th><th>Статус</th><th>Ответственный</th><th>Приоритет</th><th>Следующее действие</th><th>Контакт</th><th>Решение</th></tr></thead><tbody id="admin-list"></tbody></table></div>
     <aside class="participant-drawer" id="participant-drawer" hidden aria-label="Карточка участника"><button id="drawer-close" type="button">Закрыть</button><div id="participant-card"></div></aside>
+    </section>
   </main>
+  <script src="/assets/js/admin-auth.js" defer></script>
   <script src="/assets/js/admin.js" defer></script>
 </body>
 </html>

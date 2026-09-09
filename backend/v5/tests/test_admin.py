@@ -69,5 +69,29 @@ class AdminMvpTests(unittest.TestCase):
         runtime_response = handler(event("GET", "/admin/applications"), repo=self.repo)
         self.assertEqual(runtime_response["statusCode"], 404)
 
+    def test_handler_accepts_only_trusted_gateway_jwt_sub(self):
+        spoofed = event("GET", "/admin/applications")
+        spoofed["headers"].update({"X-User": "spoof", "Authorization": "Bearer spoof"})
+        spoofed["body"] = json.dumps({"actor_identity": "spoof"})
+        spoofed["queryStringParameters"] = {"actor": "spoof"}
+        self.assertEqual(handler(spoofed, repo=self.repo)["statusCode"], 404)
+        trusted = event("GET", "/admin/applications")
+        trusted["requestContext"] = {"authorizer": {"jwt": {"claims": {"sub": "identity-hub-subject"}}}}
+        self.assertEqual(handler(trusted, repo=self.repo)["statusCode"], 200)
+        patch = event("PATCH", "/admin/participants/" + self.first_id, {"owner": "Лара"})
+        patch["requestContext"] = {"authorizer": {"jwt": {"claims": {"sub": "identity-hub-subject"}}}}
+        self.assertEqual(handler(patch, repo=self.repo)["statusCode"], 200)
+        self.assertIn("actor=auth-", self.repo.audit[-1]["action"])
+        self.assertNotIn("identity-hub-subject", self.repo.audit[-1]["action"])
+        missing_sub = event("GET", "/admin/applications")
+        missing_sub["requestContext"] = {"authorizer": {"jwt": {"claims": {"email": "not-an-actor@example.test"}}}}
+        self.assertEqual(handler(missing_sub, repo=self.repo)["statusCode"], 404)
+
+    def test_intake_routes_do_not_require_admin_claims(self):
+        self.assertEqual(handler({"httpMethod": "GET", "path": "/health"}, repo=self.repo)["statusCode"], 200)
+        intake = event("POST", "/applications", P)
+        intake["headers"]["Idempotency-Key"] = "intake-auth-independent"
+        self.assertEqual(handler(intake, repo=self.repo)["statusCode"], 201)
+
     def test_statuses_are_approved(self):
         self.assertEqual(STATUSES, ("Новая заявка", "На рассмотрении", "Нужен контакт", "Интервью назначено", "Интервью пройдено", "Одобрен", "Активный участник", "Пауза", "Не подходит"))

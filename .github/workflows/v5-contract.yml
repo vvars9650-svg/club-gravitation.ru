@@ -21,6 +21,7 @@ jobs:
       - run: node --check tests/v5-contract.test.js
       - run: node --check tests/frontend-submit.test.js
       - run: node --check assets/js/admin.js
+      - run: node --check assets/js/admin-auth.js
       - run: node --check tests/admin-ui.test.js
       - run: node tests/application-api.test.js
       - run: node tests/v5-contract.test.js
