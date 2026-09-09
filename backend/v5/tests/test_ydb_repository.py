@@ -4,6 +4,7 @@ from pathlib import Path
 
 import ydb
 
+from backend.v5.repository import DESTRUCTION_CLASSIFICATION
 from backend.v5.ydb_repository import YdbRepository
 
 
@@ -511,8 +512,13 @@ class YdbRepositoryTests(unittest.TestCase):
         self.assertTrue(plan["dry_run"])
         self.assertFalse(plan["delete_performed"])
         self.assertEqual(plan["records"]["applications"]["count"], 1)
-        self.assertTrue(plan["records"]["applications"]["contains_pii"])
+        self.assertTrue(plan["records"]["applications"]["contains_personal_data"])
         self.assertTrue(plan["records"]["consents"]["retention_decision_required"])
+        self.assertTrue(plan["records"]["technical_logs"]["contains_linkable_identifiers"])
+        self.assertTrue(plan["records"]["audit_log"]["contains_personal_data"])
+        for name, expected in DESTRUCTION_CLASSIFICATION.items():
+            self.assertEqual({key: plan["records"][name][key] for key in expected}, expected)
+            self.assertNotIn("contains_pii", plan["records"][name])
         self.assertNotIn("DELETE", repo.pool.query.upper())
         self.assertNotIn("raw_payload", repo.pool.query)
 

@@ -12,7 +12,7 @@ except ImportError:  # unit-only imports must not silently create memory storage
     ydb = None
 
 from .domain import FORM_FIELDS, ids
-from .repository import RepositoryUnavailable
+from .repository import DESTRUCTION_CLASSIFICATION, RepositoryUnavailable
 
 
 ENVIRONMENT = "TEST"
@@ -870,7 +870,7 @@ class YdbRepository:
         return self.pool.retry_operation_sync(operation, retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True))
 
     def destruction_plan(self, participant_id):
-        """Return a PII-free dry-run inventory. This method intentionally never deletes."""
+        """Return a dry-run inventory with explicit data classification; never delete."""
         query = """
         DECLARE $environment AS Utf8; DECLARE $participant_id AS Utf8;
         SELECT participant_id FROM participants WHERE environment = $environment AND participant_id = $participant_id;
@@ -889,12 +889,6 @@ class YdbRepository:
             return None
         application_ids = [self._row_value(row, "application_id", "") for row in self._rows(result_sets, 2)]
         consent_ids = [self._row_value(row, "consent_id", "") for row in self._rows(result_sets, 3)]
-        inventory = {
-            "participant": {"count": 1, "contains_pii": True, "retention_decision_required": False},
-            "participant_phone_keys": {"count": len(self._rows(result_sets, 1)), "contains_pii": True, "retention_decision_required": False},
-            "applications": {"count": len(application_ids), "contains_pii": True, "retention_decision_required": False},
-            "consents": {"count": len(consent_ids), "contains_pii": False, "retention_decision_required": True},
-            "technical_logs": {"count": len(self._rows(result_sets, 4)), "contains_pii": False, "retention_decision_required": True},
-            "audit_log": {"count": len(self._rows(result_sets, 5)), "contains_pii": False, "retention_decision_required": True},
-        }
+        counts = {"participant": 1, "participant_phone_keys": len(self._rows(result_sets, 1)), "applications": len(application_ids), "consents": len(consent_ids), "technical_logs": len(self._rows(result_sets, 4)), "audit_log": len(self._rows(result_sets, 5))}
+        inventory = {name: {"count": count, **DESTRUCTION_CLASSIFICATION[name]} for name, count in counts.items()}
         return {"participant_id": participant_id, "dry_run": True, "delete_performed": False, "planned_audit_action": "destruction_planned", "records": inventory, "application_ids": application_ids, "consent_ids": consent_ids}

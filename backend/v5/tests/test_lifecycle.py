@@ -4,7 +4,7 @@ import json
 import unittest
 
 from backend.v5.handler import handler
-from backend.v5.repository import FakeRepository
+from backend.v5.repository import DESTRUCTION_CLASSIFICATION, FakeRepository
 
 
 PAYLOAD = {
@@ -72,6 +72,9 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(plan["records"]["applications"]["count"], 1)
         self.assertEqual(plan["records"]["participant_phone_keys"]["count"], 1)
         self.assertTrue(plan["records"]["audit_log"]["retention_decision_required"])
+        for name, expected in DESTRUCTION_CLASSIFICATION.items():
+            self.assertEqual({key: plan["records"][name][key] for key in expected}, expected)
+            self.assertNotIn("contains_pii", plan["records"][name])
 
     def test_lifecycle_audit_never_copies_pii(self):
         repo, participant_id = self.create_participant()

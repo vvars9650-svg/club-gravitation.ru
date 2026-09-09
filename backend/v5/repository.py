@@ -7,6 +7,16 @@ class RepositoryUnavailable(RuntimeError):
     pass
 
 
+DESTRUCTION_CLASSIFICATION = {
+    "participant": {"contains_personal_data": True, "contains_direct_contact_data": True, "contains_linkable_identifiers": True, "retention_decision_required": False},
+    "participant_phone_keys": {"contains_personal_data": True, "contains_direct_contact_data": True, "contains_linkable_identifiers": True, "retention_decision_required": False},
+    "applications": {"contains_personal_data": True, "contains_direct_contact_data": True, "contains_linkable_identifiers": True, "retention_decision_required": False},
+    "consents": {"contains_personal_data": True, "contains_direct_contact_data": False, "contains_linkable_identifiers": True, "retention_decision_required": True},
+    "technical_logs": {"contains_personal_data": True, "contains_direct_contact_data": False, "contains_linkable_identifiers": True, "retention_decision_required": True},
+    "audit_log": {"contains_personal_data": True, "contains_direct_contact_data": False, "contains_linkable_identifiers": True, "retention_decision_required": True},
+}
+
+
 class FakeRepository:
     """Test double; runtime construction always selects ``YdbRepository``."""
 
@@ -116,4 +126,6 @@ class FakeRepository:
         consent_ids = [record["consent"]["consent_id"] for record in records]
         phone_keys = sum(1 for owner in self.by_phone.values() if owner == participant_id)
         audit_count = sum(1 for event in self.audit if event.get("participant_id") == participant_id or event.get("application_id") in application_ids)
-        return {"participant_id": participant_id, "dry_run": True, "delete_performed": False, "records": {"participant": {"count": 1, "contains_pii": True, "retention_decision_required": False}, "participant_phone_keys": {"count": phone_keys, "contains_pii": True, "retention_decision_required": False}, "applications": {"count": len(application_ids), "contains_pii": True, "retention_decision_required": False}, "consents": {"count": len(consent_ids), "contains_pii": False, "retention_decision_required": True}, "technical_logs": {"count": len(records), "contains_pii": False, "retention_decision_required": True}, "audit_log": {"count": audit_count, "contains_pii": False, "retention_decision_required": True}}, "application_ids": application_ids, "consent_ids": consent_ids}
+        counts = {"participant": 1, "participant_phone_keys": phone_keys, "applications": len(application_ids), "consents": len(consent_ids), "technical_logs": len(records), "audit_log": audit_count}
+        inventory = {name: {"count": count, **DESTRUCTION_CLASSIFICATION[name]} for name, count in counts.items()}
+        return {"participant_id": participant_id, "dry_run": True, "delete_performed": False, "records": inventory, "application_ids": application_ids, "consent_ids": consent_ids}
