@@ -11,7 +11,7 @@ try:
 except ImportError:  # unit-only imports must not silently create memory storage
     ydb = None
 
-from .domain import ids
+from .domain import FORM_FIELDS, ids
 from .repository import RepositoryUnavailable
 
 
@@ -105,7 +105,6 @@ class YdbRepository:
 
     def get_idempotency(self, key):
         application_id, _ = ids(key)
-
         query = """
         DECLARE $environment AS Utf8;
         DECLARE $application_id AS Utf8;
@@ -691,6 +690,108 @@ class YdbRepository:
                 row, "decision", ""
             ),
         }
+
+    def list_admin_applications(self, filters=None, sort="submitted_at", order="desc"):
+        """Read-only TEST list for the future protected Admin API."""
+        filters = filters or {}
+        direction = "ASC" if order == "asc" else "DESC"
+        allowed_sorts = {
+            "submitted_at", "full_name", "age", "city", "lifecycle_status",
+            "priority", "next_contact_at",
+        }
+        if sort not in allowed_sorts:
+            raise RepositoryUnavailable("invalid_admin_sort")
+        query = """
+        DECLARE $environment AS Utf8;
+        DECLARE $q AS Utf8;
+        DECLARE $lifecycle_status AS Utf8;
+        DECLARE $owner AS Utf8;
+        DECLARE $priority AS Utf8;
+        DECLARE $decision AS Utf8;
+        SELECT a.application_id, a.participant_id, a.submitted_at, a.full_name,
+               a.age, a.city, a.phone, a.telegram, a.preferred_contact,
+               p.lifecycle_status, p.owner, p.priority, p.next_action,
+               p.next_contact_at, p.decision
+        FROM applications AS a
+        INNER JOIN participants AS p
+        ON a.environment = p.environment AND a.participant_id = p.participant_id
+        WHERE a.environment = $environment
+          AND ($q = "" OR a.full_name LIKE "%" || $q || "%" OR a.phone LIKE "%" || $q || "%" OR a.telegram LIKE "%" || $q || "%" OR a.city LIKE "%" || $q || "%")
+          AND ($lifecycle_status = "" OR p.lifecycle_status = $lifecycle_status)
+          AND ($owner = "" OR p.owner = $owner)
+          AND ($priority = "" OR p.priority = $priority)
+          AND ($decision = "" OR p.decision = $decision)
+        ORDER BY """ + sort + " " + direction + ";"
+        result_sets = self.pool.execute_with_retries(query, {
+            "$environment": ENVIRONMENT,
+            "$q": filters.get("q", ""), "$lifecycle_status": filters.get("lifecycle_status", ""),
+            "$owner": filters.get("owner", ""), "$priority": filters.get("priority", ""),
+            "$decision": filters.get("decision", ""),
+        }, retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True))
+        return [{name: self._row_value(row, name, "") for name in (
+            "application_id", "participant_id", "submitted_at", "full_name", "age", "city", "phone",
+            "telegram", "preferred_contact", "lifecycle_status", "owner", "priority", "next_action",
+            "next_contact_at", "decision") } | {"environment": ENVIRONMENT} for row in self._rows(result_sets)]
+
+    def get_admin_participant(self, participant_id):
+        query = """
+        DECLARE $environment AS Utf8; DECLARE $participant_id AS Utf8;
+        SELECT participant_id, phone, full_name, age, gender, city, visit_krasnodar, telegram, email,
+               preferred_contact, public_profile_url, lifecycle_status, owner, priority, next_action,
+               next_contact_at, decision, internal_comment
+        FROM participants WHERE environment = $environment AND participant_id = $participant_id;
+        SELECT application_id, submitted_at, form_version, request_id, full_name, age, gender, city,
+               visit_krasnodar, phone, telegram, email, preferred_contact, public_profile_url, occupation,
+               life_outside_work, interests, what_interested, event_expectations, desired_connections,
+               values_in_people, barriers_to_meeting, social_comfort, initiative, acquaintance_scenario,
+               successful_evening, return_reason, unacceptable_behavior, convenient_days, comfortable_price, source
+        FROM applications WHERE environment = $environment AND participant_id = $participant_id ORDER BY submitted_at DESC;
+        SELECT consent_id, application_id, consent_type, consent_version, policy_version, form_version,
+               consent_text_hash, granted, granted_at, source, request_id
+        FROM consents WHERE environment = $environment AND participant_id = $participant_id;
+        """
+        result_sets = self.pool.execute_with_retries(query, {"$environment": ENVIRONMENT, "$participant_id": participant_id}, retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True))
+        participant_rows = self._rows(result_sets, 0)
+        if not participant_rows:
+            return None
+        participant_fields = ("participant_id", "phone", "full_name", "age", "gender", "city", "visit_krasnodar", "telegram", "email", "preferred_contact", "public_profile_url", "lifecycle_status", "owner", "priority", "next_action", "next_contact_at", "decision", "internal_comment")
+        application_fields = ("application_id", "submitted_at", "form_version", "request_id", *FORM_FIELDS)
+        consent_fields = ("consent_id", "application_id", "consent_type", "consent_version", "policy_version", "form_version", "consent_text_hash", "granted", "granted_at", "source", "request_id")
+        return {"environment": ENVIRONMENT, "participant": {name: self._row_value(participant_rows[0], name, "") for name in participant_fields}, "applications": [{"application_id": self._row_value(row, "application_id", ""), "submitted_at": self._row_value(row, "submitted_at", ""), "form_version": self._row_value(row, "form_version", ""), "request_id": self._row_value(row, "request_id", ""), "form": {name: self._row_value(row, name, [] if name in ("desired_connections", "convenient_days") else "") for name in FORM_FIELDS}} for row in self._rows(result_sets, 1)], "consents": [{name: self._row_value(row, name, "") for name in consent_fields} for row in self._rows(result_sets, 2)]}
+
+    def update_admin_participant(self, participant_id, changes, actor, request_id):
+        """Atomic operational-only update plus minimal audit evidence."""
+        from .admin import OPERATIONAL_FIELDS
+        names = tuple(name for name in changes if name in OPERATIONAL_FIELDS)
+        if not names:
+            return None
+        audit_id = "AUD-" + hashlib.sha256((ENVIRONMENT + participant_id + request_id).encode("utf-8")).hexdigest()[:24]
+        assignments = ", ".join(name + " = $" + name for name in names)
+        action = "participant_operational_updated|actor={}|fields={}".format(actor, ",".join(sorted(names)))
+        declarations = []
+        for name in names:
+            type_name = "Optional<Timestamp>" if name == "next_contact_at" else "Utf8"
+            declarations.append("DECLARE $" + name + " AS " + type_name + ";")
+        query = """
+        DECLARE $environment AS Utf8; DECLARE $participant_id AS Utf8; DECLARE $audit_id AS Utf8;
+        DECLARE $request_id AS Utf8; DECLARE $action AS Utf8;
+        """ + "\n".join(declarations) + """
+        UPDATE participants SET """ + assignments + """, updated_at = CurrentUtcTimestamp()
+        WHERE environment = $environment AND participant_id = $participant_id;
+        INSERT INTO audit_log (environment, audit_id, timestamp, request_id, application_id, participant_id, action)
+        VALUES ($environment, $audit_id, CurrentUtcTimestamp(), $request_id, NULL, $participant_id, $action);
+        """
+        params = {"$environment": ENVIRONMENT, "$participant_id": participant_id, "$audit_id": audit_id, "$request_id": request_id, "$action": action}
+        params.update({"$" + name: "" if changes[name] is None else str(changes[name]) for name in names})
+        def operation(session):
+            tx = session.transaction(ydb.QuerySerializableReadWrite())
+            with tx.execute(query, params, commit_tx=True) as stream:
+                for _ in stream:
+                    pass
+            return True
+        self.pool.retry_operation_sync(operation, retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True))
+        card = self.get_admin_participant(participant_id)
+        return card["participant"] if card else None
 
     def block_processing(self, participant_id):
         raise RepositoryUnavailable(

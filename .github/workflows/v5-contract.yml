@@ -20,9 +20,12 @@ jobs:
       - run: node --check tests/application-api.test.js
       - run: node --check tests/v5-contract.test.js
       - run: node --check tests/frontend-submit.test.js
+      - run: node --check assets/js/admin.js
+      - run: node --check tests/admin-ui.test.js
       - run: node tests/application-api.test.js
       - run: node tests/v5-contract.test.js
       - run: node tests/frontend-submit.test.js
+      - run: node tests/admin-ui.test.js
       - run: python -m compileall backend/v5
       - run: python -m unittest discover -s backend/v5/tests -v
       - run: git diff --check

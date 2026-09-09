@@ -102,6 +102,24 @@ class FakePool:
         self.stop_calls += 1
 
 
+class AdminReadPool:
+    def __init__(self):
+        self.queries = []
+
+    def execute_with_retries(self, query, params, retry_settings=None):
+        self.queries.append((query, params))
+        return [
+            FakeResultSet([{
+                "application_id": "APP-ADMIN", "participant_id": "PT-ADMIN",
+                "submitted_at": "2026-09-09T00:00:00Z", "full_name": "Тест",
+                "age": 30, "city": "Краснодар", "phone": "+79990000001",
+                "telegram": "@test", "preferred_contact": "Telegram",
+                "lifecycle_status": "Новая заявка", "owner": "", "priority": "",
+                "next_action": "", "next_contact_at": None, "decision": "",
+            }])
+        ]
+
+
 def make_record():
     return {
         "environment": "PROD",
@@ -418,6 +436,40 @@ class YdbRepositoryTests(unittest.TestCase):
         repo.close()
 
         self.assertEqual(events, ["pool", "driver"])
+
+    def test_admin_list_query_is_test_scoped_and_has_no_raw_payload(self):
+        repo = YdbRepository.__new__(YdbRepository)
+        repo.pool = AdminReadPool()
+        rows = repo.list_admin_applications(
+            {"q": "Тест", "lifecycle_status": "Новая заявка"},
+            "submitted_at", "desc",
+        )
+        query, params = repo.pool.queries[0]
+        self.assertEqual(rows[0]["environment"], "TEST")
+        self.assertEqual(params["$environment"], "TEST")
+        self.assertIn("FROM applications", query)
+        self.assertIn("INNER JOIN participants", query)
+        self.assertNotIn("raw_payload", query)
+        self.assertNotIn("internal_comment", query)
+
+    def test_admin_patch_writes_only_operational_fields_and_audit(self):
+        tx = FakeTransaction([FakeResultSet([])])
+        repo = self.make_repo(tx)
+        repo.get_admin_participant = lambda participant_id: {
+            "participant": {"participant_id": participant_id, "owner": "Влад"}
+        }
+        participant = repo.update_admin_participant(
+            "PT-ADMIN", {"owner": "Влад", "internal_comment": "TEST note"},
+            "auth-test", "REQ-ADMIN",
+        )
+        query = tx.queries[0]
+        self.assertEqual(participant["participant_id"], "PT-ADMIN")
+        self.assertIn("UPDATE participants SET", query)
+        self.assertIn("INSERT INTO audit_log", query)
+        self.assertIn("fields=internal_comment,owner", tx.params[0]["$action"])
+        self.assertNotIn("TEST note", tx.params[0]["$action"])
+        self.assertNotIn("phone", query.lower())
+        self.assertEqual(tx.commit_flags, [True])
 
 
 if __name__ == "__main__":

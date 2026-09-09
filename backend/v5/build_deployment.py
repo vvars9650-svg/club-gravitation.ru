@@ -15,6 +15,7 @@ PACKAGE_FILES = (
     "repository.py",
     "ydb_repository.py",
     "factory.py",
+    "admin.py",
     "handler.py",
 )
 EXPECTED_FILES = (
