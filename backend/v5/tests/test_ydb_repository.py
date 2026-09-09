@@ -1,5 +1,6 @@
 import threading
 import unittest
+from pathlib import Path
 
 import ydb
 
@@ -61,6 +62,8 @@ class FakeTransaction:
             "FROM applications" in query
             and "participant_phone_keys" in query
         ):
+            stream = FakeExecuteResult(self.read_result_sets)
+        elif "SELECT processing_blocked FROM participants" in query:
             stream = FakeExecuteResult(self.read_result_sets)
         else:
             stream = FakeExecuteResult(
@@ -470,6 +473,54 @@ class YdbRepositoryTests(unittest.TestCase):
         self.assertNotIn("TEST note", tx.params[0]["$action"])
         self.assertNotIn("phone", query.lower())
         self.assertEqual(tx.commit_flags, [True])
+
+    def test_block_processing_is_serializable_idempotent_and_audited_without_reason(self):
+        tx = FakeTransaction([FakeResultSet([{"processing_blocked": False}])])
+        repo = self.make_repo(tx)
+        self.assertTrue(repo.block_processing("PT-BLOCK", "REQ-BLOCK", "internal_request"))
+        self.assertIsInstance(repo.pool.session.tx_mode, ydb.QuerySerializableReadWrite)
+        self.assertEqual(tx.commit_flags, [False, True])
+        self.assertTrue(tx.committed)
+        self.assertIn("processing_blocked", tx.queries[1])
+        self.assertIn("INSERT INTO audit_log", tx.queries[1])
+        self.assertNotIn("internal_request", tx.queries[1])
+        self.assertTrue(all(stream.consumed for stream in tx.streams))
+
+        already = FakeTransaction([FakeResultSet([{"processing_blocked": True}])])
+        repo = self.make_repo(already)
+        self.assertFalse(repo.block_processing("PT-BLOCK", "REQ-BLOCK", "internal_request"))
+        self.assertEqual(len(already.queries), 1)
+
+    def test_blocked_submit_writes_no_application_or_consent(self):
+        tx = FakeTransaction([FakeResultSet([]), FakeResultSet([{"participant_id": "PT-BLOCK", "processing_blocked": True}])])
+        repo = self.make_repo(tx)
+        with self.assertRaisesRegex(Exception, "processing_blocked"):
+            repo.save("blocked-key", make_record())
+        self.assertEqual(len(tx.queries), 1)
+        self.assertTrue(tx.committed)
+
+    def test_destruction_plan_query_is_dry_run_and_pii_free(self):
+        class PlanPool:
+            def __init__(self): self.query = ""
+            def execute_with_retries(self, query, params, retry_settings=None):
+                self.query = query
+                return [FakeResultSet([{"participant_id": "PT-PLAN"}]), FakeResultSet([{"participant_id": "PT-PLAN"}]), FakeResultSet([{"application_id": "APP-1"}]), FakeResultSet([{"consent_id": "CONS-1"}]), FakeResultSet([{"log_id": "LOG-1"}]), FakeResultSet([{"audit_id": "AUD-1"}])]
+        repo = YdbRepository.__new__(YdbRepository)
+        repo.pool = PlanPool()
+        plan = repo.destruction_plan("PT-PLAN")
+        self.assertTrue(plan["dry_run"])
+        self.assertFalse(plan["delete_performed"])
+        self.assertEqual(plan["records"]["applications"]["count"], 1)
+        self.assertTrue(plan["records"]["applications"]["contains_pii"])
+        self.assertTrue(plan["records"]["consents"]["retention_decision_required"])
+        self.assertNotIn("DELETE", repo.pool.query.upper())
+        self.assertNotIn("raw_payload", repo.pool.query)
+
+    def test_lifecycle_migration_only_adds_nonbreaking_columns(self):
+        migration = (Path(__file__).resolve().parents[1] / "schema" / "002_v5_test_lifecycle.sql").read_text(encoding="utf-8")
+        for column in ("processing_blocked Bool", "processing_blocked_at Timestamp", "processing_block_reason Utf8", "processing_block_request_id Utf8"):
+            self.assertIn("ADD COLUMN " + column, migration)
+        self.assertNotIn("DROP", migration.upper())
 
 
 if __name__ == "__main__":

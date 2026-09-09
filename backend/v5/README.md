@@ -64,3 +64,11 @@ For `/admin/*`, `handler.py` reads only
 authorizer. Missing context or `sub` fails closed. Client headers, cookies,
 query parameters and body fields are ignored as actor sources. The raw `sub` is
 hashed by the existing Admin layer before audit storage.
+
+## STEP 8A lifecycle foundation (internal only)
+
+`backend/v5/schema/002_v5_test_lifecycle.sql` is a non-breaking TEST migration. It adds nullable lifecycle fields to `participants`: `processing_blocked`, `processing_blocked_at`, `processing_block_reason`, and `processing_block_request_id`. It is deliberately not applied by CI, the builder, or runtime startup.
+
+After reviewed TEST schema application, `YdbRepository.block_processing()` uses a serializable read/write transaction to set the block and add the minimal `processing_blocked` audit action. A repeated block is idempotent. Intake reads the same block within its transaction and returns `processing_blocked` without writing a participant, application, consent or creation audit event.
+
+`find_participant`, `find_participant_by_phone`, and `find_application` are internal repository helpers only; there are no lifecycle HTTP routes. `destruction_plan()` is dry-run only: it returns PII-free IDs/counts and record classification for participant, phone key, applications, consents, technical logs and audit records. It never executes DELETE. Consent, technical and audit evidence are marked for a separate retention decision. Lifecycle audit action names are `processing_blocked`, `destruction_requested`, and `destruction_planned`; no client input or free-text PII is copied into these actions.

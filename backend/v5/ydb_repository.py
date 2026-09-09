@@ -17,6 +17,11 @@ from .repository import RepositoryUnavailable
 
 ENVIRONMENT = "TEST"
 FORM_VERSION = "FORM-2.0"
+LIFECYCLE_AUDIT_ACTIONS = (
+    "processing_blocked",
+    "destruction_requested",
+    "destruction_planned",
+)
 
 
 class YdbRepository:
@@ -159,10 +164,12 @@ class YdbRepository:
         DECLARE $environment AS Utf8;
         DECLARE $phone AS Utf8;
 
-        SELECT participant_id
-        FROM participant_phone_keys
-        WHERE environment = $environment
-          AND phone = $phone
+        SELECT p.participant_id, p.processing_blocked
+        FROM participant_phone_keys AS k
+        INNER JOIN participants AS p
+        ON k.environment = p.environment AND k.participant_id = p.participant_id
+        WHERE k.environment = $environment
+          AND k.phone = $phone
         LIMIT 1;
         """
 
@@ -238,10 +245,12 @@ class YdbRepository:
           AND application_id = $application_id
         LIMIT 1;
 
-        SELECT participant_id
-        FROM participant_phone_keys
-        WHERE environment = $environment
-          AND phone = $phone
+        SELECT p.participant_id, p.processing_blocked
+        FROM participant_phone_keys AS k
+        INNER JOIN participants AS p
+        ON k.environment = p.environment AND k.participant_id = p.participant_id
+        WHERE k.environment = $environment
+          AND k.phone = $phone
         LIMIT 1;
         """
 
@@ -273,6 +282,10 @@ class YdbRepository:
                     "participant_id",
                     None,
                 )
+
+                if self._row_value(phone_rows[0], "processing_blocked", False):
+                    tx.commit()
+                    raise RepositoryUnavailable("processing_blocked")
 
             if existing_participant_id:
                 participant_id = existing_participant_id
@@ -647,6 +660,10 @@ class YdbRepository:
             next_action,
             next_contact_at,
             decision
+            ,processing_blocked,
+            processing_blocked_at,
+            processing_block_reason,
+            processing_block_request_id
         FROM participants
         WHERE environment = $environment
           AND participant_id = $participant_id
@@ -689,7 +706,33 @@ class YdbRepository:
             "decision": self._row_value(
                 row, "decision", ""
             ),
+            "processing_blocked": self._row_value(row, "processing_blocked", False),
+            "processing_blocked_at": self._row_value(row, "processing_blocked_at", None),
+            "processing_block_reason": self._row_value(row, "processing_block_reason", ""),
+            "processing_block_request_id": self._row_value(row, "processing_block_request_id", ""),
         }
+
+    def find_participant_by_phone(self, phone):
+        """Internal subject locate by already-normalized authoritative phone."""
+        participant_id = self.resolve_phone(phone)
+        return self.find_participant(participant_id) if participant_id else None
+
+    def find_application(self, application_id):
+        """Internal application-to-subject locate; never exposed as a public route."""
+        query = """
+        DECLARE $environment AS Utf8;
+        DECLARE $application_id AS Utf8;
+        SELECT application_id, participant_id, request_id
+        FROM applications
+        WHERE environment = $environment AND application_id = $application_id
+        LIMIT 1;
+        """
+        result_sets = self.pool.execute_with_retries(query, {"$environment": ENVIRONMENT, "$application_id": application_id}, retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True))
+        rows = self._rows(result_sets)
+        if not rows:
+            return None
+        row = rows[0]
+        return {name: self._row_value(row, name, "") for name in ("application_id", "participant_id", "request_id")}
 
     def list_admin_applications(self, filters=None, sort="submitted_at", order="desc"):
         """Read-only TEST list for the future protected Admin API."""
@@ -793,15 +836,65 @@ class YdbRepository:
         card = self.get_admin_participant(participant_id)
         return card["participant"] if card else None
 
-    def block_processing(self, participant_id):
-        raise RepositoryUnavailable(
-            "processing_block_schema_required"
-        )
+    def block_processing(self, participant_id, request_id="REQ-INTERNAL", reason="internal_lifecycle"):
+        """Atomically persist an internal TEST processing block and minimal audit evidence."""
+        if not isinstance(reason, str) or not reason or len(reason) > 64 or not all(char.isalnum() or char in "_-" for char in reason):
+            raise RepositoryUnavailable("invalid_processing_block_reason")
+        audit_id = "AUD-" + hashlib.sha256((ENVIRONMENT + participant_id + request_id + "processing_blocked").encode("utf-8")).hexdigest()[:24]
+        read_query = """
+        DECLARE $environment AS Utf8; DECLARE $participant_id AS Utf8;
+        SELECT processing_blocked FROM participants
+        WHERE environment = $environment AND participant_id = $participant_id LIMIT 1;
+        """
+        write_query = """
+        DECLARE $environment AS Utf8; DECLARE $participant_id AS Utf8; DECLARE $request_id AS Utf8;
+        DECLARE $reason AS Utf8; DECLARE $audit_id AS Utf8;
+        UPDATE participants SET processing_blocked = true, processing_blocked_at = CurrentUtcTimestamp(),
+            processing_block_reason = $reason, processing_block_request_id = $request_id, updated_at = CurrentUtcTimestamp()
+        WHERE environment = $environment AND participant_id = $participant_id;
+        INSERT INTO audit_log (environment, audit_id, timestamp, request_id, application_id, participant_id, action)
+        VALUES ($environment, $audit_id, CurrentUtcTimestamp(), $request_id, NULL, $participant_id, "processing_blocked");
+        """
+        params = {"$environment": ENVIRONMENT, "$participant_id": participant_id, "$request_id": request_id, "$reason": reason, "$audit_id": audit_id}
+        def operation(session):
+            tx = session.transaction(ydb.QuerySerializableReadWrite())
+            with tx.execute(read_query, {"$environment": ENVIRONMENT, "$participant_id": participant_id}) as stream:
+                rows = self._rows(list(stream))
+            if not rows or self._row_value(rows[0], "processing_blocked", False):
+                tx.commit()
+                return False
+            with tx.execute(write_query, params, commit_tx=True) as stream:
+                for _ in stream:
+                    pass
+            return True
+        return self.pool.retry_operation_sync(operation, retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True))
 
     def destruction_plan(self, participant_id):
-        return {
-            "participant_id": participant_id,
-            "applications": "separate command required",
-            "consents": "retention policy required",
-            "audit_log": "retention policy required",
+        """Return a PII-free dry-run inventory. This method intentionally never deletes."""
+        query = """
+        DECLARE $environment AS Utf8; DECLARE $participant_id AS Utf8;
+        SELECT participant_id FROM participants WHERE environment = $environment AND participant_id = $participant_id;
+        SELECT participant_id FROM participant_phone_keys WHERE environment = $environment AND participant_id = $participant_id;
+        SELECT application_id FROM applications WHERE environment = $environment AND participant_id = $participant_id;
+        SELECT consent_id FROM consents WHERE environment = $environment AND participant_id = $participant_id;
+        SELECT t.log_id FROM technical_logs AS t INNER JOIN applications AS a
+        ON t.environment = a.environment AND t.application_id = a.application_id
+        WHERE t.environment = $environment AND a.participant_id = $participant_id;
+        SELECT u.audit_id FROM audit_log AS u
+        LEFT JOIN applications AS a ON u.environment = a.environment AND u.application_id = a.application_id
+        WHERE u.environment = $environment AND (u.participant_id = $participant_id OR a.participant_id = $participant_id);
+        """
+        result_sets = self.pool.execute_with_retries(query, {"$environment": ENVIRONMENT, "$participant_id": participant_id}, retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True))
+        if not self._rows(result_sets, 0):
+            return None
+        application_ids = [self._row_value(row, "application_id", "") for row in self._rows(result_sets, 2)]
+        consent_ids = [self._row_value(row, "consent_id", "") for row in self._rows(result_sets, 3)]
+        inventory = {
+            "participant": {"count": 1, "contains_pii": True, "retention_decision_required": False},
+            "participant_phone_keys": {"count": len(self._rows(result_sets, 1)), "contains_pii": True, "retention_decision_required": False},
+            "applications": {"count": len(application_ids), "contains_pii": True, "retention_decision_required": False},
+            "consents": {"count": len(consent_ids), "contains_pii": False, "retention_decision_required": True},
+            "technical_logs": {"count": len(self._rows(result_sets, 4)), "contains_pii": False, "retention_decision_required": True},
+            "audit_log": {"count": len(self._rows(result_sets, 5)), "contains_pii": False, "retention_decision_required": True},
         }
+        return {"participant_id": participant_id, "dry_run": True, "delete_performed": False, "planned_audit_action": "destruction_planned", "records": inventory, "application_ids": application_ids, "consent_ids": consent_ids}

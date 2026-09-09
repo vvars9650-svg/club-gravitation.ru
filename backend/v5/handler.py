@@ -28,6 +28,8 @@ def handler(event,context=None,repo=None):
         repo=repo or runtime_repository()
         data=json.loads(event.get('body','')); key=event.get('headers',{}).get('Idempotency-Key') or event.get('headers',{}).get('idempotency-key');record,replay=submit(data,key,repo,request_id)
         return response(200 if replay else 201,{'application_id':record['application_id'],'participant_id':record['participant_id'],'idempotent_replay':replay,'environment':'TEST'},request_id)
-    except RepositoryUnavailable as e: return response(503,{'error':{'code':str(e)}},request_id)
+    except RepositoryUnavailable as e:
+        code = str(e)
+        return response(409 if code == 'processing_blocked' else 503, {'error': {'code': code}}, request_id)
     except (ValueError,DomainError) as e:
         code=e.code if isinstance(e,DomainError) else 'invalid_json';status=e.status if isinstance(e,DomainError) else 400;return response(status,{'error':{'code':code}},request_id)
