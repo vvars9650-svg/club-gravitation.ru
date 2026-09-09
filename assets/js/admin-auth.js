@@ -23,7 +23,27 @@
   const decodeJwt = (token) => {
     const part = String(token || '').split('.')[1];
     if (!part) return {};
-    try { return JSON.parse(atob(part.replace(/-/gu, '+').replace(/_/gu, '/'))); } catch { return {}; }
+    try {
+      const normalized = part.replace(/-/gu, '+').replace(/_/gu, '/');
+      const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4);
+      return JSON.parse(atob(padded));
+    } catch { return {}; }
+  };
+  const tokenDiagnostics = (token, includeScope = false) => {
+    const segments = String(token || '').split('.');
+    const claims = segments.length === 3 ? decodeJwt(token) : {};
+    const isJwt = segments.length === 3 && Object.keys(claims).length > 0;
+    const result = {
+      is_jwt: isJwt,
+      segment_count: token ? segments.length : 0,
+      iss: isJwt ? claims.iss || null : null,
+      aud: isJwt ? claims.aud || null : null,
+      sub_present: isJwt && typeof claims.sub === 'string' && claims.sub.length > 0,
+      exp: isJwt ? claims.exp || null : null,
+      claim_names: isJwt ? Object.keys(claims).sort() : []
+    };
+    if (includeScope) result.scope = isJwt ? claims.scope || null : null;
+    return result;
   };
   const normalizeConfig = (config) => {
     if (!config || config.environment !== 'TEST' || !config.client_id || !config.redirect_uri) {
@@ -70,10 +90,10 @@
       const tokens = await response.json();
       if (!tokens.access_token) throw new Error('oidc_token_missing');
       const claims = decodeJwt(tokens.id_token || tokens.access_token);
-      session = {accessToken: tokens.access_token, user: {name: claims.name || '', email: claims.email || ''}};
+      session = {accessToken: tokens.access_token, idToken: tokens.id_token || null, user: {name: claims.name || '', email: claims.email || ''}};
       return session;
     }
-    return {signIn, consumeCallback, getSession: () => session, getAccessToken: () => session && session.accessToken, signOut: () => { session = null; storage.removeItem(TRANSIENT_KEY); }};
+    return {signIn, consumeCallback, getSession: () => session, getAccessToken: () => session && session.accessToken, getIdToken: () => session && session.idToken, signOut: () => { session = null; storage.removeItem(TRANSIENT_KEY); }};
   }
-  return {TRANSIENT_KEY, random, pkceChallenge, decodeJwt, normalizeConfig, resolveEndpoints, createAuthClient};
+  return {TRANSIENT_KEY, random, pkceChallenge, decodeJwt, tokenDiagnostics, normalizeConfig, resolveEndpoints, createAuthClient};
 });

@@ -17,6 +17,7 @@
     </section>
     <section id="admin-workspace" hidden>
     <div class="admin-session"><span id="admin-identity"></span><button id="admin-logout" type="button">Выйти</button></div>
+    <section class="admin-diagnostic" aria-label="Безопасная диагностика OIDC TEST"><h2>OIDC TEST diagnostics</h2><pre id="admin-token-diagnostic">Метаданные токенов появятся после входа.</pre></section>
     <section class="admin-controls" aria-label="Фильтры заявок">
       <input id="admin-search" type="search" placeholder="Поиск: имя, телефон, Telegram, город">
       <select id="admin-status"><option value="">Все статусы</option></select>
@@ -29,6 +30,7 @@
     <aside class="participant-drawer" id="participant-drawer" hidden aria-label="Карточка участника"><button id="drawer-close" type="button">Закрыть</button><div id="participant-card"></div></aside>
     </section>
   </main>
+  <script src="/assets/js/admin-config.test.js" defer></script>
   <script src="/assets/js/admin-auth.js" defer></script>
   <script src="/assets/js/admin.js" defer></script>
 </body>
