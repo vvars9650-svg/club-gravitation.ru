@@ -11,12 +11,11 @@ try:
 except ImportError:  # unit-only imports must not silently create memory storage
     ydb = None
 
-from .domain import FORM_FIELDS, ids
+from .domain import FORM_FIELDS, FORM_VERSION, ids
 from .repository import DESTRUCTION_CLASSIFICATION, RepositoryUnavailable
 
 
 ENVIRONMENT = "TEST"
-FORM_VERSION = "FORM-2.0"
 LIFECYCLE_AUDIT_ACTIONS = (
     "processing_blocked",
     "destruction_requested",
@@ -629,7 +628,7 @@ class YdbRepository:
                     ),
                     ydb.PrimitiveType.Json,
                 ),
-                "$comfortable_price": form["comfortable_price"],
+                "$comfortable_price": "",
                 "$source": form["source"],
 
                 "$consent_type": "personal_data_application",
@@ -905,3 +904,4 @@ class YdbRepository:
         counts = {"participant": 1, "participant_phone_keys": len(self._rows(result_sets, 1)), "applications": len(application_ids), "consents": len(consent_ids), "technical_logs": len(self._rows(result_sets, 4)), "audit_log": len(self._rows(result_sets, 5))}
         inventory = {name: {"count": count, **DESTRUCTION_CLASSIFICATION[name]} for name, count in counts.items()}
         return {"participant_id": participant_id, "dry_run": True, "delete_performed": False, "planned_audit_action": "destruction_planned", "records": inventory, "application_ids": application_ids, "consent_ids": consent_ids}
+
