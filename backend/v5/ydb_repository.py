@@ -231,10 +231,9 @@ class YdbRepository:
             f"{ENVIRONMENT}:{application_id}:created".encode("utf-8")
         ).hexdigest()[:24]
 
-        read_query = """
+        application_read_query = """
         DECLARE $environment AS Utf8;
         DECLARE $application_id AS Utf8;
-        DECLARE $phone AS Utf8;
 
         SELECT
             application_id,
@@ -244,6 +243,11 @@ class YdbRepository:
         WHERE environment = $environment
           AND application_id = $application_id
         LIMIT 1;
+        """
+
+        phone_read_query = """
+        DECLARE $environment AS Utf8;
+        DECLARE $phone AS Utf8;
 
         SELECT p.participant_id, p.processing_blocked
         FROM participant_phone_keys AS k
@@ -258,21 +262,30 @@ class YdbRepository:
             tx = session.transaction(ydb.QuerySerializableReadWrite())
 
             with tx.execute(
-                read_query,
+                application_read_query,
                 {
                     "$environment": ENVIRONMENT,
                     "$application_id": application_id,
-                    "$phone": phone,
                 },
             ) as result_stream:
-                result_sets = list(result_stream)
+                application_result_sets = list(result_stream)
 
-            application_rows = self._rows(result_sets, 0)
-            phone_rows = self._rows(result_sets, 1)
+            application_rows = self._rows(application_result_sets, 0)
 
             if application_rows:
                 tx.commit()
                 return False
+
+            with tx.execute(
+                phone_read_query,
+                {
+                    "$environment": ENVIRONMENT,
+                    "$phone": phone,
+                },
+            ) as result_stream:
+                phone_result_sets = list(result_stream)
+
+            phone_rows = self._rows(phone_result_sets, 0)
 
             existing_participant_id = None
 
