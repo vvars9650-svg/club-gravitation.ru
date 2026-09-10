@@ -275,11 +275,12 @@ class YdbRepository:
             intake_rows = self._rows(intake_result_sets, 0)
             application_rows = [
                 row for row in intake_rows
-                if self._row_value(row, "record_type", "") == "application"
+                if self._row_value(row, "application_id", "")
             ]
             phone_rows = [
                 row for row in intake_rows
-                if self._row_value(row, "record_type", "") == "phone"
+                if not self._row_value(row, "application_id", "")
+                and self._row_value(row, "participant_id", "")
             ]
 
             if application_rows:
