@@ -48,6 +48,7 @@ class FakeExecuteResult:
 class FakeTransaction:
     def __init__(self, read_result_sets):
         self.read_result_sets = read_result_sets
+        self.read_index = 0
         self.queries = []
         self.params = []
         self.commit_flags = []
@@ -59,11 +60,14 @@ class FakeTransaction:
         self.params.append(params or {})
         self.commit_flags.append(commit_tx)
 
-        if (
-            "FROM applications" in query
-            and "participant_phone_keys" in query
-        ):
-            stream = FakeExecuteResult(self.read_result_sets)
+        if "FROM applications" in query and "participant_phone_keys" not in query:
+            result = self.read_result_sets[self.read_index:self.read_index + 1]
+            self.read_index += 1
+            stream = FakeExecuteResult(result)
+        elif "FROM participant_phone_keys" in query:
+            result = self.read_result_sets[self.read_index:self.read_index + 1]
+            self.read_index += 1
+            stream = FakeExecuteResult(result)
         elif "SELECT processing_blocked FROM participants" in query:
             stream = FakeExecuteResult(self.read_result_sets)
         else:
@@ -204,7 +208,7 @@ class YdbRepositoryTests(unittest.TestCase):
             repo.pool.session.tx_mode,
             ydb.QuerySerializableReadWrite,
         )
-        self.assertEqual(tx.commit_flags, [False, True])
+        self.assertEqual(tx.commit_flags, [False, False, True])
         self.assertTrue(tx.committed)
 
         for stream in tx.streams:
@@ -274,10 +278,10 @@ class YdbRepositoryTests(unittest.TestCase):
 
         self.assertEqual(
             len(tx.queries),
-            2,
+            3,
         )
 
-        write_query = tx.queries[1]
+        write_query = tx.queries[2]
 
         for table in (
             "participants",
@@ -322,7 +326,7 @@ class YdbRepositoryTests(unittest.TestCase):
             make_record(),
         )
 
-        write_query = tx.queries[1]
+        write_query = tx.queries[2]
 
         participant_pos = write_query.index(
             "INSERT INTO participants"
@@ -371,7 +375,7 @@ class YdbRepositoryTests(unittest.TestCase):
             "PT-EXISTING",
         )
 
-        write_query = tx.queries[1]
+        write_query = tx.queries[2]
 
         self.assertIn(
             "UPDATE participants SET",
@@ -497,7 +501,7 @@ class YdbRepositoryTests(unittest.TestCase):
         repo = self.make_repo(tx)
         with self.assertRaisesRegex(Exception, "processing_blocked"):
             repo.save("blocked-key", make_record())
-        self.assertEqual(len(tx.queries), 1)
+        self.assertEqual(len(tx.queries), 2)
         self.assertTrue(tx.committed)
 
     def test_destruction_plan_query_is_dry_run_and_pii_free(self):
