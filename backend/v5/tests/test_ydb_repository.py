@@ -166,7 +166,6 @@ def make_record():
             "return_reason": "test",
             "unacceptable_behavior": "test",
             "convenient_days": ["Суббота"],
-            "comfortable_price": "test",
             "source": "website",
         },
         "consent": {
@@ -246,7 +245,7 @@ class YdbRepositoryTests(unittest.TestCase):
 
         self.assertEqual(
             record["consent"]["form_version"],
-            "FORM-2.0",
+            "FORM-2.1",
         )
 
         self.assertTrue(
@@ -545,3 +544,4 @@ class YdbRepositoryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
