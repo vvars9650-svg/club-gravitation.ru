@@ -231,61 +231,60 @@ class YdbRepository:
             f"{ENVIRONMENT}:{application_id}:created".encode("utf-8")
         ).hexdigest()[:24]
 
-        application_read_query = """
+        intake_read_query = """
         DECLARE $environment AS Utf8;
         DECLARE $application_id AS Utf8;
+        DECLARE $phone AS Utf8;
 
         SELECT
+            "application" AS record_type,
             application_id,
             participant_id,
-            payload_fingerprint
+            payload_fingerprint,
+            false AS processing_blocked
         FROM applications
         WHERE environment = $environment
           AND application_id = $application_id
-        LIMIT 1;
-        """
-
-        phone_read_query = """
-        DECLARE $environment AS Utf8;
-        DECLARE $phone AS Utf8;
-
-        SELECT p.participant_id, p.processing_blocked
+        UNION ALL
+        SELECT
+            "phone" AS record_type,
+            "" AS application_id,
+            p.participant_id AS participant_id,
+            "" AS payload_fingerprint,
+            p.processing_blocked AS processing_blocked
         FROM participant_phone_keys AS k
         INNER JOIN participants AS p
         ON k.environment = p.environment AND k.participant_id = p.participant_id
         WHERE k.environment = $environment
-          AND k.phone = $phone
-        LIMIT 1;
+          AND k.phone = $phone;
         """
 
         def transaction_body(session):
             tx = session.transaction(ydb.QuerySerializableReadWrite())
 
             with tx.execute(
-                application_read_query,
+                intake_read_query,
                 {
                     "$environment": ENVIRONMENT,
                     "$application_id": application_id,
+                    "$phone": phone,
                 },
             ) as result_stream:
-                application_result_sets = list(result_stream)
+                intake_result_sets = list(result_stream)
 
-            application_rows = self._rows(application_result_sets, 0)
+            intake_rows = self._rows(intake_result_sets, 0)
+            application_rows = [
+                row for row in intake_rows
+                if self._row_value(row, "record_type", "") == "application"
+            ]
+            phone_rows = [
+                row for row in intake_rows
+                if self._row_value(row, "record_type", "") == "phone"
+            ]
 
             if application_rows:
                 tx.commit()
                 return False
-
-            with tx.execute(
-                phone_read_query,
-                {
-                    "$environment": ENVIRONMENT,
-                    "$phone": phone,
-                },
-            ) as result_stream:
-                phone_result_sets = list(result_stream)
-
-            phone_rows = self._rows(phone_result_sets, 0)
 
             existing_participant_id = None
 
