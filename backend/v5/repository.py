@@ -79,7 +79,7 @@ class FakeRepository:
         for record in self.by_key.values():
             if record["participant_id"] != participant_id:
                 continue
-            applications.append({"application_id": record["application_id"], "submitted_at": record["submitted_at"], "form_version": "FORM-2.0", "request_id": record["request_id"], "form": deepcopy(record["form"])})
+            applications.append({"application_id": record["application_id"], "submitted_at": record["submitted_at"], "form_version": record["consent"]["form_version"], "request_id": record["request_id"], "form": deepcopy(record["form"])})
             consents.append(deepcopy(record["consent"]))
         return {"environment": "TEST", "participant": deepcopy(participant), "applications": sorted(applications, key=lambda item: item["submitted_at"], reverse=True), "consents": consents}
 
@@ -129,3 +129,4 @@ class FakeRepository:
         counts = {"participant": 1, "participant_phone_keys": phone_keys, "applications": len(application_ids), "consents": len(consent_ids), "technical_logs": len(records), "audit_log": audit_count}
         inventory = {name: {"count": count, **DESTRUCTION_CLASSIFICATION[name]} for name, count in counts.items()}
         return {"participant_id": participant_id, "dry_run": True, "delete_performed": False, "records": inventory, "application_ids": application_ids, "consent_ids": consent_ids}
+
