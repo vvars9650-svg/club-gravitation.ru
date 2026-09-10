@@ -78,8 +78,9 @@ async function testRequestContractAndPayload() {
   assert.equal(payload.personal_data_consent, true);
   assert.equal(payload.consent_version, 'CONSENT-PD-2.0');
   assert.equal(payload.policy_version, 'PPD-2.0');
-  assert.equal(payload.form_version, 'FORM-2.0');
-  assert.equal(FORM_FIELDS.length, 27);
+  assert.equal(payload.form_version, 'FORM-2.1');
+  assert.equal(FORM_FIELDS.length, 26);
+  assert.equal(FORM_FIELDS.includes('comfortable_price'), false);
 
   for (const serverOwned of [
     'environment',
@@ -191,6 +192,7 @@ async function testResponseStates() {
     [422, {error: {code: 'invalid_age'}}, 'validation_error'],
     [415, {error: {code: 'unsupported_media_type'}}, 'recoverable_error'],
     [503, {error: {code: 'ydb_unavailable'}}, 'recoverable_error'],
+    [409, {error: {code: 'processing_blocked'}}, 'recoverable_error'],
   ];
 
   for (const [status, body, expectedState] of cases) {
@@ -261,3 +263,4 @@ function testForbiddenFrontendIntegrations() {
   console.error(error);
   process.exitCode = 1;
 });
+
