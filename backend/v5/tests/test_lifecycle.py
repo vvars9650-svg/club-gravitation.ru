@@ -16,8 +16,8 @@ PAYLOAD = {
     "values_in_people": "synthetic", "barriers_to_meeting": "synthetic", "social_comfort": "3",
     "initiative": "3", "acquaintance_scenario": "synthetic", "successful_evening": "synthetic",
     "return_reason": "synthetic", "unacceptable_behavior": "synthetic", "convenient_days": [],
-    "comfortable_price": "synthetic", "source": "synthetic", "personal_data_consent": True,
-    "consent_version": "CONSENT-PD-2.0", "policy_version": "PPD-2.0", "form_version": "FORM-2.0",
+    "source": "synthetic", "personal_data_consent": True,
+    "consent_version": "CONSENT-PD-2.0", "policy_version": "PPD-2.0", "form_version": "FORM-2.1",
 }
 
 
@@ -88,3 +88,4 @@ class LifecycleTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
