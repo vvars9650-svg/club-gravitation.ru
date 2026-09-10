@@ -60,7 +60,11 @@ class FakeTransaction:
         self.params.append(params or {})
         self.commit_flags.append(commit_tx)
 
-        if "FROM applications" in query and "participant_phone_keys" not in query:
+        if '"application" AS record_type' in query:
+            result = self.read_result_sets[self.read_index:self.read_index + 1]
+            self.read_index += 1
+            stream = FakeExecuteResult(result)
+        elif "FROM applications" in query and "participant_phone_keys" not in query:
             result = self.read_result_sets[self.read_index:self.read_index + 1]
             self.read_index += 1
             stream = FakeExecuteResult(result)
@@ -191,7 +195,6 @@ class YdbRepositoryTests(unittest.TestCase):
         tx = FakeTransaction(
             [
                 FakeResultSet([]),
-                FakeResultSet([]),
             ]
         )
 
@@ -208,7 +211,7 @@ class YdbRepositoryTests(unittest.TestCase):
             repo.pool.session.tx_mode,
             ydb.QuerySerializableReadWrite,
         )
-        self.assertEqual(tx.commit_flags, [False, False, True])
+        self.assertEqual(tx.commit_flags, [False, True])
         self.assertTrue(tx.committed)
 
         for stream in tx.streams:
@@ -219,7 +222,6 @@ class YdbRepositoryTests(unittest.TestCase):
     def test_server_owned_values_override_client(self):
         tx = FakeTransaction(
             [
-                FakeResultSet([]),
                 FakeResultSet([]),
             ]
         )
@@ -265,7 +267,6 @@ class YdbRepositoryTests(unittest.TestCase):
         tx = FakeTransaction(
             [
                 FakeResultSet([]),
-                FakeResultSet([]),
             ]
         )
 
@@ -278,10 +279,10 @@ class YdbRepositoryTests(unittest.TestCase):
 
         self.assertEqual(
             len(tx.queries),
-            3,
+            2,
         )
 
-        write_query = tx.queries[2]
+        write_query = tx.queries[1]
 
         for table in (
             "participants",
@@ -315,7 +316,6 @@ class YdbRepositoryTests(unittest.TestCase):
         tx = FakeTransaction(
             [
                 FakeResultSet([]),
-                FakeResultSet([]),
             ]
         )
 
@@ -326,7 +326,7 @@ class YdbRepositoryTests(unittest.TestCase):
             make_record(),
         )
 
-        write_query = tx.queries[2]
+        write_query = tx.queries[1]
 
         participant_pos = write_query.index(
             "INSERT INTO participants"
@@ -344,11 +344,14 @@ class YdbRepositoryTests(unittest.TestCase):
     def test_existing_phone_reuses_participant(self):
         tx = FakeTransaction(
             [
-                FakeResultSet([]),
                 FakeResultSet(
                     [
                         {
-                            "participant_id": "PT-EXISTING"
+                            "record_type": "phone",
+                            "application_id": "",
+                            "participant_id": "PT-EXISTING",
+                            "payload_fingerprint": "",
+                            "processing_blocked": False,
                         }
                     ]
                 ),
@@ -375,7 +378,7 @@ class YdbRepositoryTests(unittest.TestCase):
             "PT-EXISTING",
         )
 
-        write_query = tx.queries[2]
+        write_query = tx.queries[1]
 
         self.assertIn(
             "UPDATE participants SET",
@@ -393,13 +396,14 @@ class YdbRepositoryTests(unittest.TestCase):
                 FakeResultSet(
                     [
                         {
+                            "record_type": "application",
                             "application_id": "APP-EXISTING",
                             "participant_id": "PT-EXISTING",
                             "payload_fingerprint": "fingerprint-test",
+                            "processing_blocked": False,
                         }
                     ]
                 ),
-                FakeResultSet([]),
             ]
         )
 
@@ -497,11 +501,17 @@ class YdbRepositoryTests(unittest.TestCase):
         self.assertEqual(len(already.queries), 1)
 
     def test_blocked_submit_writes_no_application_or_consent(self):
-        tx = FakeTransaction([FakeResultSet([]), FakeResultSet([{"participant_id": "PT-BLOCK", "processing_blocked": True}])])
+        tx = FakeTransaction([FakeResultSet([{
+            "record_type": "phone",
+            "application_id": "",
+            "participant_id": "PT-BLOCK",
+            "payload_fingerprint": "",
+            "processing_blocked": True,
+        }])])
         repo = self.make_repo(tx)
         with self.assertRaisesRegex(Exception, "processing_blocked"):
             repo.save("blocked-key", make_record())
-        self.assertEqual(len(tx.queries), 2)
+        self.assertEqual(len(tx.queries), 1)
         self.assertTrue(tx.committed)
 
     def test_destruction_plan_query_is_dry_run_and_pii_free(self):
