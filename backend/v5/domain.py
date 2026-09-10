@@ -1,7 +1,10 @@
 import hashlib, json, re, uuid
 from datetime import datetime, timezone
 
-FORM_FIELDS = ('full_name age gender city visit_krasnodar phone telegram email preferred_contact public_profile_url occupation life_outside_work interests what_interested event_expectations desired_connections values_in_people barriers_to_meeting social_comfort initiative acquaintance_scenario successful_evening return_reason unacceptable_behavior convenient_days comfortable_price source').split()
+FORM_VERSION = 'FORM-2.1'
+CONSENT_VERSION = 'CONSENT-PD-2.0'
+POLICY_VERSION = 'PPD-2.0'
+FORM_FIELDS = ('full_name age gender city visit_krasnodar phone telegram email preferred_contact public_profile_url occupation life_outside_work interests what_interested event_expectations desired_connections values_in_people barriers_to_meeting social_comfort initiative acquaintance_scenario successful_evening return_reason unacceptable_behavior convenient_days source').split()
 class DomainError(Exception):
     def __init__(self, code, status=422): self.code, self.status = code, status
 def fingerprint(data):
@@ -15,7 +18,7 @@ def phone(value):
 def validate(data):
     if not isinstance(data,dict): raise DomainError('invalid_json',400)
     if data.get('personal_data_consent') is not True: raise DomainError('consent_required')
-    if data.get('consent_version')!='CONSENT-PD-2.0' or data.get('policy_version')!='PPD-2.0' or data.get('form_version')!='FORM-2.0': raise DomainError('invalid_legal_version')
+    if data.get('consent_version')!=CONSENT_VERSION or data.get('policy_version')!=POLICY_VERSION or data.get('form_version')!=FORM_VERSION: raise DomainError('invalid_legal_version')
     for k in ('full_name','gender','city'):
         if not str(data.get(k,'')).strip(): raise DomainError('missing_'+k)
     try: age=int(data.get('age'))
@@ -32,3 +35,4 @@ def validate(data):
 def ids(key):
     h=hashlib.sha256(key.encode()).hexdigest()[:20];return 'APP-'+h,'CONS-'+h
 def now(): return datetime.now(timezone.utc).isoformat()
+
