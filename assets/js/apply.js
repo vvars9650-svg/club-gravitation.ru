@@ -15,7 +15,7 @@
 
   const TEST_API_URL =
     'https://d5ds805l71s68liu6ge4.fovt0b64.apigw.yandexcloud.net/applications';
-  const FORM_VERSION = 'FORM-2.0';
+  const FORM_VERSION = 'FORM-2.1';
   const CONSENT_VERSION = 'CONSENT-PD-2.0';
   const POLICY_VERSION = 'PPD-2.0';
   const MULTI_FIELDS = new Set([
@@ -48,7 +48,6 @@
     'return_reason',
     'unacceptable_behavior',
     'convenient_days',
-    'comfortable_price',
     'source',
   ];
   const FIELD_SET = new Set(FORM_FIELDS);
@@ -171,7 +170,7 @@
     if (status === 409) {
       return {
         state: 'recoverable_error',
-        code: 'idempotency_conflict',
+        code: body.error?.code || 'idempotency_conflict',
         key,
       };
     }
@@ -517,6 +516,9 @@
       } else if (result.state === 'validation_error') {
         status.textContent =
           'Backend отклонил данные. Проверьте анкету и повторите отправку.';
+      } else if (result.code === 'processing_blocked') {
+        status.textContent =
+          'Отправка заявки сейчас недоступна. Свяжитесь с клубом удобным способом.';
       } else if (result.code === 'idempotency_conflict') {
         status.textContent =
           'Не удалось подтвердить эту отправку. Проверьте данные и повторите попытку.';
@@ -604,3 +606,4 @@
     mount,
   };
 });
+
