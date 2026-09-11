@@ -9,7 +9,7 @@
   const FIELDS = ['occupation', 'life_outside_work', 'interests', 'what_interested', 'event_expectations', 'desired_connections', 'values_in_people', 'barriers_to_meeting', 'social_comfort', 'initiative', 'acquaintance_scenario', 'successful_evening', 'return_reason', 'unacceptable_behavior', 'convenient_days', 'source'];
   const labels = {full_name:'Имя', age:'Возраст', gender:'Пол', city:'Город', visit_krasnodar:'Посещение Краснодара', phone:'Телефон', telegram:'Профиль или мессенджер', email:'Email', preferred_contact:'Предпочтительный контакт', public_profile_url:'Страница или сайт', lifecycle_status:'Статус', owner:'Ответственный', priority:'Приоритет', next_action:'Следующее действие', next_contact_at:'Следующий контакт', decision:'Решение', internal_comment:'Внутренний комментарий'};
   const text = (value) => value == null || value === '' ? '—' : String(value);
-  const esc = (value) => text(value).replace(/[&<>'\"]/gu, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+  const esc = (value) => text(value).replace(/[&<>'"]/gu, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
   const endpoint = (root) => String(root.__V5_ADMIN_API_URL__ || '').replace(/\/$/u, '');
   class ApiError extends Error { constructor(code, status) { super(code); this.code = code; this.status = status; } }
   function createClient(root, fetchImpl, getIdToken, onAuthFailure) {
