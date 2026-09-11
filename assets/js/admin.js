@@ -12,11 +12,11 @@
   const esc = (value) => text(value).replace(/[&<>'"]/gu, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
   const endpoint = (root) => String(root.__V5_ADMIN_API_URL__ || '').replace(/\/$/u, '');
   class ApiError extends Error { constructor(code, status) { super(code); this.code = code; this.status = status; } }
-  function createClient(root, fetchImpl, getAccessToken, onAuthFailure) {
+  function createClient(root, fetchImpl, getIdToken, onAuthFailure) {
     const base = endpoint(root);
     async function request(path, options = {}) {
       if (!base) throw new ApiError('admin_not_configured');
-      const token = getAccessToken && getAccessToken();
+      const token = getIdToken && getIdToken();
       if (!token) throw new ApiError('authentication_required', 401);
       const response = await fetchImpl(`${base}${path}`, { ...options, headers: {'Authorization': `Bearer ${token}`, ...(options.headers || {})} });
       if (response.status === 401) { onAuthFailure && onAuthFailure('expired'); throw new ApiError('session_expired', 401); }
@@ -43,7 +43,7 @@
     const authFailure = () => { auth.signOut(); showSignedOut('Сессия истекла. Войдите снова.'); };
     if (!authApi) { showSignedOut('OIDC-модуль не загружен.'); return; }
     try { auth = authApi.createAuthClient({config: root.__V5_ADMIN_AUTH_CONFIG__, fetchImpl: root.fetch.bind(root), cryptoImpl: root.crypto, storage: root.sessionStorage, location: root.location}); } catch { showSignedOut('OIDC TEST-конфигурация ещё не задана.'); return; }
-    const client = createClient(root, root.fetch.bind(root), () => auth.getAccessToken(), authFailure);
+    const client = createClient(root, root.fetch.bind(root), () => auth.getIdToken(), authFailure);
     const query = () => { const [sort, order] = ui.sort.value.split(':'); return {q: ui.search.value.trim(), lifecycle_status: ui.status.value, owner: ui.owner.value.trim(), priority: ui.priority.value, sort, order}; };
     const load = async () => { state(ui.state, 'Загрузка заявок…', 'loading'); list.replaceChildren(); try { const body = await client.list(query()); if (body.environment !== 'TEST') throw new ApiError('environment'); const rows = body.applications || []; if (!rows.length) { state(ui.state, 'Заявок по выбранным условиям нет.', 'empty'); return; } state(ui.state, `Найдено: ${rows.length}`, 'ready'); rows.forEach((row) => { const tr = doc.createElement('tr'); ['submitted_at','full_name','age','city','phone','telegram','preferred_contact','lifecycle_status','owner','priority','next_action','next_contact_at','decision'].forEach((field, index) => { const td = doc.createElement('td'); if (index === 1) { const button = doc.createElement('button'); button.textContent = text(row[field]); button.onclick = () => openCard(row.participant_id); td.append(button); } else td.textContent = text(row[field]); tr.append(td); }); list.append(tr); }); } catch (error) { state(ui.state, error.code === 'access_denied' ? 'Доступ запрещён.' : error.code === 'session_expired' ? 'Сессия истекла. Войдите снова.' : 'Не удалось загрузить заявки. Повторите попытку.', 'error'); } };
     const section = (title, values) => `<section class="card-section"><h3>${esc(title)}</h3><dl class="card-grid">${values.map(([key, value]) => `<div><dt>${esc(labels[key] || key)}</dt><dd>${esc(Array.isArray(value) ? value.join(', ') : value)}</dd></div>`).join('')}</dl></section>`;
@@ -64,4 +64,3 @@
   }
   return {STATUSES,OPERATIONAL,FIELDS,ApiError,createClient,diagnosticText,mount};
 });
-
