@@ -1,9 +1,10 @@
 import json
 import unittest
+from unittest.mock import patch
 
 from backend.v5.admin import STATUSES, admin_handler
 from backend.v5.handler import handler
-from backend.v5.repository import FakeRepository
+from backend.v5.repository import FakeRepository, RepositoryUnavailable
 from backend.v5.service import submit
 from backend.v5.tests.test_v5 import P
 
@@ -86,6 +87,39 @@ class AdminMvpTests(unittest.TestCase):
         missing_sub = event("GET", "/admin/applications")
         missing_sub["requestContext"] = {"authorizer": {"jwt": {"claims": {"email": "not-an-actor@example.test"}}}}
         self.assertEqual(handler(missing_sub, repo=self.repo)["statusCode"], 404)
+
+    def test_handler_builds_runtime_repository_for_trusted_admin(self):
+        trusted = event("GET", "/admin/applications")
+        trusted["requestContext"] = {"authorizer": {"jwt": {"claims": {"sub": "identity-hub-subject"}}}}
+        with patch("backend.v5.handler.runtime_repository", return_value=self.repo) as runtime:
+            response = handler(trusted)
+        runtime.assert_called_once_with()
+        self.assertEqual(response["statusCode"], 200)
+
+    def test_handler_uses_injected_admin_repository_without_runtime_creation(self):
+        trusted = event("GET", "/admin/applications")
+        trusted["requestContext"] = {"authorizer": {"jwt": {"claims": {"sub": "identity-hub-subject"}}}}
+        with patch("backend.v5.handler.runtime_repository") as runtime:
+            response = handler(trusted, repo=self.repo)
+        runtime.assert_not_called()
+        self.assertEqual(response["statusCode"], 200)
+
+    def test_handler_does_not_build_repository_for_spoofed_admin_identity(self):
+        spoofed = event("GET", "/admin/applications", {"actor_identity": "spoof"}, {"actor": "spoof"})
+        spoofed["headers"].update({"Authorization": "Bearer spoof", "X-User": "spoof"})
+        with patch("backend.v5.handler.runtime_repository") as runtime:
+            response = handler(spoofed)
+        runtime.assert_not_called()
+        self.assertEqual(response["statusCode"], 404)
+        self.assertEqual(self.body(response)["error"]["code"], "admin_not_published")
+
+    def test_handler_returns_runtime_repository_error_for_trusted_admin(self):
+        trusted = event("GET", "/admin/applications")
+        trusted["requestContext"] = {"authorizer": {"jwt": {"claims": {"sub": "identity-hub-subject"}}}}
+        with patch("backend.v5.handler.runtime_repository", side_effect=RepositoryUnavailable("ydb_unavailable")):
+            response = handler(trusted)
+        self.assertEqual(response["statusCode"], 503)
+        self.assertEqual(self.body(response)["error"]["code"], "ydb_unavailable")
 
     def test_intake_routes_do_not_require_admin_claims(self):
         self.assertEqual(handler({"httpMethod": "GET", "path": "/health"}, repo=self.repo)["statusCode"], 200)
