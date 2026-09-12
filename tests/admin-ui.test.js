@@ -19,6 +19,8 @@ assert.match(adminSource, /Не удалось загрузить заявки/)
 assert.match(adminSource, /=> auth\.getIdToken\(\)/);
 assert.doesNotMatch(adminSource, /=> auth\.getAccessToken\(\)/);
 assert.ok(!fs.readFileSync(require.resolve('../assets/js/admin-auth.js'), 'utf8').includes('localStorage'));
+assert.match(configSource, /window\.__V5_ADMIN_API_URL__ = 'https:\/\/d5ds805l71s68liu6ge4\.fovt0b64\.apigw\.yandexcloud\.net';/);
+assert.doesNotMatch(configSource, /\b(?:client_secret|access_token|id_token|refresh_token)\b\s*:/iu);
 assert.match(configSource, /aje25t7tefbfr547phru/);
 assert.match(configSource, /https:\/\/auth\.yandex\.cloud\/\.well-known\/openid-configuration/);
 assert.match(configSource, /http:\/\/127\.0\.0\.1:8000\/admin\//);
