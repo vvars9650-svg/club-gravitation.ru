@@ -763,10 +763,21 @@ class YdbRepository:
         DECLARE $owner AS Utf8;
         DECLARE $priority AS Utf8;
         DECLARE $decision AS Utf8;
-        SELECT a.application_id, a.participant_id, a.submitted_at, a.full_name,
-               a.age, a.city, a.phone, a.telegram, a.preferred_contact,
-               p.lifecycle_status, p.owner, p.priority, p.next_action,
-               p.next_contact_at, p.decision
+                SELECT a.application_id AS application_id,
+               a.participant_id AS participant_id,
+               a.submitted_at AS submitted_at,
+               a.full_name AS full_name,
+               a.age AS age,
+               a.city AS city,
+               a.phone AS phone,
+               a.telegram AS telegram,
+               a.preferred_contact AS preferred_contact,
+               p.lifecycle_status AS lifecycle_status,
+               p.owner AS owner,
+               p.priority AS priority,
+               p.next_action AS next_action,
+               p.next_contact_at AS next_contact_at,
+               p.decision AS decision
         FROM applications AS a
         INNER JOIN participants AS p
         ON a.environment = p.environment AND a.participant_id = p.participant_id
