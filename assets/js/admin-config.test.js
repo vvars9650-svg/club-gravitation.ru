@@ -1,4 +1,6 @@
 /* Public TEST-only OIDC SPA configuration. No token or client secret belongs here. */
+window.__V5_ADMIN_API_URL__ = 'https://d5ds805l71s68liu6ge4.fovt0b64.apigw.yandexcloud.net';
+
 window.__V5_ADMIN_AUTH_CONFIG__ = {
   environment: 'TEST',
   issuer: 'https://auth.yandex.cloud',
