@@ -20,7 +20,14 @@ def handler(event,context=None,repo=None):
     # A direct Function call has no Gateway authorizer context and remains
     # closed. Client headers, cookies, body and query parameters are ignored.
     if '/admin/' in event.get('path',''):
-        return admin_handler(event,context,repo=repo,actor_identity=trusted_admin_subject(event))
+        actor_identity=trusted_admin_subject(event)
+        if not actor_identity:
+            return admin_handler(event,context,repo=repo,actor_identity=None)
+        try:
+            admin_repo=repo if repo is not None else runtime_repository()
+        except RepositoryUnavailable as e:
+            return response(503,{'error':{'code':str(e)}},request_id)
+        return admin_handler(event,context,repo=admin_repo,actor_identity=actor_identity)
     if event.get('httpMethod')=='GET' and event.get('path','').endswith('/health'): return response(200,{'status':'synthetic-test-only','environment':'TEST'},request_id)
     if event.get('httpMethod')!='POST': return response(405,{'error':{'code':'method_not_allowed'}},request_id)
     if not str(event.get('headers',{}).get('Content-Type',event.get('headers',{}).get('content-type',''))).startswith('application/json'): return response(415,{'error':{'code':'unsupported_media_type'}},request_id)
