@@ -98,7 +98,10 @@ def admin_handler(event, context=None, repo=None, actor_identity=None):
         match = re.fullmatch(r".*/admin/participants/([^/]+)", path)
         if not match:
             raise AdminError("not_found", 404)
-        participant_id = match.group(1)
+        path_params = event.get("pathParams") or {}
+        participant_id = path_params.get("id") if isinstance(path_params, dict) else None
+        if not participant_id:
+            participant_id = match.group(1)
         if method == "GET":
             card = repo.get_admin_participant(participant_id)
             if not card:

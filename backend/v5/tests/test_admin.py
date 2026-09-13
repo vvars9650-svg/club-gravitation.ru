@@ -13,6 +13,12 @@ def event(method, path, body=None, query=None):
     return {"httpMethod": method, "path": path, "headers": {"Content-Type": "application/json"}, "body": json.dumps(body) if body is not None else "", "queryStringParameters": query}
 
 
+def gateway_v01_participant_event(method, participant_id, body=None):
+    request = event(method, "/admin/participants/{id}", body)
+    request["pathParams"] = {"id": participant_id}
+    return request
+
+
 class AdminMvpTests(unittest.TestCase):
     def setUp(self):
         self.repo = FakeRepository()
@@ -43,6 +49,46 @@ class AdminMvpTests(unittest.TestCase):
         self.assertEqual(len(body["applications"]), 2)
         self.assertIn("occupation", body["applications"][0]["form"])
         self.assertEqual(body["consents"][0]["consent_version"], "CONSENT-PD-2.0")
+
+    def test_gateway_v01_get_returns_existing_participant_card(self):
+        response = admin_handler(
+            gateway_v01_participant_event("GET", self.first_id),
+            repo=self.repo,
+            actor_identity="operator@example.test",
+        )
+        body = self.body(response)
+        self.assertEqual(response["statusCode"], 200)
+        self.assertEqual(body["participant"]["participant_id"], self.first_id)
+        self.assertTrue(body["applications"])
+        self.assertTrue(body["consents"])
+
+    def test_gateway_v01_get_returns_controlled_not_found(self):
+        response = admin_handler(
+            gateway_v01_participant_event("GET", "PT-missing"),
+            repo=self.repo,
+            actor_identity="operator@example.test",
+        )
+        self.assertEqual(response["statusCode"], 404)
+        self.assertEqual(self.body(response)["error"]["code"], "participant_not_found")
+
+    def test_gateway_v01_patch_updates_selected_participant(self):
+        second_id = self.repo.by_key["admin-key-2"]["participant_id"]
+        second_owner = self.repo.get_admin_participant(second_id)["participant"]["owner"]
+        response = admin_handler(
+            gateway_v01_participant_event("PATCH", self.first_id, {"owner": "Лара"}),
+            repo=self.repo,
+            actor_identity="operator@example.test",
+        )
+        body = self.body(response)
+        self.assertEqual(response["statusCode"], 200)
+        self.assertEqual(body["participant"]["participant_id"], self.first_id)
+        self.assertEqual(body["participant"]["owner"], "Лара")
+        self.assertEqual(self.repo.get_admin_participant(second_id)["participant"]["owner"], second_owner)
+
+    def test_concrete_participant_path_remains_supported(self):
+        response = self.call("GET", "/admin/participants/" + self.first_id)
+        self.assertEqual(response["statusCode"], 200)
+        self.assertEqual(self.body(response)["participant"]["participant_id"], self.first_id)
 
     def test_patch_allowlist_and_audit_event(self):
         response = self.call("PATCH", "/admin/participants/" + self.first_id, {"lifecycle_status": "На рассмотрении", "owner": "Влад", "internal_comment": "Связаться в TEST"})
