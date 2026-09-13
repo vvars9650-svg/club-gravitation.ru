@@ -1,5 +1,6 @@
 import threading
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 import ydb
@@ -481,6 +482,56 @@ class YdbRepositoryTests(unittest.TestCase):
         self.assertNotIn("TEST note", tx.params[0]["$action"])
         self.assertNotIn("phone", query.lower())
         self.assertEqual(tx.commit_flags, [True])
+
+    def test_admin_patch_priority_with_unchanged_next_contact_uses_optional_timestamp(self):
+        tx = FakeTransaction([FakeResultSet([])])
+        repo = self.make_repo(tx)
+        repo.get_admin_participant = lambda participant_id: {
+            "participant": {"participant_id": participant_id, "priority": "Высокий", "next_contact_at": None}
+        }
+
+        participant = repo.update_admin_participant(
+            "PT-ADMIN", {"priority": "Высокий", "next_contact_at": None},
+            "auth-test", "REQ-PRIORITY",
+        )
+
+        self.assertEqual(participant["participant_id"], "PT-ADMIN")
+        timestamp = tx.params[0]["$next_contact_at"]
+        self.assertIsInstance(timestamp, ydb.TypedValue)
+        self.assertIsNone(timestamp.value)
+        self.assertEqual(str(timestamp.value_type), "Timestamp?")
+
+    def test_admin_patch_null_next_contact_clears_timestamp_and_is_audited(self):
+        tx = FakeTransaction([FakeResultSet([])])
+        repo = self.make_repo(tx)
+        repo.get_admin_participant = lambda participant_id: {
+            "participant": {"participant_id": participant_id, "next_contact_at": None}
+        }
+
+        repo.update_admin_participant(
+            "PT-ADMIN", {"next_contact_at": None}, "auth-test", "REQ-NULL",
+        )
+
+        self.assertIsNone(tx.params[0]["$next_contact_at"].value)
+        self.assertIn("fields=next_contact_at", tx.params[0]["$action"])
+        self.assertIn("INSERT INTO audit_log", tx.queries[0])
+
+    def test_admin_patch_valid_next_contact_binds_utc_datetime_and_reads_back(self):
+        tx = FakeTransaction([FakeResultSet([])])
+        repo = self.make_repo(tx)
+        repo.get_admin_participant = lambda participant_id: {
+            "participant": {"participant_id": participant_id, "next_contact_at": "2026-09-13T12:34:56Z"}
+        }
+
+        participant = repo.update_admin_participant(
+            "PT-ADMIN", {"next_contact_at": "2026-09-13T12:34:56Z"},
+            "auth-test", "REQ-DATE",
+        )
+
+        bound = tx.params[0]["$next_contact_at"]
+        self.assertEqual(bound.value, datetime(2026, 9, 13, 12, 34, 56, tzinfo=timezone.utc))
+        self.assertEqual(str(bound.value_type), "Timestamp?")
+        self.assertEqual(participant["next_contact_at"], "2026-09-13T12:34:56Z")
 
     def test_block_processing_is_serializable_idempotent_and_audited_without_reason(self):
         tx = FakeTransaction([FakeResultSet([{"processing_blocked": False}])])

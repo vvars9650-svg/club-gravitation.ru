@@ -101,6 +101,19 @@ class AdminMvpTests(unittest.TestCase):
         self.assertNotIn("Связаться в TEST", audit["action"])
         self.assertNotIn("+7999", audit["action"])
 
+    def test_patch_priority_with_unchanged_empty_next_contact_uses_current_contract(self):
+        response = self.call(
+            "PATCH", "/admin/participants/" + self.first_id,
+            {"priority": "Высокий", "next_contact_at": ""},
+        )
+
+        self.assertEqual(response["statusCode"], 200)
+        body = self.body(response)
+        self.assertEqual(body["participant"]["priority"], "Высокий")
+        self.assertIsNone(body["participant"]["next_contact_at"])
+        self.assertEqual(body["changed_fields"], ["next_contact_at", "priority"])
+        self.assertIn("fields=next_contact_at,priority", self.repo.audit[-1]["action"])
+
     def test_patch_rejects_intake_fields_and_invalid_status(self):
         immutable = self.call("PATCH", "/admin/participants/" + self.first_id, {"phone": "+70000000000"})
         bad_status = self.call("PATCH", "/admin/participants/" + self.first_id, {"lifecycle_status": "Придуманный"})

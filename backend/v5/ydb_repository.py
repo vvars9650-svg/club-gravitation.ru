@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import threading
+from datetime import datetime, timezone
 
 try:
     import ydb
@@ -848,7 +849,23 @@ class YdbRepository:
         VALUES ($environment, $audit_id, CurrentUtcTimestamp(), $request_id, NULL, $participant_id, $action);
         """
         params = {"$environment": ENVIRONMENT, "$participant_id": participant_id, "$audit_id": audit_id, "$request_id": request_id, "$action": action}
-        params.update({"$" + name: "" if changes[name] is None else str(changes[name]) for name in names})
+        for name in names:
+            value = changes[name]
+            if name == "next_contact_at":
+                if value in (None, ""):
+                    value = None
+                else:
+                    value = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+                    if value.tzinfo is None:
+                        value = value.replace(tzinfo=timezone.utc)
+                    else:
+                        value = value.astimezone(timezone.utc)
+                params["$" + name] = ydb.TypedValue(
+                    value,
+                    ydb.OptionalType(ydb.PrimitiveType.Timestamp),
+                )
+            else:
+                params["$" + name] = "" if value is None else str(value)
         def operation(session):
             tx = session.transaction(ydb.QuerySerializableReadWrite())
             with tx.execute(query, params, commit_tx=True) as stream:
