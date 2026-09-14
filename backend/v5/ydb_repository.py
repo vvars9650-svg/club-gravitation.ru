@@ -12,8 +12,9 @@ try:
 except ImportError:  # unit-only imports must not silently create memory storage
     ydb = None
 
-from .domain import CONSENT_VERSION, FORM_FIELDS, FORM_VERSION, MULTI_FIELDS, POLICY_VERSION, ids
-from .repository import DESTRUCTION_CLASSIFICATION, RepositoryUnavailable
+from .domain import CONSENT_VERSION, FORM_FIELDS, FORM_VERSION, MULTI_FIELDS, POLICY_VERSION, ids, phone as normalize_phone
+from .participant_model import INITIAL_APPLICATION_STATUS, INITIAL_PARTICIPANT_STATUS
+from .repository import DESTRUCTION_CLASSIFICATION, RepositoryConflict, RepositoryUnavailable
 
 
 ENVIRONMENT = "TEST"
@@ -160,13 +161,15 @@ class YdbRepository:
         }
 
     def resolve_phone(self, phone):
+        phone = normalize_phone(phone)
         query = """
         DECLARE $environment AS Utf8;
         DECLARE $phone AS Utf8;
 
-        SELECT p.participant_id, p.processing_blocked
+        SELECT k.participant_id AS key_participant_id, p.participant_id AS participant_id,
+               p.processing_blocked AS processing_blocked
         FROM participant_phone_keys AS k
-        INNER JOIN participants AS p
+        LEFT JOIN participants AS p
         ON k.environment = p.environment AND k.participant_id = p.participant_id
         WHERE k.environment = $environment
           AND k.phone = $phone
@@ -189,6 +192,9 @@ class YdbRepository:
         if not rows:
             return None
 
+        if not self._row_value(rows[0], "participant_id", None):
+            raise RepositoryConflict("phone_key_inconsistent")
+
         return self._row_value(
             rows[0],
             "participant_id",
@@ -200,7 +206,7 @@ class YdbRepository:
         Atomically:
         - checks idempotency;
         - resolves/reserves phone;
-        - creates or safely updates participant;
+        - creates a participant only when no phone key exists;
         - inserts immutable application;
         - inserts consent evidence;
         - writes technical log;
@@ -234,11 +240,13 @@ class YdbRepository:
         intake_read_query = """
         DECLARE $environment AS Utf8;
         DECLARE $application_id AS Utf8;
+        DECLARE $proposed_participant_id AS Utf8;
         DECLARE $phone AS Utf8;
 
         SELECT
             "application" AS record_type,
             application_id,
+            "" AS key_participant_id,
             participant_id,
             payload_fingerprint,
             false AS processing_blocked
@@ -249,14 +257,26 @@ class YdbRepository:
         SELECT
             "phone" AS record_type,
             "" AS application_id,
+            k.participant_id AS key_participant_id,
             p.participant_id AS participant_id,
             "" AS payload_fingerprint,
             p.processing_blocked AS processing_blocked
         FROM participant_phone_keys AS k
-        INNER JOIN participants AS p
+        LEFT JOIN participants AS p
         ON k.environment = p.environment AND k.participant_id = p.participant_id
         WHERE k.environment = $environment
-          AND k.phone = $phone;
+          AND k.phone = $phone
+        UNION ALL
+        SELECT
+            "candidate" AS record_type,
+            "" AS application_id,
+            "" AS key_participant_id,
+            participant_id,
+            "" AS payload_fingerprint,
+            processing_blocked
+        FROM participants
+        WHERE environment = $environment
+          AND participant_id = $proposed_participant_id;
         """
 
         def transaction_body(session):
@@ -267,6 +287,7 @@ class YdbRepository:
                 {
                     "$environment": ENVIRONMENT,
                     "$application_id": application_id,
+                    "$proposed_participant_id": record["participant_id"],
                     "$phone": phone,
                 },
             ) as result_stream:
@@ -280,7 +301,11 @@ class YdbRepository:
             phone_rows = [
                 row for row in intake_rows
                 if not self._row_value(row, "application_id", "")
-                and self._row_value(row, "participant_id", "")
+                and self._row_value(row, "key_participant_id", "")
+            ]
+            candidate_rows = [
+                row for row in intake_rows
+                if self._row_value(row, "record_type", "") == "candidate"
             ]
 
             if application_rows:
@@ -290,6 +315,9 @@ class YdbRepository:
             existing_participant_id = None
 
             if phone_rows:
+                if not self._row_value(phone_rows[0], "participant_id", None):
+                    tx.commit()
+                    raise RepositoryConflict("phone_key_inconsistent")
                 existing_participant_id = self._row_value(
                     phone_rows[0],
                     "participant_id",
@@ -300,40 +328,13 @@ class YdbRepository:
                     tx.commit()
                     raise RepositoryUnavailable("processing_blocked")
 
+            if not existing_participant_id and candidate_rows:
+                tx.commit()
+                raise RepositoryConflict("participant_id_conflict")
+
             if existing_participant_id:
                 participant_id = existing_participant_id
-
-                participant_write = """
-                UPDATE participants SET
-                    full_name = $full_name,
-                    age = $age,
-                    gender = $gender,
-                    city = $city,
-                    visit_krasnodar = $visit_krasnodar,
-                    telegram = IF(
-                        $telegram != "",
-                        $telegram,
-                        telegram
-                    ),
-                    email = IF(
-                        $email != "",
-                        $email,
-                        email
-                    ),
-                    preferred_contact = IF(
-                        $preferred_contact != "",
-                        $preferred_contact,
-                        preferred_contact
-                    ),
-                    public_profile_url = IF(
-                        $public_profile_url != "",
-                        $public_profile_url,
-                        public_profile_url
-                    ),
-                    updated_at = CurrentUtcTimestamp()
-                WHERE environment = $environment
-                  AND participant_id = $participant_id;
-                """
+                participant_write = ""
             else:
                 participant_id = record["participant_id"]
 
@@ -350,7 +351,10 @@ class YdbRepository:
                     telegram,
                     email,
                     preferred_contact,
+                    profile_or_messenger_url,
                     public_profile_url,
+                    occupation,
+                    participant_status,
                     lifecycle_status,
                     created_at,
                     updated_at
@@ -366,7 +370,10 @@ class YdbRepository:
                     $telegram,
                     $email,
                     $preferred_contact,
+                    $profile_or_messenger_url,
                     $public_profile_url,
+                    $occupation,
+                    $participant_status,
                     "Новая заявка",
                     CurrentUtcTimestamp(),
                     CurrentUtcTimestamp()
@@ -387,6 +394,8 @@ class YdbRepository:
 
             record["participant_id"] = participant_id
             record["consent"]["participant_id"] = participant_id
+            record["application_status"] = INITIAL_APPLICATION_STATUS
+            record["decision"] = ""
 
             write_query = (
                 """
@@ -408,6 +417,9 @@ class YdbRepository:
                 DECLARE $preferred_contact AS Utf8;
                 DECLARE $profile_or_messenger_url AS Utf8;
                 DECLARE $public_profile_url AS Utf8;
+                DECLARE $participant_status AS Utf8;
+                DECLARE $application_status AS Utf8;
+                DECLARE $decision AS Utf8;
 
                 DECLARE $occupation AS Utf8;
                 DECLARE $life_outside_work AS Utf8;
@@ -443,6 +455,8 @@ class YdbRepository:
                     payload_fingerprint,
                     form_version,
                     request_id,
+                    application_status,
+                    decision,
                     full_name,
                     age,
                     gender,
@@ -474,6 +488,8 @@ class YdbRepository:
                     $payload_fingerprint,
                     $form_version,
                     $request_id,
+                    $application_status,
+                    $decision,
                     $full_name,
                     $age,
                     $gender,
@@ -591,6 +607,9 @@ class YdbRepository:
                 "$preferred_contact": form["preferred_contact"],
                 "$profile_or_messenger_url": form["profile_or_messenger_url"],
                 "$public_profile_url": form["public_profile_url"],
+                "$participant_status": INITIAL_PARTICIPANT_STATUS,
+                "$application_status": INITIAL_APPLICATION_STATUS,
+                "$decision": "",
 
                 "$occupation": form["occupation"],
                 "$life_outside_work": form["life_outside_work"],
@@ -650,6 +669,7 @@ class YdbRepository:
 
         SELECT
             participant_id,
+            participant_status,
             lifecycle_status,
             owner,
             priority,
@@ -688,6 +708,7 @@ class YdbRepository:
             "participant_id": self._row_value(
                 row, "participant_id", ""
             ),
+            "participant_status": self._row_value(row, "participant_status", ""),
             "lifecycle_status": self._row_value(
                 row, "lifecycle_status", ""
             ),
@@ -703,13 +724,67 @@ class YdbRepository:
                 row, "decision", ""
             ),
             "processing_blocked": self._row_value(row, "processing_blocked", False),
+            "processing_state": "Заблокирована" if self._row_value(row, "processing_blocked", False) else "Разрешена",
             "processing_blocked_at": self._row_value(row, "processing_blocked_at", None),
             "processing_block_reason": self._row_value(row, "processing_block_reason", ""),
             "processing_block_request_id": self._row_value(row, "processing_block_request_id", ""),
         }
 
+    def applied_migrations(self):
+        query = """
+        DECLARE $environment AS Utf8;
+        SELECT migration_id
+        FROM schema_migrations
+        WHERE environment = $environment
+        ORDER BY migration_id;
+        """
+        result_sets = self.pool.execute_with_retries(
+            query,
+            {"$environment": ENVIRONMENT},
+            retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True),
+        )
+        return tuple(
+            self._row_value(row, "migration_id", "")
+            for row in self._rows(result_sets)
+        )
+
+    def register_migration(self, migration_id):
+        from .migration_ledger import validate_migration_id
+        validate_migration_id(migration_id)
+        read_query = """
+        DECLARE $environment AS Utf8;
+        DECLARE $migration_id AS Utf8;
+        SELECT migration_id
+        FROM schema_migrations
+        WHERE environment = $environment AND migration_id = $migration_id;
+        """
+        write_query = """
+        DECLARE $environment AS Utf8;
+        DECLARE $migration_id AS Utf8;
+        INSERT INTO schema_migrations (environment, migration_id, applied_at)
+        VALUES ($environment, $migration_id, CurrentUtcTimestamp());
+        """
+        params = {"$environment": ENVIRONMENT, "$migration_id": migration_id}
+
+        def operation(session):
+            tx = session.transaction(ydb.QuerySerializableReadWrite())
+            with tx.execute(read_query, params) as stream:
+                rows = self._rows(list(stream))
+            if rows:
+                tx.commit()
+                return False
+            with tx.execute(write_query, params, commit_tx=True) as stream:
+                for _ in stream:
+                    pass
+            return True
+
+        return self.pool.retry_operation_sync(
+            operation,
+            retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True),
+        )
+
     def find_participant_by_phone(self, phone):
-        """Internal subject locate by already-normalized authoritative phone."""
+        """Internal subject lookup using the authoritative phone normalizer."""
         participant_id = self.resolve_phone(phone)
         return self.find_participant(participant_id) if participant_id else None
 
@@ -787,10 +862,11 @@ class YdbRepository:
         query = """
         DECLARE $environment AS Utf8; DECLARE $participant_id AS Utf8;
         SELECT participant_id, phone, full_name, age, gender, city, visit_krasnodar, telegram, email,
-               preferred_contact, public_profile_url, lifecycle_status, owner, priority, next_action,
+               preferred_contact, profile_or_messenger_url, public_profile_url, occupation,
+               participant_status, lifecycle_status, owner, priority, next_action,
                next_contact_at, decision, internal_comment
         FROM participants WHERE environment = $environment AND participant_id = $participant_id;
-        SELECT application_id, submitted_at, form_version, request_id, full_name, age, gender, city,
+        SELECT application_id, submitted_at, form_version, application_status, decision, request_id, full_name, age, gender, city,
                visit_krasnodar, phone, email, preferred_contact, profile_or_messenger_url,
                public_profile_url, occupation, life_outside_work, what_interested,
                what_participant_brings, what_friends_value, desired_connections,
@@ -805,10 +881,10 @@ class YdbRepository:
         participant_rows = self._rows(result_sets, 0)
         if not participant_rows:
             return None
-        participant_fields = ("participant_id", "phone", "full_name", "age", "gender", "city", "visit_krasnodar", "telegram", "email", "preferred_contact", "public_profile_url", "lifecycle_status", "owner", "priority", "next_action", "next_contact_at", "decision", "internal_comment")
-        application_fields = ("application_id", "submitted_at", "form_version", "request_id", *FORM_FIELDS)
+        participant_fields = ("participant_id", "phone", "full_name", "age", "gender", "city", "visit_krasnodar", "telegram", "email", "preferred_contact", "profile_or_messenger_url", "public_profile_url", "occupation", "participant_status", "lifecycle_status", "owner", "priority", "next_action", "next_contact_at", "decision", "internal_comment")
+        application_fields = ("application_id", "submitted_at", "form_version", "application_status", "decision", "request_id", *FORM_FIELDS)
         consent_fields = ("consent_id", "application_id", "consent_type", "consent_version", "policy_version", "form_version", "consent_text_hash", "granted", "granted_at", "source", "request_id")
-        return {"environment": ENVIRONMENT, "participant": {name: self._row_value(participant_rows[0], name, "") for name in participant_fields}, "applications": [{"application_id": self._row_value(row, "application_id", ""), "submitted_at": self._row_value(row, "submitted_at", ""), "form_version": self._row_value(row, "form_version", ""), "request_id": self._row_value(row, "request_id", ""), "form": {name: self._row_value(row, name, [] if name in MULTI_FIELDS else "") for name in FORM_FIELDS}} for row in self._rows(result_sets, 1)], "consents": [{name: self._row_value(row, name, "") for name in consent_fields} for row in self._rows(result_sets, 2)]}
+        return {"environment": ENVIRONMENT, "participant": {name: self._row_value(participant_rows[0], name, "") for name in participant_fields}, "applications": [{"application_id": self._row_value(row, "application_id", ""), "submitted_at": self._row_value(row, "submitted_at", ""), "form_version": self._row_value(row, "form_version", ""), "application_status": self._row_value(row, "application_status", ""), "decision": self._row_value(row, "decision", ""), "request_id": self._row_value(row, "request_id", ""), "form": {name: self._row_value(row, name, [] if name in MULTI_FIELDS else "") for name in FORM_FIELDS}} for row in self._rows(result_sets, 1)], "consents": [{name: self._row_value(row, name, "") for name in consent_fields} for row in self._rows(result_sets, 2)]}
 
     def update_admin_participant(self, participant_id, changes, actor, request_id):
         """Atomic operational-only update plus minimal audit evidence."""
