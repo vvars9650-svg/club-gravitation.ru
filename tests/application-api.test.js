@@ -1,8 +1,8 @@
 'use strict';
 const assert=require('node:assert/strict');
 const {handler}=require('../api/application');
-const payload={full_name:'TEST User',age:'30',gender:'Мужчина',city:'Краснодар',visit_krasnodar:'',phone:'8 (999) 000-00-00',email:'user@example.test',preferred_contact:'по email',profile_or_messenger_url:'',public_profile_url:'https://example.test',occupation:'Инженер',life_outside_work:'Спорт',what_interested:'',what_participant_brings:'',what_friends_value:'',desired_connections:['Новые друзья'],desired_connections_other:'',values_in_people:'',barriers_to_meeting:'',acquaintance_methods:['Через живой разговор'],acquaintance_methods_other:'',return_reason:'',source:'Сайт / поиск',policy_acknowledged:true,personal_data_consent:true,form_version:'FORM-2.2',consent_version:'CONSENT-PD-2.1',policy_version:'PPD-2.1'};
-const store={rows:new Map(),async get(k){return this.rows.get(k)},async put(k,v){this.rows.set(k,v)}};
+const payload={full_name:'TEST User',age:'30',gender:'Мужчина',city:'Краснодар',visit_krasnodar:'',phone:'8 (999) 000-00-00',email:'user@example.test',preferred_contact:'по email',profile_or_messenger_url:'',public_profile_url:'https://example.test',occupation:'Инженер',life_outside_work:'Спорт',what_interested:'',what_participant_brings:'',what_friends_value:'',desired_connections:['Новые друзья'],desired_connections_other:'',values_in_people:'',barriers_to_meeting:'',acquaintance_methods:['Через живой разговор'],acquaintance_methods_other:'',return_reason:'',source:'Сайт / поиск',photo_object_id:'PHOTO-0000000000000001',policy_acknowledged:true,personal_data_consent:true,form_version:'FORM-2.2',consent_version:'CONSENT-PD-2.2',policy_version:'PPD-2.2'};
+const store={rows:new Map(),photos:new Map([[payload.photo_object_id,{owner:'key-1',state:'READY'}]]),async get(k){return this.rows.get(k)},async put(k,v){this.rows.set(k,v)},async claimPhoto(id,key,applicationId){const p=this.photos.get(id);if(!p||p.owner!==key||p.state!=='READY')return false;p.state='ATTACHED';p.applicationId=applicationId;return true}};
 const event=(p=payload,key='key-1')=>({httpMethod:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':key},body:JSON.stringify(p)});
 (async()=>{
   let r=await handler(event(),{store,mode:'TEST'});assert.equal(r.statusCode,201);assert.equal(store.rows.get('key-1').data.phone,'+79990000000');
@@ -11,5 +11,7 @@ const event=(p=payload,key='key-1')=>({httpMethod:'POST',headers:{'Content-Type'
     r=await handler(event({...payload,...changes},key),{store,mode:'TEST'});assert.equal(r.statusCode,422,key);
   }
   r=await handler(event(),{store,mode:'PRODUCTION'});assert.equal(r.statusCode,503);
+  r=await handler(event({...payload,photo_object_id:''},'key-missing'),{store,mode:'TEST'});assert.equal(r.statusCode,422);
+  r=await handler(event({...payload,photo_object_id:'PHOTO-9999999999999999'},'key-foreign'),{store,mode:'TEST'});assert.equal(r.statusCode,422);
   console.log('application API tests passed');
 })().catch(e=>{console.error(e);process.exitCode=1;});

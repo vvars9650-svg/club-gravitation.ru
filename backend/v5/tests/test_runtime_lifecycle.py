@@ -6,7 +6,7 @@ from unittest import mock
 from backend.v5 import factory
 from backend.v5.handler import handler
 from backend.v5.repository import FakeRepository, RepositoryUnavailable
-from backend.v5.tests.test_v5 import e
+from backend.v5.tests.test_v5 import e, payload_with_photo
 
 
 class RuntimeRepositoryLifecycleTests(unittest.TestCase):
@@ -18,14 +18,16 @@ class RuntimeRepositoryLifecycleTests(unittest.TestCase):
 
     def test_two_posts_reuse_one_runtime_repository(self):
         repository = FakeRepository()
+        first_payload = payload_with_photo(repository, "runtime-one")
+        second_payload = payload_with_photo(repository, "runtime-two")
 
         with mock.patch.object(
             factory,
             "_create_runtime_repository",
             return_value=repository,
         ) as create:
-            first = handler(e(k="runtime-one"))
-            second = handler(e(k="runtime-two"))
+            first = handler(e(first_payload, "runtime-one"))
+            second = handler(e(second_payload, "runtime-two"))
 
         self.assertEqual(first["statusCode"], 201)
         self.assertEqual(second["statusCode"], 201)
@@ -46,6 +48,7 @@ class RuntimeRepositoryLifecycleTests(unittest.TestCase):
 
     def test_failed_initialization_is_not_cached(self):
         repository = FakeRepository()
+        recovered_payload = payload_with_photo(repository, "runtime-recovered")
 
         with mock.patch.object(
             factory,
@@ -55,8 +58,8 @@ class RuntimeRepositoryLifecycleTests(unittest.TestCase):
                 repository,
             ],
         ) as create:
-            failed = handler(e(k="runtime-failed"))
-            recovered = handler(e(k="runtime-recovered"))
+            failed = handler(e(recovered_payload, "runtime-failed"))
+            recovered = handler(e(recovered_payload, "runtime-recovered"))
 
         self.assertEqual(failed["statusCode"], 503)
         self.assertEqual(recovered["statusCode"], 201)

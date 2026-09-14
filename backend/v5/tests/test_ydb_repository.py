@@ -641,6 +641,25 @@ class YdbRepositoryTests(unittest.TestCase):
         for forbidden in ("DROP", "RENAME", "ALTER COLUMN", "photo"):
             self.assertNotIn(forbidden, migration.lower() if forbidden == "photo" else migration.upper())
 
+    def test_wave2_photo_migration_is_additive_private_reference_only(self):
+        migration = (Path(__file__).resolve().parents[1] / "schema" / "006_wave2_photo_foundation.sql").read_text(encoding="utf-8")
+        for statement in (
+            "ADD COLUMN photo_object_id Utf8",
+            "ADD COLUMN current_photo_object_id Utf8",
+            "CREATE TABLE photo_objects",
+            "storage_key Utf8 NOT NULL",
+            "owner_context_hash Utf8 NOT NULL",
+            "lifecycle_state Utf8 NOT NULL",
+        ):
+            self.assertIn(statement, migration)
+        for forbidden in ("DROP", "RENAME", "ALTER COLUMN", "public_url", "original_filename", "base64", " BLOB"):
+            self.assertNotIn(forbidden, migration.upper() if forbidden in ("DROP", "RENAME", "ALTER COLUMN", " BLOB") else migration.lower())
+
+    def test_ydb_photo_operations_fail_closed_until_phase_b(self):
+        repo = YdbRepository.__new__(YdbRepository)
+        with self.assertRaisesRegex(Exception, "photo_repository_phase_b_required"):
+            repo.reserve_photo_for_submission("PHOTO-0000000000000001", "context", "APP-1")
+
     def test_ydb_migration_registration_is_idempotent(self):
         created = FakeTransaction([FakeResultSet([])])
         repo = self.make_repo(created)

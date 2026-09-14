@@ -22,6 +22,7 @@ class Form22ContractTests(unittest.TestCase):
             self.assert_error({field: ""}, "missing_" + field)
         self.assert_error({"desired_connections": []}, "invalid_desired_connections")
         self.assert_error({"acquaintance_methods": []}, "invalid_acquaintance_methods")
+        self.assert_error({"photo_object_id": ""}, "photo_required")
 
     def test_gender_and_conditional_visit(self):
         self.assert_error({"gender": "Предпочитаю обсудить лично"}, "invalid_gender")

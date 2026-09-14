@@ -5,6 +5,7 @@ import unittest
 
 from backend.v5.handler import handler
 from backend.v5.repository import DESTRUCTION_CLASSIFICATION, FakeRepository
+from backend.v5.tests.test_v5 import payload_with_photo
 
 
 PAYLOAD = {
@@ -17,19 +18,20 @@ PAYLOAD = {
     "values_in_people": "synthetic", "barriers_to_meeting": "synthetic",
     "acquaintance_methods": ["Через живой разговор"], "acquaintance_methods_other": "",
     "return_reason": "synthetic", "source": "Сайт / поиск", "policy_acknowledged": True,
-    "personal_data_consent": True, "consent_version": "CONSENT-PD-2.1",
-    "policy_version": "PPD-2.1", "form_version": "FORM-2.2",
+    "personal_data_consent": True, "consent_version": "CONSENT-PD-2.2",
+    "policy_version": "PPD-2.2", "form_version": "FORM-2.2",
 }
 
 
-def event(key):
-    return {"httpMethod": "POST", "headers": {"Content-Type": "application/json", "Idempotency-Key": key}, "body": json.dumps(PAYLOAD)}
+def event(key, payload=PAYLOAD):
+    return {"httpMethod": "POST", "headers": {"Content-Type": "application/json", "Idempotency-Key": key}, "body": json.dumps(payload)}
 
 
 class LifecycleTests(unittest.TestCase):
     def create_participant(self):
         repo = FakeRepository()
-        response = handler(event("lifecycle-first"), repo=repo)
+        payload = payload_with_photo(repo, "lifecycle-first", PAYLOAD)
+        response = handler(event("lifecycle-first", payload), repo=repo)
         self.assertEqual(response["statusCode"], 201)
         participant_id = json.loads(response["body"])["participant_id"]
         return repo, participant_id
@@ -55,7 +57,8 @@ class LifecycleTests(unittest.TestCase):
         repo, participant_id = self.create_participant()
         repo.block_processing(participant_id, "REQ-BLOCK", "internal_request")
         before = (len(repo.by_key), len(repo.audit))
-        response = handler(event("lifecycle-second"), repo=repo)
+        payload = payload_with_photo(repo, "lifecycle-second", PAYLOAD)
+        response = handler(event("lifecycle-second", payload), repo=repo)
         self.assertEqual(response["statusCode"], 409)
         self.assertEqual(json.loads(response["body"])["error"]["code"], "processing_blocked")
         self.assertEqual(len(repo.by_key), before[0])

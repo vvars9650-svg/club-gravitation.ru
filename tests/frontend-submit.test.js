@@ -49,6 +49,7 @@ function validPayload() {
     ['desired_connections', 'Близкие по духу люди'],
     ['acquaintance_methods', 'Через живой разговор'],
     ['source', 'Сайт / поиск'],
+    ['photo_object_id', 'PHOTO-0000000000000001'],
     ['policy_acknowledged', 'true'],
     ['personal_data_consent', 'true'],
   ]);
@@ -85,10 +86,12 @@ async function testRequestContractAndPayload() {
   assert.equal(payload.phone, '+79990000000');
   assert.equal(payload.policy_acknowledged, true);
   assert.equal(payload.personal_data_consent, true);
-  assert.equal(payload.consent_version, 'CONSENT-PD-2.1');
-  assert.equal(payload.policy_version, 'PPD-2.1');
+  assert.equal(payload.consent_version, 'CONSENT-PD-2.2');
+  assert.equal(payload.policy_version, 'PPD-2.2');
   assert.equal(payload.form_version, 'FORM-2.2');
-  assert.equal(FORM_FIELDS.length, 23);
+  assert.equal(payload.photo_object_id, 'PHOTO-0000000000000001');
+  assert.equal(Object.hasOwn(payload, 'photo_upload'), false);
+  assert.equal(FORM_FIELDS.length, 24);
   assert.deepEqual(FORM_FIELDS, apiContract.FORM_FIELDS);
   assert.equal(FORM_FIELDS.includes('comfortable_price'), false);
 
@@ -114,6 +117,8 @@ function testFrontendValidation() {
     validateFrontendPayload({...payload, personal_data_consent: false}),
     'personal_data_consent',
   );
+  assert.equal(validateFrontendPayload({...payload, photo_object_id: ''}), 'photo_object_id');
+  assert.equal(validateFrontendPayload({...payload, photo_object_id: 'PHOTO-short'}), 'photo_object_id');
   assert.equal(validateFrontendPayload({...payload, age: '24'}), 'age');
   assert.equal(validateFrontendPayload({...payload, age: '53'}), 'age');
   assert.equal(validateFrontendPayload({...payload, phone: '123'}), 'phone');
@@ -266,7 +271,6 @@ function testForbiddenFrontendIntegrations() {
     'script.google',
     'google apps script',
     'contact_consent',
-    'photo',
     'photo_data',
     'base64',
     'relationship_context',

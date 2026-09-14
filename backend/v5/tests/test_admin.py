@@ -6,7 +6,7 @@ from backend.v5.admin import STATUSES, admin_handler
 from backend.v5.handler import handler
 from backend.v5.repository import FakeRepository, RepositoryUnavailable
 from backend.v5.service import submit
-from backend.v5.tests.test_v5 import P
+from backend.v5.tests.test_v5 import P, payload_with_photo
 
 
 def event(method, path, body=None, query=None):
@@ -22,8 +22,9 @@ def gateway_v01_participant_event(method, participant_id, body=None):
 class AdminMvpTests(unittest.TestCase):
     def setUp(self):
         self.repo = FakeRepository()
-        submit(P, "admin-key-1", self.repo, "request-admin-1")
-        submit({**P, "full_name": "Мария Тестова", "phone": "+79990000002"}, "admin-key-2", self.repo, "request-admin-2")
+        submit(payload_with_photo(self.repo, "admin-key-1"), "admin-key-1", self.repo, "request-admin-1")
+        second = {**P, "full_name": "Мария Тестова", "phone": "+79990000002"}
+        submit(payload_with_photo(self.repo, "admin-key-2", second), "admin-key-2", self.repo, "request-admin-2")
         self.first_id = self.repo.by_key["admin-key-1"]["participant_id"]
 
     def call(self, method, path, body=None, query=None):
@@ -42,13 +43,17 @@ class AdminMvpTests(unittest.TestCase):
         self.assertTrue(all(row["environment"] == "TEST" for row in body["applications"]))
 
     def test_participant_card_has_form_history_and_read_only_consent(self):
-        submit({**P, "occupation": "новая анкета"}, "admin-key-3", self.repo, "request-admin-3")
+        third = payload_with_photo(self.repo, "admin-key-3", {**P, "occupation": "новая анкета"})
+        submit(third, "admin-key-3", self.repo, "request-admin-3")
         response = self.call("GET", "/admin/participants/" + self.first_id)
         body = self.body(response)
         self.assertEqual(response["statusCode"], 200)
         self.assertEqual(len(body["applications"]), 2)
         self.assertIn("occupation", body["applications"][0]["form"])
-        self.assertEqual(body["consents"][0]["consent_version"], "CONSENT-PD-2.1")
+        self.assertEqual(body["consents"][0]["consent_version"], "CONSENT-PD-2.2")
+        self.assertEqual(body["consents"][0]["policy_version"], "PPD-2.2")
+        self.assertEqual(body["consents"][0]["form_version"], "FORM-2.2")
+        self.assertEqual(body["consents"][0]["consent_text_hash"], "7a4ed02773773d680bb56399c943b94e2f35cf97d96b89a29e156d132fca6bf7")
 
     def test_gateway_v01_get_returns_existing_participant_card(self):
         response = admin_handler(
@@ -184,6 +189,7 @@ class AdminMvpTests(unittest.TestCase):
         self.assertEqual(handler({"httpMethod": "GET", "path": "/health"}, repo=self.repo)["statusCode"], 200)
         intake = event("POST", "/applications", P)
         intake["headers"]["Idempotency-Key"] = "intake-auth-independent"
+        intake["body"] = json.dumps(payload_with_photo(self.repo, "intake-auth-independent"))
         self.assertEqual(handler(intake, repo=self.repo)["statusCode"], 201)
 
     def test_statuses_are_approved(self):

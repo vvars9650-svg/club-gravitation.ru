@@ -1,4 +1,5 @@
 import json
+import hashlib
 import unittest
 
 from backend.v5.handler import handler
@@ -16,11 +17,18 @@ P = {
     "values_in_people": "Искренность", "barriers_to_meeting": "",
     "acquaintance_methods": ["Через живой разговор"], "acquaintance_methods_other": "",
     "return_reason": "Хорошая компания", "source": "Сайт / поиск",
+    "photo_object_id": "PHOTO-0000000000000001",
     "policy_acknowledged": True, "personal_data_consent": True,
-    "consent_version": "CONSENT-PD-2.1", "policy_version": "PPD-2.1",
+    "consent_version": "CONSENT-PD-2.2", "policy_version": "PPD-2.2",
     "form_version": "FORM-2.2", "environment": "PROD", "granted_at": "spoof",
     "consent_text_hash": "spoof",
 }
+
+
+def payload_with_photo(repo, key, payload=P):
+    photo_object_id = "PHOTO-" + hashlib.sha256(key.encode()).hexdigest()[:24]
+    repo.register_photo_upload(photo_object_id, key)
+    return {**payload, "photo_object_id": photo_object_id}
 
 
 def e(p=P, k="k1"):
@@ -34,12 +42,13 @@ def e(p=P, k="k1"):
 class T(unittest.TestCase):
     def test_all(self):
         repo = FakeRepository()
+        submitted = payload_with_photo(repo, "k1")
         self.assertEqual(handler({"httpMethod": "GET", "path": "/health"}, repo=repo)["statusCode"], 200)
-        self.assertEqual(handler(e(), repo=repo)["statusCode"], 201)
+        self.assertEqual(handler(e(submitted), repo=repo)["statusCode"], 201)
         self.assertEqual(repo.by_key["k1"]["form"]["phone"], "+79990000001")
         self.assertNotIn("raw_payload", repo.by_key["k1"])
-        self.assertEqual(handler(e(), repo=repo)["statusCode"], 200)
-        self.assertEqual(handler(e({**P, "full_name": "changed"}, "k1"), repo=repo)["statusCode"], 409)
+        self.assertEqual(handler(e(submitted), repo=repo)["statusCode"], 200)
+        self.assertEqual(handler(e({**submitted, "full_name": "changed"}, "k1"), repo=repo)["statusCode"], 409)
         for key, changes in enumerate((
             {"policy_acknowledged": False}, {"personal_data_consent": False}, {"age": 20},
             {"email": "bad"}, {"public_profile_url": "ftp://x"},
