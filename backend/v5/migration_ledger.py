@@ -6,6 +6,7 @@ MIGRATION_IDS = (
     "003_form_2_2_additive",
     "004_schema_migration_ledger",
     "005_wave1_participant_foundation",
+    "006_wave2_photo_foundation",
 )
 
 

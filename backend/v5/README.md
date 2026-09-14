@@ -95,3 +95,24 @@ pending 003; apply 004; register verified/applied IDs 001–004; then apply 005 
 register it. Registration happens only after every statement in that migration
 succeeds. Do not treat column presence alone as ledger evidence. None of these
 steps is performed by application startup, CI, or this repository change.
+
+## Wave 2 Phase A photo foundation (not migrated or deployed)
+
+FORM 2.2 requires one protected photo reference. Migration 006 only prepares
+additive `photo_object_id`, `current_photo_object_id`, `photo_required_blocked`, and
+`photo_objects` metadata. It stores no binary, original filename, public URL, or
+presigned URL and has not been applied.
+
+FakeRepository models ownership with a hash of the pending upload/idempotency
+context, an immutable Application reference, and a separate Participant current
+reference. This is a domain test double, not proof of cloud isolation. The runtime
+YDB adapter deliberately returns `photo_repository_phase_b_required` until Phase B
+implements an atomic reservation against migration 006 and private Yandex Object
+Storage integration.
+
+Phase B must use JPEG/PNG/WebP detected from decoded content, a 10 MiB input limit,
+and local decode plus fresh re-encode so GPS, device model, timestamps, and other
+unnecessary EXIF are absent from the persistent object. No face detection,
+recognition, matching, scoring, biometric processing, or external image service is
+permitted. Admin access should use the authenticated backend proxy. Real PROD photo
+collection remains disabled by `PROD_PHOTO_RKN_GATE_PENDING`.
