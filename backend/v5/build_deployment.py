@@ -11,6 +11,8 @@ SOURCE_DIR = Path(__file__).resolve().parent
 PACKAGE_FILES = (
     "__init__.py",
     "domain.py",
+    "legal_text.py",
+    "photo_contract.py",
     "participant_model.py",
     "migration_ledger.py",
     "service.py",

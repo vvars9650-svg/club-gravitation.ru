@@ -1,10 +1,12 @@
 """In-memory repository used exclusively by V5 unit tests."""
 
+import hashlib
 from copy import deepcopy
 from threading import RLock
 
 from .domain import phone as normalize_phone
 from .participant_model import INITIAL_APPLICATION_STATUS, INITIAL_PARTICIPANT_STATUS
+from .photo_contract import ALLOWED_IMAGE_FORMATS, validate_photo_object_id
 
 
 class RepositoryUnavailable(RuntimeError):
@@ -23,6 +25,7 @@ DESTRUCTION_CLASSIFICATION = {
     "technical_logs": {"contains_personal_data": True, "contains_direct_contact_data": False, "contains_linkable_identifiers": True, "retention_decision_required": True},
     "audit_log": {"contains_personal_data": True, "contains_direct_contact_data": False, "contains_linkable_identifiers": True, "retention_decision_required": True},
 }
+PHOTO_DESTRUCTION_CLASSIFICATION = {"contains_personal_data": True, "contains_direct_contact_data": False, "contains_linkable_identifiers": True, "retention_decision_required": False}
 
 
 class FakeRepository:
@@ -35,7 +38,108 @@ class FakeRepository:
         self.audit = []
         self.blocks = {}
         self.migrations = set()
+        self.photo_objects = {}
         self._lock = RLock()
+
+    @staticmethod
+    def _context_hash(upload_context):
+        return hashlib.sha256(str(upload_context).encode("utf-8")).hexdigest()
+
+    def register_photo_upload(
+        self,
+        photo_object_id,
+        upload_context,
+        detected_format="jpeg",
+        byte_size=1024,
+    ):
+        """Register metadata for a locally normalized synthetic TEST photo."""
+        photo_object_id = validate_photo_object_id(photo_object_id)
+        if detected_format not in ALLOWED_IMAGE_FORMATS or not 0 < byte_size <= 10 * 1024 * 1024:
+            raise ValueError("invalid_normalized_photo_metadata")
+        with self._lock:
+            if photo_object_id in self.photo_objects:
+                raise RepositoryConflict("photo_object_id_conflict")
+            self.photo_objects[photo_object_id] = {
+                "photo_object_id": photo_object_id,
+                "storage_key": "test-protected/" + photo_object_id,
+                "lifecycle_state": "READY",
+                "owner_context_hash": self._context_hash(upload_context),
+                "application_id": None,
+                "participant_id": None,
+                "detected_format": detected_format,
+                "mime_type": ALLOWED_IMAGE_FORMATS[detected_format],
+                "byte_size": byte_size,
+                "metadata_stripped": True,
+                "created_at": "TEST-TIMESTAMP",
+                "deleted_at": None,
+            }
+        return photo_object_id
+
+    def reserve_photo_for_submission(self, photo_object_id, upload_context, application_id):
+        with self._lock:
+            photo = self.photo_objects.get(photo_object_id)
+            if not photo:
+                raise RepositoryConflict("photo_reference_not_found")
+            if photo["owner_context_hash"] != self._context_hash(upload_context):
+                raise RepositoryConflict("photo_reference_not_owned")
+            if photo["lifecycle_state"] == "RESERVED" and photo["application_id"] == application_id:
+                return True
+            if photo["lifecycle_state"] != "READY" or photo["application_id"] is not None:
+                raise RepositoryConflict("photo_reference_not_available")
+            photo["lifecycle_state"] = "RESERVED"
+            photo["application_id"] = application_id
+            return True
+
+    def finalize_photo_for_application(self, photo_object_id, application_id, participant_id):
+        with self._lock:
+            photo = self.photo_objects.get(photo_object_id)
+            if not photo or photo["application_id"] != application_id:
+                raise RepositoryConflict("photo_reservation_missing")
+            photo.update({
+                "lifecycle_state": "ATTACHED",
+                "participant_id": participant_id,
+            })
+            participant = self.participants[participant_id]
+            if not participant.get("current_photo_object_id"):
+                participant["current_photo_object_id"] = photo_object_id
+            participant["photo_required_blocked"] = False
+            return True
+
+    def replace_participant_photo(self, participant_id, photo_object_id, upload_context):
+        """Switch current photo without changing any Application snapshot."""
+        validate_photo_object_id(photo_object_id)
+        with self._lock:
+            participant = self.participants.get(participant_id)
+            photo = self.photo_objects.get(photo_object_id)
+            if not participant:
+                return None
+            if not photo or photo["owner_context_hash"] != self._context_hash(upload_context):
+                raise RepositoryConflict("photo_reference_not_owned")
+            if photo["lifecycle_state"] != "READY":
+                raise RepositoryConflict("photo_reference_not_available")
+            old_id = participant.get("current_photo_object_id")
+            if old_id and old_id in self.photo_objects:
+                self.photo_objects[old_id]["lifecycle_state"] = "DELETE_SCHEDULED"
+            photo.update({"lifecycle_state": "ATTACHED", "participant_id": participant_id})
+            participant["current_photo_object_id"] = photo_object_id
+            participant["photo_required_blocked"] = False
+            return {"participant_id": participant_id, "old_photo_object_id": old_id, "current_photo_object_id": photo_object_id}
+
+    def delete_current_photo(self, participant_id):
+        """Stop active photo use without deleting the Participant or Application."""
+        with self._lock:
+            participant = self.participants.get(participant_id)
+            if not participant:
+                return None
+            photo_object_id = participant.get("current_photo_object_id")
+            if photo_object_id and photo_object_id in self.photo_objects:
+                self.photo_objects[photo_object_id].update({
+                    "lifecycle_state": "DELETE_REQUESTED",
+                    "deleted_at": "TEST-TIMESTAMP",
+                })
+            participant["current_photo_object_id"] = None
+            participant["photo_required_blocked"] = participant.get("participant_status") != "Одобрен"
+            return {"participant_id": participant_id, "photo_object_id": photo_object_id, "participation_deleted": False, "selection_blocked": participant["photo_required_blocked"]}
 
     def get_idempotency(self, key):
         return self.by_key.get(key)
@@ -76,6 +180,7 @@ class FakeRepository:
                     "next_contact_at": None, "decision": "", "internal_comment": "",
                     "processing_blocked": False, "processing_blocked_at": None,
                     "processing_block_reason": "", "processing_block_request_id": "",
+                    "current_photo_object_id": None, "photo_required_blocked": False,
                 }
                 self.by_phone[phone] = owner
             record["participant_id"] = owner
@@ -173,7 +278,9 @@ class FakeRepository:
         consent_ids = [record["consent"]["consent_id"] for record in records]
         phone_keys = sum(1 for owner in self.by_phone.values() if owner == participant_id)
         audit_count = sum(1 for event in self.audit if event.get("participant_id") == participant_id or event.get("application_id") in application_ids)
-        counts = {"participant": 1, "participant_phone_keys": phone_keys, "applications": len(application_ids), "consents": len(consent_ids), "technical_logs": len(records), "audit_log": audit_count}
-        inventory = {name: {"count": count, **DESTRUCTION_CLASSIFICATION[name]} for name, count in counts.items()}
+        photo_count = sum(1 for photo in self.photo_objects.values() if photo.get("participant_id") == participant_id)
+        counts = {"participant": 1, "participant_phone_keys": phone_keys, "applications": len(application_ids), "consents": len(consent_ids), "technical_logs": len(records), "audit_log": audit_count, "photo_objects": photo_count}
+        inventory = {name: {"count": count, **DESTRUCTION_CLASSIFICATION[name]} for name, count in counts.items() if name != "photo_objects"}
+        inventory["photo_objects"] = {"count": photo_count, **PHOTO_DESTRUCTION_CLASSIFICATION}
         return {"participant_id": participant_id, "dry_run": True, "delete_performed": False, "records": inventory, "application_ids": application_ids, "consent_ids": consent_ids}
 

@@ -4,15 +4,15 @@ import re
 from datetime import datetime, timezone
 
 FORM_VERSION = "FORM-2.2"
-CONSENT_VERSION = "CONSENT-PD-2.1"
-POLICY_VERSION = "PPD-2.1"
+CONSENT_VERSION = "CONSENT-PD-2.2"
+POLICY_VERSION = "PPD-2.2"
 
 FORM_FIELDS = (
     "full_name age gender city visit_krasnodar phone email preferred_contact "
     "profile_or_messenger_url public_profile_url occupation life_outside_work "
     "what_interested what_participant_brings what_friends_value desired_connections "
     "desired_connections_other values_in_people barriers_to_meeting acquaintance_methods "
-    "acquaintance_methods_other return_reason source"
+    "acquaintance_methods_other return_reason source photo_object_id"
 ).split()
 MULTI_FIELDS = {"desired_connections", "acquaintance_methods"}
 REMOVED_FORM_FIELDS = {
@@ -152,12 +152,17 @@ def validate(data):
     if data["source"] not in SOURCE_OPTIONS:
         raise DomainError("invalid_source")
 
+    # Imported here to keep the photo module's DomainError dependency acyclic.
+    from .photo_contract import validate_photo_object_id
+    photo_object_id = validate_photo_object_id(data.get("photo_object_id"))
+
     out = {
         key: data.get(key, [] if key in MULTI_FIELDS else "")
         for key in FORM_FIELDS
     }
     out["age"] = age
     out["phone"] = phone(data.get("phone"))
+    out["photo_object_id"] = photo_object_id
     return out
 
 

@@ -1,7 +1,7 @@
 'use strict';
-const LEGAL_VERSIONS={privacy:'PPD-2.1',consent:'CONSENT-PD-2.1'};
+const LEGAL_VERSIONS={privacy:'PPD-2.2',consent:'CONSENT-PD-2.2'};
 const FORM_VERSION='FORM-2.2';
-const FORM_FIELDS=['full_name','age','gender','city','visit_krasnodar','phone','email','preferred_contact','profile_or_messenger_url','public_profile_url','occupation','life_outside_work','what_interested','what_participant_brings','what_friends_value','desired_connections','desired_connections_other','values_in_people','barriers_to_meeting','acquaintance_methods','acquaintance_methods_other','return_reason','source'];
+const FORM_FIELDS=['full_name','age','gender','city','visit_krasnodar','phone','email','preferred_contact','profile_or_messenger_url','public_profile_url','occupation','life_outside_work','what_interested','what_participant_brings','what_friends_value','desired_connections','desired_connections_other','values_in_people','barriers_to_meeting','acquaintance_methods','acquaintance_methods_other','return_reason','source','photo_object_id'];
 const REMOVED_FIELDS=['telegram','interests','event_expectations','social_comfort','initiative','acquaintance_scenario','successful_evening','unacceptable_behavior','convenient_days','comfortable_price'];
 const DESIRED=['Романтические отношения','Новые друзья','Близкие по духу люди','Партнёрство / бизнес','Творческие и совместные проекты','Новый круг общения и впечатления','Интересные люди без заданной цели','Весело провести время','Другое'];
 const METHODS=['Через общее дело или занятие','Через живой разговор','Через игру или активность','Когда знакомят друзья','Когда первый шаг делает другой человек','Зависит от человека и ситуации','Другое'];
@@ -18,6 +18,8 @@ function validate(d){
   if(d.personal_data_consent!==true)return'consent_required';
   if(d.consent_version!==LEGAL_VERSIONS.consent||d.policy_version!==LEGAL_VERSIONS.privacy)return'invalid_legal_versions';
   if(d.website)return'bot_detected';
+  if(!d.photo_object_id)return'photo_required';
+  if(!/^PHOTO-[A-Za-z0-9_-]{16,120}$/u.test(d.photo_object_id))return'invalid_photo_reference';
   if(REMOVED_FIELDS.some(field=>Object.hasOwn(d,field)))return'legacy_form_fields_not_allowed';
   for(const key of ['full_name','age','gender','city','phone','email','occupation','life_outside_work','source'])if(!String(d[key]||'').trim())return'missing_'+key;
   if(!Number.isInteger(+d.age)||+d.age<25||+d.age>52)return'invalid_age';
@@ -39,5 +41,5 @@ function validate(d){
   if(!SOURCES.includes(d.source))return'invalid_source';
   return null;
 }
-async function handler(event,{store,mode=process.env.APPLICATION_MODE}={}){if(mode!=='TEST')return reply(503,{error:'production_submission_disabled'});let data;try{data=parse(event);}catch(e){return reply(e.message==='method_not_allowed'?405:415,{error:e.message});}const error=validate(data);if(error)return reply(422,{error});const key=event.headers?.['idempotency-key']||event.headers?.['Idempotency-Key'];if(!key)return reply(400,{error:'idempotency_key_required'});if(!store?.get||!store?.put)return reply(503,{error:'test_store_unavailable'});const old=await store.get(key);if(old)return reply(200,{application_id:old.application_id,idempotent:true});data={...data,phone:phone(data.phone)};const record={application_id:'TEST-'+crypto.randomUUID(),idempotency_key:key,data,received_at:new Date().toISOString()};await store.put(key,record);return reply(201,{application_id:record.application_id,idempotent:false});}
+async function handler(event,{store,mode=process.env.APPLICATION_MODE}={}){if(mode!=='TEST')return reply(503,{error:'production_submission_disabled'});let data;try{data=parse(event);}catch(e){return reply(e.message==='method_not_allowed'?405:415,{error:e.message});}const error=validate(data);if(error)return reply(422,{error});const key=event.headers?.['idempotency-key']||event.headers?.['Idempotency-Key'];if(!key)return reply(400,{error:'idempotency_key_required'});if(!store?.get||!store?.put||!store?.claimPhoto)return reply(503,{error:'test_store_unavailable'});const old=await store.get(key);if(old)return reply(200,{application_id:old.application_id,idempotent:true});data={...data,phone:phone(data.phone)};const record={application_id:'TEST-'+crypto.randomUUID(),idempotency_key:key,data,received_at:new Date().toISOString()};if(await store.claimPhoto(data.photo_object_id,key,record.application_id)!==true)return reply(422,{error:'photo_reference_not_owned'});await store.put(key,record);return reply(201,{application_id:record.application_id,idempotent:false});}
 module.exports={handler,validate,phone,LEGAL_VERSIONS,FORM_VERSION,FORM_FIELDS};

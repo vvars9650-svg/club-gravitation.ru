@@ -22,7 +22,7 @@
         <h2>Согласие</h2>
         <p class="sensitive-warning">Не указывайте сведения специальных категорий персональных данных.</p>
         <label class="consent"><input type="checkbox" name="policy_acknowledged" value="true" required><span>Я ознакомлен(а) с <a href="/privacy/" target="_blank" rel="noopener">Политикой обработки персональных данных</a>.</span></label>
-        <label class="consent"><input type="checkbox" name="personal_data_consent" value="true" required><span>Даю согласие на обработку моих персональных данных на условиях <a href="/consent-pd/" target="_blank" rel="noopener">Согласия на обработку персональных данных</a> от 13.09.2026.</span></label>
+        <label class="consent"><input type="checkbox" name="personal_data_consent" value="true" required><span>Даю согласие на обработку моих персональных данных на условиях <a href="/consent-pd/" target="_blank" rel="noopener">Согласия на обработку персональных данных от 14.09.2026</a>.</span></label>
         <input class="honeypot" name="website" tabindex="-1" autocomplete="off">
       </section>
       <section class="form-step" data-step="1">
@@ -37,6 +37,8 @@
           <label><span>Как удобнее связаться?</span><select name="preferred_contact"><option value="">Выбрать</option><option>по телефону</option><option>по email</option><option>через профиль или мессенджер по указанной ссылке</option></select></label>
           <label><span>Ссылка на профиль или мессенджер (необязательно)</span><input name="profile_or_messenger_url" type="url"><small>Где можно увидеть вашу фотографию и при необходимости связаться с вами.</small></label>
           <label><span>Ссылка на вашу страницу или сайт (необязательно)</span><input name="public_profile_url" type="url"></label>
+          <label class="photo-field"><span>Фотография *</span><input name="photo_upload" type="file" accept="image/jpeg,image/png,image/webp" required><small>Фотография обязательна для отправки заявки.</small><small>Добавьте одну актуальную фотографию, на которой хорошо видно вас. Фотография используется только для ручного предварительного рассмотрения заявки и решения о приглашении на интервью, а после одобрения — во внутренней карточке участника. Она не публикуется, не передаётся другим участникам и не используется для автоматического распознавания лица, биометрической идентификации или подтверждения личности.</small><small data-photo-status aria-live="polite"></small></label>
+          <input name="photo_object_id" type="hidden">
         </div>
       </section>
       <section class="form-step" data-step="2">

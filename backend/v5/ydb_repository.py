@@ -160,6 +160,14 @@ class YdbRepository:
             ),
         }
 
+    def reserve_photo_for_submission(self, photo_object_id, upload_context, application_id):
+        """Fail closed until Phase B adds an atomic YDB ownership reservation."""
+        raise RepositoryUnavailable("photo_repository_phase_b_required")
+
+    def finalize_photo_for_application(self, photo_object_id, application_id, participant_id):
+        """Phase B must implement this with the reviewed 006 schema."""
+        raise RepositoryUnavailable("photo_repository_phase_b_required")
+
     def resolve_phone(self, phone):
         phone = normalize_phone(phone)
         query = """

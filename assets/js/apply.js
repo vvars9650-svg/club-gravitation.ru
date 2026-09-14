@@ -16,8 +16,8 @@
   const TEST_API_URL =
     'https://d5ds805l71s68liu6ge4.fovt0b64.apigw.yandexcloud.net/applications';
   const FORM_VERSION = 'FORM-2.2';
-  const CONSENT_VERSION = 'CONSENT-PD-2.1';
-  const POLICY_VERSION = 'PPD-2.1';
+  const CONSENT_VERSION = 'CONSENT-PD-2.2';
+  const POLICY_VERSION = 'PPD-2.2';
   const MULTI_FIELDS = new Set([
     'desired_connections',
     'acquaintance_methods',
@@ -46,6 +46,7 @@
     'acquaintance_methods_other',
     'return_reason',
     'source',
+    'photo_object_id',
   ];
   const FIELD_SET = new Set(FORM_FIELDS);
   const GENDERS = new Set(['Мужчина', 'Женщина']);
@@ -125,6 +126,9 @@
     }
     if (payload.personal_data_consent !== true) {
       return 'personal_data_consent';
+    }
+    if (!/^PHOTO-[A-Za-z0-9_-]{16,120}$/u.test(payload.photo_object_id || '')) {
+      return 'photo_object_id';
     }
 
     for (const name of ['full_name', 'age', 'gender', 'city', 'phone', 'email',
@@ -377,6 +381,10 @@
     const newForm = success.querySelector('#form-new-session');
     const city = form.elements.city;
     const visit = form.elements.visit_krasnodar;
+    const photoInput = form.elements.photo_upload;
+    const photoReference = form.elements.photo_object_id;
+    const photoStatus = form.querySelector('[data-photo-status]');
+    const uploadPhoto = root.__V5_PHOTO_UPLOAD_ADAPTER__;
     const names = [
       'Согласие',
       'Контакты',
@@ -507,6 +515,7 @@
             firstInvalid ??= form.elements[field];
           }
         }
+        if (!photoReference.value) firstInvalid ??= photoInput;
       }
 
       if (index === 2) {
@@ -631,6 +640,34 @@
     }
 
     city.addEventListener('change', syncVisit);
+    photoInput.addEventListener('change', async () => {
+      photoReference.value = '';
+      const file = photoInput.files?.[0];
+      if (!file) {
+        photoStatus.textContent = '';
+        return;
+      }
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)
+        || file.size > 10 * 1024 * 1024) {
+        photoStatus.textContent = 'Допустимы JPEG, PNG или WebP до 10 МБ.';
+        return;
+      }
+      if (typeof uploadPhoto !== 'function') {
+        photoStatus.textContent = 'TEST-загрузка фотографий будет подключена на следующем этапе.';
+        return;
+      }
+      photoStatus.textContent = 'Загрузка фотографии…';
+      try {
+        const result = await uploadPhoto(file, controller.getIdempotencyKey());
+        if (!/^PHOTO-[A-Za-z0-9_-]{16,120}$/u.test(result?.photo_object_id || '')) {
+          throw new Error('invalid_photo_reference');
+        }
+        photoReference.value = result.photo_object_id;
+        photoStatus.textContent = 'Фотография загружена.';
+      } catch {
+        photoStatus.textContent = 'Не удалось загрузить фотографию. Повторите попытку.';
+      }
+    });
     for (const field of ['desired_connections', 'acquaintance_methods']) {
       form.querySelector(`[data-conditional-group="${field}"]`)
         .addEventListener('change', () => syncConditional(field));
@@ -687,6 +724,7 @@
         return;
       }
       form.reset();
+      photoStatus.textContent = '';
       current = 0;
       maxReached = 0;
       syncVisit();
