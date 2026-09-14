@@ -8,7 +8,9 @@ const {
   buildPayload,
   createSubmitController,
   validateFrontendPayload,
+  normalizeRussianPhone,
 } = require('../assets/js/apply');
+const apiContract = require('../api/application');
 
 
 const EXPECTED_TEST_API =
@@ -39,10 +41,15 @@ function validPayload() {
     ['age', '30'],
     ['gender', 'Мужчина'],
     ['city', 'Краснодар'],
-    ['phone', '+79990000000'],
+    ['phone', '8 (999) 000-00-00'],
+    ['email', 'user@example.com'],
+    ['occupation', 'Инженер'],
+    ['life_outside_work', 'Спорт'],
     ['desired_connections', 'Новые друзья'],
     ['desired_connections', 'Близкие по духу люди'],
-    ['convenient_days', 'Суббота'],
+    ['acquaintance_methods', 'Через живой разговор'],
+    ['source', 'Сайт / поиск'],
+    ['policy_acknowledged', 'true'],
     ['personal_data_consent', 'true'],
   ]);
 }
@@ -74,12 +81,15 @@ async function testRequestContractAndPayload() {
     'Новые друзья',
     'Близкие по духу люди',
   ]);
-  assert.deepEqual(payload.convenient_days, ['Суббота']);
+  assert.deepEqual(payload.acquaintance_methods, ['Через живой разговор']);
+  assert.equal(payload.phone, '+79990000000');
+  assert.equal(payload.policy_acknowledged, true);
   assert.equal(payload.personal_data_consent, true);
-  assert.equal(payload.consent_version, 'CONSENT-PD-2.0');
-  assert.equal(payload.policy_version, 'PPD-2.0');
-  assert.equal(payload.form_version, 'FORM-2.1');
-  assert.equal(FORM_FIELDS.length, 26);
+  assert.equal(payload.consent_version, 'CONSENT-PD-2.1');
+  assert.equal(payload.policy_version, 'PPD-2.1');
+  assert.equal(payload.form_version, 'FORM-2.2');
+  assert.equal(FORM_FIELDS.length, 23);
+  assert.deepEqual(FORM_FIELDS, apiContract.FORM_FIELDS);
   assert.equal(FORM_FIELDS.includes('comfortable_price'), false);
 
   for (const serverOwned of [
@@ -97,12 +107,20 @@ function testFrontendValidation() {
   const payload = validPayload();
   assert.equal(validateFrontendPayload(payload), null);
   assert.equal(
+    validateFrontendPayload({...payload, policy_acknowledged: false}),
+    'policy_acknowledged',
+  );
+  assert.equal(
     validateFrontendPayload({...payload, personal_data_consent: false}),
     'personal_data_consent',
   );
   assert.equal(validateFrontendPayload({...payload, age: '24'}), 'age');
   assert.equal(validateFrontendPayload({...payload, age: '53'}), 'age');
   assert.equal(validateFrontendPayload({...payload, phone: '123'}), 'phone');
+  assert.equal(normalizeRussianPhone('9990000000'), '+79990000000');
+  assert.equal(normalizeRussianPhone('7 999 000-00-00'), '+79990000000');
+  assert.equal(normalizeRussianPhone('8 (999) 000-00-00'), '+79990000000');
+  assert.equal(normalizeRussianPhone('9abcdefghij'), null);
   assert.equal(validateFrontendPayload({...payload, email: 'bad'}), 'email');
   assert.equal(
     validateFrontendPayload({...payload, public_profile_url: 'ftp://example.test'}),
@@ -115,6 +133,18 @@ function testFrontendValidation() {
       visit_krasnodar: '',
     }),
     'visit_krasnodar',
+  );
+  assert.equal(
+    validateFrontendPayload({...payload, desired_connections: ['Другое']}),
+    'desired_connections_other',
+  );
+  assert.equal(
+    validateFrontendPayload({...payload, acquaintance_methods: ['Другое']}),
+    'acquaintance_methods_other',
+  );
+  assert.equal(
+    validateFrontendPayload({...payload, acquaintance_methods: ['unknown']}),
+    'acquaintance_methods',
   );
 }
 

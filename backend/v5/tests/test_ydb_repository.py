@@ -148,26 +148,23 @@ def make_record():
             "city": "Краснодар",
             "visit_krasnodar": "",
             "phone": "+79990000001",
-            "telegram": "@ivan_test",
             "email": "ivan@example.test",
-            "preferred_contact": "Telegram",
+            "preferred_contact": "по email",
+            "profile_or_messenger_url": "https://example.test/profile",
             "public_profile_url": "https://example.test/ivan",
             "occupation": "test",
             "life_outside_work": "test",
-            "interests": "test",
             "what_interested": "test",
-            "event_expectations": "test",
+            "what_participant_brings": "test",
+            "what_friends_value": "test",
             "desired_connections": ["Новые друзья"],
+            "desired_connections_other": "",
             "values_in_people": "test",
             "barriers_to_meeting": "test",
-            "social_comfort": "3",
-            "initiative": "3",
-            "acquaintance_scenario": "test",
-            "successful_evening": "test",
+            "acquaintance_methods": ["Через живой разговор"],
+            "acquaintance_methods_other": "",
             "return_reason": "test",
-            "unacceptable_behavior": "test",
-            "convenient_days": ["Суббота"],
-            "source": "website",
+            "source": "Сайт / поиск",
         },
         "consent": {
             "participant_id": "PT-TEST001",
@@ -246,7 +243,7 @@ class YdbRepositoryTests(unittest.TestCase):
 
         self.assertEqual(
             record["consent"]["form_version"],
-            "FORM-2.1",
+            "FORM-2.2",
         )
 
         self.assertTrue(
@@ -591,6 +588,16 @@ class YdbRepositoryTests(unittest.TestCase):
         for column in ("processing_blocked Bool", "processing_blocked_at Timestamp", "processing_block_reason Utf8", "processing_block_request_id Utf8"):
             self.assertIn("ADD COLUMN " + column, migration)
         self.assertNotIn("DROP", migration.upper())
+
+    def test_form_2_2_migration_is_additive_and_retains_legacy_columns(self):
+        migration = (Path(__file__).resolve().parents[1] / "schema" / "003_form_2_2_additive.sql").read_text(encoding="utf-8")
+        for column in (
+            "profile_or_messenger_url", "what_participant_brings", "what_friends_value",
+            "desired_connections_other", "acquaintance_methods", "acquaintance_methods_other",
+        ):
+            self.assertIn("ADD COLUMN " + column, migration)
+        for forbidden in ("DROP", "RENAME", "ALTER COLUMN", "telegram Json", "acquaintance_scenario Json"):
+            self.assertNotIn(forbidden, migration.upper() if forbidden in ("DROP", "RENAME", "ALTER COLUMN") else migration)
 
 
 if __name__ == "__main__":

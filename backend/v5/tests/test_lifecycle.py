@@ -9,15 +9,16 @@ from backend.v5.repository import DESTRUCTION_CLASSIFICATION, FakeRepository
 
 PAYLOAD = {
     "full_name": "Synthetic Person", "age": 30, "gender": "Мужчина", "city": "Краснодар",
-    "visit_krasnodar": "", "phone": "+79990000001", "telegram": "@synthetic",
-    "email": "synthetic@example.test", "preferred_contact": "Telegram", "public_profile_url": "",
-    "occupation": "synthetic", "life_outside_work": "synthetic", "interests": "synthetic",
-    "what_interested": "synthetic", "event_expectations": "synthetic", "desired_connections": [],
-    "values_in_people": "synthetic", "barriers_to_meeting": "synthetic", "social_comfort": "3",
-    "initiative": "3", "acquaintance_scenario": "synthetic", "successful_evening": "synthetic",
-    "return_reason": "synthetic", "unacceptable_behavior": "synthetic", "convenient_days": [],
-    "source": "synthetic", "personal_data_consent": True,
-    "consent_version": "CONSENT-PD-2.0", "policy_version": "PPD-2.0", "form_version": "FORM-2.1",
+    "visit_krasnodar": "", "phone": "+79990000001", "email": "synthetic@example.test",
+    "preferred_contact": "по email", "profile_or_messenger_url": "", "public_profile_url": "",
+    "occupation": "synthetic", "life_outside_work": "synthetic", "what_interested": "synthetic",
+    "what_participant_brings": "synthetic", "what_friends_value": "synthetic",
+    "desired_connections": ["Новые друзья"], "desired_connections_other": "",
+    "values_in_people": "synthetic", "barriers_to_meeting": "synthetic",
+    "acquaintance_methods": ["Через живой разговор"], "acquaintance_methods_other": "",
+    "return_reason": "synthetic", "source": "Сайт / поиск", "policy_acknowledged": True,
+    "personal_data_consent": True, "consent_version": "CONSENT-PD-2.1",
+    "policy_version": "PPD-2.1", "form_version": "FORM-2.2",
 }
 
 

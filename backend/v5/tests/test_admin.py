@@ -48,7 +48,7 @@ class AdminMvpTests(unittest.TestCase):
         self.assertEqual(response["statusCode"], 200)
         self.assertEqual(len(body["applications"]), 2)
         self.assertIn("occupation", body["applications"][0]["form"])
-        self.assertEqual(body["consents"][0]["consent_version"], "CONSENT-PD-2.0")
+        self.assertEqual(body["consents"][0]["consent_version"], "CONSENT-PD-2.1")
 
     def test_gateway_v01_get_returns_existing_participant_card(self):
         response = admin_handler(
