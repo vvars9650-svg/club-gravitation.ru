@@ -30,10 +30,24 @@
       return JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(bytes));
     } catch { return {}; }
   };
+  const normalizeOidcDisplayNameClaim = (value) => {
+    if (typeof value !== 'string' || !value) return value || '';
+    if (!/[ÃÂÐÑ]/.test(value)) return value;
+    try {
+      const cp1252 = {'€':0x80, '‚':0x82, 'ƒ':0x83, '„':0x84, '…':0x85, '†':0x86, '‡':0x87, 'ˆ':0x88, '‰':0x89, 'Š':0x8a, '‹':0x8b, 'Œ':0x8c, 'Ž':0x8e, '‘':0x91, '’':0x92, '“':0x93, '”':0x94, '•':0x95, '–':0x96, '—':0x97, '˜':0x98, '™':0x99, 'š':0x9a, '›':0x9b, 'œ':0x9c, 'ž':0x9e, 'Ÿ':0x9f};
+      const bytes = Uint8Array.from(value, (char) => cp1252[char] ?? char.charCodeAt(0) & 0xff);
+      const repaired = new TextDecoder('utf-8', {fatal: true}).decode(bytes);
+      return /[\u0400-\u04ff]/.test(repaired) ? repaired : value;
+    } catch (_) {
+      return value;
+    }
+  };
+
   const displayNameFromClaims = (claims) => {
-    const given = typeof claims?.given_name === 'string' ? claims.given_name.trim() : '';
-    const family = typeof claims?.family_name === 'string' ? claims.family_name.trim() : '';
-    return [given, family].filter(Boolean).join(' ') || (typeof claims?.name === 'string' ? claims.name : '');
+    const claim = (key) => normalizeOidcDisplayNameClaim(typeof claims?.[key] === 'string' ? claims[key].trim() : '');
+    const given = claim('given_name');
+    const family = claim('family_name');
+    return [given, family].filter(Boolean).join(' ') || claim('name') || claim('preferred_username');
   };
   const tokenDiagnostics = (token, includeScope = false) => {
     const segments = String(token || '').split('.');
@@ -101,5 +115,5 @@
     }
     return {signIn, consumeCallback, getSession: () => session, getAccessToken: () => session && session.accessToken, getIdToken: () => session && session.idToken, signOut: () => { session = null; storage.removeItem(TRANSIENT_KEY); }};
   }
-  return {TRANSIENT_KEY, random, pkceChallenge, decodeJwt, displayNameFromClaims, tokenDiagnostics, normalizeConfig, resolveEndpoints, createAuthClient};
+  return {TRANSIENT_KEY, random, pkceChallenge, decodeJwt, normalizeOidcDisplayNameClaim, displayNameFromClaims, tokenDiagnostics, normalizeConfig, resolveEndpoints, createAuthClient};
 });
