@@ -1,9 +1,17 @@
 """In-memory repository used exclusively by V5 unit tests."""
 
 from copy import deepcopy
+from threading import RLock
+
+from .domain import phone as normalize_phone
+from .participant_model import INITIAL_APPLICATION_STATUS, INITIAL_PARTICIPANT_STATUS
 
 
 class RepositoryUnavailable(RuntimeError):
+    pass
+
+
+class RepositoryConflict(RuntimeError):
     pass
 
 
@@ -26,35 +34,69 @@ class FakeRepository:
         self.participants = {}
         self.audit = []
         self.blocks = {}
+        self.migrations = set()
+        self._lock = RLock()
 
     def get_idempotency(self, key):
         return self.by_key.get(key)
 
     def resolve_phone(self, phone):
-        return self.by_phone.get(phone)
+        participant_id = self.by_phone.get(normalize_phone(phone))
+        if participant_id and participant_id not in self.participants:
+            raise RepositoryConflict("phone_key_inconsistent")
+        return participant_id
 
     def save(self, key, record):
-        if key in self.by_key:
-            return False
-        owner = self.by_phone.get(record["form"]["phone"], record["participant_id"])
-        if owner in self.blocks:
-            raise RepositoryUnavailable("processing_blocked")
-        self.by_phone.setdefault(record["form"]["phone"], owner)
-        record["participant_id"] = owner
-        record["consent"]["participant_id"] = owner
-        participant = self.participants.setdefault(owner, {
-            "participant_id": owner, "environment": "TEST", "phone": record["form"]["phone"],
-            "lifecycle_status": "Новая заявка", "owner": "", "priority": "", "next_action": "",
-            "next_contact_at": None, "decision": "", "internal_comment": "",
-            "processing_blocked": False, "processing_blocked_at": None,
-            "processing_block_reason": "", "processing_block_request_id": "",
-        })
-        for field in ("full_name", "age", "gender", "city", "visit_krasnodar", "email", "preferred_contact", "public_profile_url"):
-            participant[field] = record["form"][field]
-        participant["telegram"] = record["form"]["profile_or_messenger_url"]
-        self.by_key[key] = deepcopy(record)
-        self.audit.append({"request_id": record["request_id"], "application_id": record["application_id"], "participant_id": owner, "operation": "application_created", "status": "ok"})
-        return True
+        with self._lock:
+            if key in self.by_key:
+                return False
+            phone = record["form"]["phone"]
+            owner = self.by_phone.get(phone)
+            if owner and owner not in self.participants:
+                raise RepositoryConflict("phone_key_inconsistent")
+            if owner in self.blocks:
+                raise RepositoryUnavailable("processing_blocked")
+            if owner is None:
+                owner = record["participant_id"]
+                if owner in self.participants:
+                    raise RepositoryConflict("participant_id_conflict")
+                form = record["form"]
+                self.participants[owner] = {
+                    "participant_id": owner, "environment": "TEST", "phone": phone,
+                    "full_name": form["full_name"], "age": form["age"],
+                    "gender": form["gender"], "city": form["city"],
+                    "visit_krasnodar": form["visit_krasnodar"],
+                    "telegram": form["profile_or_messenger_url"], "email": form["email"],
+                    "profile_or_messenger_url": form["profile_or_messenger_url"],
+                    "occupation": form["occupation"],
+                    "preferred_contact": form["preferred_contact"],
+                    "public_profile_url": form["public_profile_url"],
+                    "participant_status": INITIAL_PARTICIPANT_STATUS, "lifecycle_status": "Новая заявка",
+                    "owner": "", "priority": "", "next_action": "",
+                    "next_contact_at": None, "decision": "", "internal_comment": "",
+                    "processing_blocked": False, "processing_blocked_at": None,
+                    "processing_block_reason": "", "processing_block_request_id": "",
+                }
+                self.by_phone[phone] = owner
+            record["participant_id"] = owner
+            record["consent"]["participant_id"] = owner
+            record["application_status"] = INITIAL_APPLICATION_STATUS
+            record["decision"] = ""
+            self.by_key[key] = deepcopy(record)
+            self.audit.append({"request_id": record["request_id"], "application_id": record["application_id"], "participant_id": owner, "operation": "application_created", "status": "ok"})
+            return True
+
+    def applied_migrations(self):
+        return tuple(sorted(self.migrations))
+
+    def register_migration(self, migration_id):
+        from .migration_ledger import validate_migration_id
+        validate_migration_id(migration_id)
+        with self._lock:
+            if migration_id in self.migrations:
+                return False
+            self.migrations.add(migration_id)
+            return True
 
     def list_admin_applications(self, filters=None, sort="submitted_at", order="desc"):
         filters = filters or {}
@@ -80,7 +122,7 @@ class FakeRepository:
         for record in self.by_key.values():
             if record["participant_id"] != participant_id:
                 continue
-            applications.append({"application_id": record["application_id"], "submitted_at": record["submitted_at"], "form_version": record["consent"]["form_version"], "request_id": record["request_id"], "form": deepcopy(record["form"])})
+            applications.append({"application_id": record["application_id"], "submitted_at": record["submitted_at"], "form_version": record["consent"]["form_version"], "application_status": record.get("application_status", ""), "decision": record.get("decision", ""), "request_id": record["request_id"], "form": deepcopy(record["form"])})
             consents.append(deepcopy(record["consent"]))
         return {"environment": "TEST", "participant": deepcopy(participant), "applications": sorted(applications, key=lambda item: item["submitted_at"], reverse=True), "consents": consents}
 
@@ -95,10 +137,14 @@ class FakeRepository:
 
     def find_participant(self, participant_id):
         participant = self.participants.get(participant_id)
-        return deepcopy(participant) if participant and participant.get("environment") == "TEST" else None
+        if not participant or participant.get("environment") != "TEST":
+            return None
+        result = deepcopy(participant)
+        result["processing_state"] = "Заблокирована" if result.get("processing_blocked") else "Разрешена"
+        return result
 
     def find_participant_by_phone(self, phone):
-        participant_id = self.by_phone.get(phone)
+        participant_id = self.resolve_phone(phone)
         return self.find_participant(participant_id) if participant_id else None
 
     def find_application(self, application_id):
@@ -114,7 +160,7 @@ class FakeRepository:
         if participant_id in self.blocks:
             return False
         self.blocks[participant_id] = {"request_id": request_id, "reason": reason}
-        participant.update({"processing_blocked": True, "processing_blocked_at": "TEST-TIMESTAMP", "processing_block_reason": reason, "processing_block_request_id": request_id})
+        participant.update({"processing_blocked": True, "processing_state": "Заблокирована", "processing_blocked_at": "TEST-TIMESTAMP", "processing_block_reason": reason, "processing_block_request_id": request_id})
         self.audit.append({"request_id": request_id, "application_id": None, "participant_id": participant_id, "action": "processing_blocked"})
         return True
 

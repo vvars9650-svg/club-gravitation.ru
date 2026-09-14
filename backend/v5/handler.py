@@ -2,7 +2,7 @@ import json,uuid
 from .domain import DomainError
 from .service import submit
 from .factory import runtime_repository
-from .repository import RepositoryUnavailable
+from .repository import RepositoryConflict, RepositoryUnavailable
 from .admin import admin_handler
 def response(status,body,request_id): return {'statusCode':status,'headers':{'Content-Type':'application/json'},'body':json.dumps({**body,'request_id':request_id},ensure_ascii=False)}
 
@@ -35,6 +35,8 @@ def handler(event,context=None,repo=None):
         repo=repo or runtime_repository()
         data=json.loads(event.get('body','')); key=event.get('headers',{}).get('Idempotency-Key') or event.get('headers',{}).get('idempotency-key');record,replay=submit(data,key,repo,request_id)
         return response(200 if replay else 201,{'application_id':record['application_id'],'participant_id':record['participant_id'],'idempotent_replay':replay,'environment':'TEST'},request_id)
+    except RepositoryConflict as e:
+        return response(409, {'error': {'code': str(e)}}, request_id)
     except RepositoryUnavailable as e:
         code = str(e)
         return response(409 if code == 'processing_blocked' else 503, {'error': {'code': code}}, request_id)
