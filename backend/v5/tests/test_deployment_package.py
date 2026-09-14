@@ -14,6 +14,8 @@ EXPECTED_DEPLOYMENT_FILES = {
     "requirements.txt",
     "v5/__init__.py",
     "v5/domain.py",
+    "v5/participant_model.py",
+    "v5/migration_ledger.py",
     "v5/service.py",
     "v5/repository.py",
     "v5/ydb_repository.py",

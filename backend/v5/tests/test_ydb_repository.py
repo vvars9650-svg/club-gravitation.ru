@@ -5,7 +5,7 @@ from pathlib import Path
 
 import ydb
 
-from backend.v5.repository import DESTRUCTION_CLASSIFICATION
+from backend.v5.repository import DESTRUCTION_CLASSIFICATION, RepositoryConflict
 from backend.v5.ydb_repository import YdbRepository
 
 
@@ -75,6 +75,10 @@ class FakeTransaction:
             stream = FakeExecuteResult(result)
         elif "SELECT processing_blocked FROM participants" in query:
             stream = FakeExecuteResult(self.read_result_sets)
+        elif "FROM schema_migrations" in query:
+            result = self.read_result_sets[self.read_index:self.read_index + 1]
+            self.read_index += 1
+            stream = FakeExecuteResult(result)
         else:
             stream = FakeExecuteResult(
                 [],
@@ -346,6 +350,7 @@ class YdbRepositoryTests(unittest.TestCase):
                         {
                             "record_type": "phone",
                             "application_id": "",
+                            "key_participant_id": "PT-EXISTING",
                             "participant_id": "PT-EXISTING",
                             "payload_fingerprint": "",
                             "processing_blocked": False,
@@ -377,15 +382,37 @@ class YdbRepositoryTests(unittest.TestCase):
 
         write_query = tx.queries[1]
 
-        self.assertIn(
-            "UPDATE participants SET",
-            write_query,
-        )
+        self.assertNotIn("UPDATE participants SET", write_query)
+        self.assertNotIn("INSERT INTO participants", write_query)
 
         self.assertNotIn(
             "INSERT INTO participant_phone_keys",
             write_query,
         )
+
+    def test_broken_phone_key_fails_without_writes(self):
+        tx = FakeTransaction([FakeResultSet([{
+            "record_type": "phone", "application_id": "",
+            "key_participant_id": "PT-MISSING", "participant_id": "",
+            "payload_fingerprint": "", "processing_blocked": False,
+        }])])
+        repo = self.make_repo(tx)
+        with self.assertRaisesRegex(RepositoryConflict, "phone_key_inconsistent"):
+            repo.save("broken-phone-key", make_record())
+        self.assertEqual(len(tx.queries), 1)
+        self.assertTrue(tx.committed)
+
+    def test_proposed_participant_id_collision_fails_without_writes(self):
+        tx = FakeTransaction([FakeResultSet([{
+            "record_type": "candidate", "application_id": "",
+            "key_participant_id": "", "participant_id": "PT-COLLISION",
+            "payload_fingerprint": "", "processing_blocked": False,
+        }])])
+        repo = self.make_repo(tx)
+        with self.assertRaisesRegex(RepositoryConflict, "participant_id_conflict"):
+            repo.save("participant-id-collision", make_record())
+        self.assertEqual(len(tx.queries), 1)
+        self.assertTrue(tx.committed)
 
     def test_existing_application_is_not_written_again(self):
         tx = FakeTransaction(
@@ -551,6 +578,7 @@ class YdbRepositoryTests(unittest.TestCase):
         tx = FakeTransaction([FakeResultSet([{
             "record_type": "phone",
             "application_id": "",
+            "key_participant_id": "PT-BLOCK",
             "participant_id": "PT-BLOCK",
             "payload_fingerprint": "",
             "processing_blocked": True,
@@ -598,6 +626,49 @@ class YdbRepositoryTests(unittest.TestCase):
             self.assertIn("ADD COLUMN " + column, migration)
         for forbidden in ("DROP", "RENAME", "ALTER COLUMN", "telegram Json", "acquaintance_scenario Json"):
             self.assertNotIn(forbidden, migration.upper() if forbidden in ("DROP", "RENAME", "ALTER COLUMN") else migration)
+
+    def test_phase_b_migration_adds_foundation_and_ledger_only(self):
+        ledger = (Path(__file__).resolve().parents[1] / "schema" / "004_schema_migration_ledger.sql").read_text(encoding="utf-8")
+        migration = (Path(__file__).resolve().parents[1] / "schema" / "005_wave1_participant_foundation.sql").read_text(encoding="utf-8")
+        for statement in (
+            "ADD COLUMN participant_status Utf8", "ADD COLUMN profile_or_messenger_url Utf8",
+            "ADD COLUMN occupation Utf8", "ADD COLUMN application_status Utf8",
+            "ADD COLUMN decision Utf8",
+        ):
+            self.assertIn(statement, migration)
+        for statement in ("CREATE TABLE schema_migrations", "migration_id Utf8 NOT NULL", "applied_at Timestamp NOT NULL"):
+            self.assertIn(statement, ledger)
+        for forbidden in ("DROP", "RENAME", "ALTER COLUMN", "photo"):
+            self.assertNotIn(forbidden, migration.lower() if forbidden == "photo" else migration.upper())
+
+    def test_ydb_migration_registration_is_idempotent(self):
+        created = FakeTransaction([FakeResultSet([])])
+        repo = self.make_repo(created)
+        self.assertTrue(repo.register_migration("005_wave1_participant_foundation"))
+        self.assertIn("INSERT INTO schema_migrations", created.queries[1])
+        self.assertIn("CurrentUtcTimestamp()", created.queries[1])
+
+        existing = FakeTransaction([FakeResultSet([{"migration_id": "005_wave1_participant_foundation"}])])
+        repo = self.make_repo(existing)
+        self.assertFalse(repo.register_migration("005_wave1_participant_foundation"))
+        self.assertEqual(len(existing.queries), 1)
+
+    def test_ydb_applied_migrations_returns_stable_ids_only(self):
+        class LedgerPool:
+            def execute_with_retries(self, query, params, retry_settings=None):
+                self.query, self.params = query, params
+                return [FakeResultSet([
+                    {"migration_id": "001_v5_test"},
+                    {"migration_id": "004_schema_migration_ledger"},
+                ])]
+
+        repo = YdbRepository.__new__(YdbRepository)
+        repo.pool = LedgerPool()
+        self.assertEqual(repo.applied_migrations(), (
+            "001_v5_test", "004_schema_migration_ledger",
+        ))
+        self.assertIn("ORDER BY migration_id", repo.pool.query)
+        self.assertEqual(repo.pool.params, {"$environment": "TEST"})
 
 
 if __name__ == "__main__":

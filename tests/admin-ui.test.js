@@ -12,7 +12,8 @@ const cryptoImpl = {getRandomValues: (bytes) => { bytes.fill(7); return bytes; }
 assert.equal(admin.STATUSES.length, 9);
 assert.deepEqual(admin.OPERATIONAL, ['lifecycle_status', 'owner', 'priority', 'next_action', 'next_contact_at', 'decision', 'internal_comment']);
 assert.ok(admin.FIELDS.includes('occupation'));
-assert.ok(admin.FIELDS.includes('unacceptable_behavior'));
+assert.ok(admin.FIELDS.includes('acquaintance_methods'));
+assert.equal(admin.FIELDS.includes('unacceptable_behavior'), false);
 assert.match(adminSource, /Загрузка заявок/);
 assert.match(adminSource, /Заявок по выбранным условиям нет/);
 assert.match(adminSource, /Не удалось загрузить заявки/);
