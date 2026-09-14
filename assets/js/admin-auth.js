@@ -30,6 +30,11 @@
       return JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(bytes));
     } catch { return {}; }
   };
+  const displayNameFromClaims = (claims) => {
+    const given = typeof claims?.given_name === 'string' ? claims.given_name.trim() : '';
+    const family = typeof claims?.family_name === 'string' ? claims.family_name.trim() : '';
+    return [given, family].filter(Boolean).join(' ') || (typeof claims?.name === 'string' ? claims.name : '');
+  };
   const tokenDiagnostics = (token, includeScope = false) => {
     const segments = String(token || '').split('.');
     const claims = segments.length === 3 ? decodeJwt(token) : {};
@@ -91,10 +96,10 @@
       const tokens = await response.json();
       if (!tokens.access_token) throw new Error('oidc_token_missing');
       const claims = decodeJwt(tokens.id_token || tokens.access_token);
-      session = {accessToken: tokens.access_token, idToken: tokens.id_token || null, user: {name: claims.name || '', email: claims.email || ''}};
+      session = {accessToken: tokens.access_token, idToken: tokens.id_token || null, user: {name: displayNameFromClaims(claims), email: claims.email || ''}};
       return session;
     }
     return {signIn, consumeCallback, getSession: () => session, getAccessToken: () => session && session.accessToken, getIdToken: () => session && session.idToken, signOut: () => { session = null; storage.removeItem(TRANSIENT_KEY); }};
   }
-  return {TRANSIENT_KEY, random, pkceChallenge, decodeJwt, tokenDiagnostics, normalizeConfig, resolveEndpoints, createAuthClient};
+  return {TRANSIENT_KEY, random, pkceChallenge, decodeJwt, displayNameFromClaims, tokenDiagnostics, normalizeConfig, resolveEndpoints, createAuthClient};
 });

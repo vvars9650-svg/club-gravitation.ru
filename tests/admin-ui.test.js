@@ -55,6 +55,8 @@ assert.match(fs.readFileSync(require.resolve('../admin/index.html'), 'utf8'), /a
   assert.equal(session.idToken, idToken);
   const cyrillicPayload = Buffer.from(JSON.stringify({name:'Владимир Гравитация', email:'display@example.test'})).toString('base64url');
   assert.equal(auth.decodeJwt(`header.${cyrillicPayload}.signature`).name, 'Владимир Гравитация');
+  assert.equal(auth.displayNameFromClaims({name:'Ð’Ð»Ð°Ð´Ð¸Ð¼Ð¸Ñ€', given_name:'Владимир', family_name:'Гравитация'}), 'Владимир Гравитация');
+  assert.equal(auth.displayNameFromClaims({name:'Владимир Гравитация'}), 'Владимир Гравитация');
   assert.equal(oidc.getAccessToken(), accessToken);
   assert.equal(oidc.getIdToken(), idToken);
   assert.equal(transient.getItem(auth.TRANSIENT_KEY), null);
