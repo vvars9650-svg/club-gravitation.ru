@@ -15,12 +15,12 @@
 
   const TEST_API_URL =
     'https://d5ds805l71s68liu6ge4.fovt0b64.apigw.yandexcloud.net/applications';
-  const FORM_VERSION = 'FORM-2.1';
-  const CONSENT_VERSION = 'CONSENT-PD-2.0';
-  const POLICY_VERSION = 'PPD-2.0';
+  const FORM_VERSION = 'FORM-2.2';
+  const CONSENT_VERSION = 'CONSENT-PD-2.1';
+  const POLICY_VERSION = 'PPD-2.1';
   const MULTI_FIELDS = new Set([
     'desired_connections',
-    'convenient_days',
+    'acquaintance_methods',
   ]);
   const FORM_FIELDS = [
     'full_name',
@@ -29,28 +29,31 @@
     'city',
     'visit_krasnodar',
     'phone',
-    'telegram',
     'email',
     'preferred_contact',
+    'profile_or_messenger_url',
     'public_profile_url',
     'occupation',
     'life_outside_work',
-    'interests',
     'what_interested',
-    'event_expectations',
+    'what_participant_brings',
+    'what_friends_value',
     'desired_connections',
+    'desired_connections_other',
     'values_in_people',
     'barriers_to_meeting',
-    'social_comfort',
-    'initiative',
-    'acquaintance_scenario',
-    'successful_evening',
+    'acquaintance_methods',
+    'acquaintance_methods_other',
     'return_reason',
-    'unacceptable_behavior',
-    'convenient_days',
     'source',
   ];
   const FIELD_SET = new Set(FORM_FIELDS);
+  const GENDERS = new Set(['Мужчина', 'Женщина']);
+  const VISIT_OPTIONS = new Set(['Да, регулярно', 'Да, время от времени', 'Пока не уверен(а)']);
+  const CONTACT_OPTIONS = new Set(['', 'по телефону', 'по email', 'через профиль или мессенджер по указанной ссылке']);
+  const DESIRED_CONNECTION_OPTIONS = new Set(['Романтические отношения', 'Новые друзья', 'Близкие по духу люди', 'Партнёрство / бизнес', 'Творческие и совместные проекты', 'Новый круг общения и впечатления', 'Интересные люди без заданной цели', 'Весело провести время', 'Другое']);
+  const ACQUAINTANCE_METHOD_OPTIONS = new Set(['Через общее дело или занятие', 'Через живой разговор', 'Через игру или активность', 'Когда знакомят друзья', 'Когда первый шаг делает другой человек', 'Зависит от человека и ситуации', 'Другое']);
+  const SOURCE_OPTIONS = new Set(['Сайт / поиск', 'От знакомого / рекомендация', 'Мессенджер', 'Социальные сети', 'Сайт знакомств', 'Другое']);
   const CITIES = [
     'Абинск', 'Адыгейск', 'Азов', 'Аксай', 'Алупка', 'Алушта', 'Анапа',
     'Апшеронск', 'Армавир', 'Армянск', 'Астрахань', 'Ахтубинск', 'Батайск',
@@ -92,12 +95,13 @@
     }
 
     for (const [name, rawValue] of entries) {
-      if (!FIELD_SET.has(name) && name !== 'personal_data_consent') {
+      if (!FIELD_SET.has(name) && name !== 'personal_data_consent'
+        && name !== 'policy_acknowledged') {
         continue;
       }
 
-      if (name === 'personal_data_consent') {
-        payload.personal_data_consent = rawValue === true || rawValue === 'true';
+      if (name === 'personal_data_consent' || name === 'policy_acknowledged') {
+        payload[name] = rawValue === true || rawValue === 'true';
       } else if (MULTI_FIELDS.has(name)) {
         payload[name].push(String(rawValue));
       } else {
@@ -106,6 +110,8 @@
     }
 
     payload.personal_data_consent = payload.personal_data_consent === true;
+    payload.policy_acknowledged = payload.policy_acknowledged === true;
+    payload.phone = normalizeRussianPhone(payload.phone) || payload.phone;
     payload.consent_version = CONSENT_VERSION;
     payload.policy_version = POLICY_VERSION;
     payload.form_version = FORM_VERSION;
@@ -114,11 +120,15 @@
   }
 
   function validateFrontendPayload(payload) {
+    if (payload.policy_acknowledged !== true) {
+      return 'policy_acknowledged';
+    }
     if (payload.personal_data_consent !== true) {
       return 'personal_data_consent';
     }
 
-    for (const name of ['full_name', 'age', 'gender', 'city', 'phone']) {
+    for (const name of ['full_name', 'age', 'gender', 'city', 'phone', 'email',
+      'occupation', 'life_outside_work', 'source']) {
       if (!String(payload[name] || '').trim()) {
         return name;
       }
@@ -129,13 +139,22 @@
       return 'age';
     }
 
-    const phoneDigits = String(payload.phone).replace(/\D/gu, '');
-    if (!/^\d{10}$/u.test(phoneDigits) && !/^[78]\d{10}$/u.test(phoneDigits)) {
+    if (!normalizeRussianPhone(payload.phone)) {
       return 'phone';
     }
 
+    if (!GENDERS.has(payload.gender)) {
+      return 'gender';
+    }
+
+    if (!CONTACT_OPTIONS.has(payload.preferred_contact || '')) return 'preferred_contact';
+    if (payload.city !== 'Краснодар' && !VISIT_OPTIONS.has(payload.visit_krasnodar)) {
+      return 'visit_krasnodar';
+    }
+    if (payload.city === 'Краснодар' && payload.visit_krasnodar) return 'visit_krasnodar';
+
     const email = String(payload.email || '').trim();
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)) {
       return 'email';
     }
 
@@ -143,19 +162,50 @@
       return 'visit_krasnodar';
     }
 
-    const profileUrl = String(payload.public_profile_url || '').trim();
-    if (profileUrl) {
+    for (const field of ['profile_or_messenger_url', 'public_profile_url']) {
+      const profileUrl = String(payload[field] || '').trim();
+      if (!profileUrl) continue;
       try {
         const parsed = new URL(profileUrl);
         if (!/^https?:$/u.test(parsed.protocol)) {
-          return 'public_profile_url';
+          return field;
         }
       } catch {
-        return 'public_profile_url';
+        return field;
       }
     }
 
+    const allowedMulti = {desired_connections: DESIRED_CONNECTION_OPTIONS, acquaintance_methods: ACQUAINTANCE_METHOD_OPTIONS};
+    for (const field of MULTI_FIELDS) {
+      if (!Array.isArray(payload[field]) || payload[field].length === 0
+        || new Set(payload[field]).size !== payload[field].length
+        || payload[field].some((value) => !allowedMulti[field].has(value))) return field;
+    }
+    if (payload.desired_connections.includes('Другое')
+      && !payload.desired_connections_other) return 'desired_connections_other';
+    if (!payload.desired_connections.includes('Другое')
+      && payload.desired_connections_other) return 'desired_connections_other';
+    if (payload.acquaintance_methods.includes('Другое')
+      && !payload.acquaintance_methods_other) return 'acquaintance_methods_other';
+    if (!payload.acquaintance_methods.includes('Другое')
+      && payload.acquaintance_methods_other) return 'acquaintance_methods_other';
+    if (!SOURCE_OPTIONS.has(payload.source)) return 'source';
+
     return null;
+  }
+
+  function normalizeRussianPhone(value) {
+    const input = String(value || '').trim();
+    if (!input || /[^\d+\s()-]/u.test(input)
+      || (input.includes('+') && !/^\+\d/u.test(input))
+      || (input.startsWith('+') && !input.startsWith('+7'))
+      || (input.match(/\+/gu) || []).length > 1) return null;
+    let digits = input.replace(/\D/gu, '');
+    if (digits.length === 11) {
+      if (!/^[78]/u.test(digits)) return null;
+      digits = digits.slice(1);
+    }
+    return /^\d{10}$/u.test(digits) ? `+7${digits}` : null;
   }
 
   function responseResult(status, body, key) {
@@ -332,15 +382,31 @@
       'Контакты',
       'О вас',
       'Знакомства',
-      'Формат',
       'Проверка',
     ];
     const groups = [
       ['Контакты', 1, FORM_FIELDS.slice(0, 10)],
       ['О вас', 2, FORM_FIELDS.slice(10, 15)],
-      ['Знакомства', 3, FORM_FIELDS.slice(15, 21)],
-      ['Формат', 4, FORM_FIELDS.slice(21)],
+      ['Знакомства', 3, FORM_FIELDS.slice(15)],
     ];
+    const labels = {
+      full_name: 'Имя и фамилия', age: 'Возраст', gender: 'Пол', city: 'Город',
+      visit_krasnodar: 'Посещение Краснодара', phone: 'Телефон', email: 'Email',
+      preferred_contact: 'Как удобнее связаться',
+      profile_or_messenger_url: 'Ссылка на профиль или мессенджер',
+      public_profile_url: 'Ссылка на страницу или сайт', occupation: 'Ваша сфера деятельности',
+      life_outside_work: 'Чем наполнена ваша жизнь кроме работы',
+      what_interested: 'Почему вам интересна «Гравитация»',
+      what_participant_brings: 'Что вы привносите в компанию людей',
+      what_friends_value: 'За что вас ценят друзья и знакомые',
+      desired_connections: 'Какие знакомства вам интересны',
+      desired_connections_other: 'Другие знакомства или формат общения',
+      values_in_people: 'Что вы цените в людях',
+      barriers_to_meeting: 'Что, возможно, мешает знакомиться',
+      acquaintance_methods: 'Естественные способы знакомства',
+      acquaintance_methods_other: 'Как ещё вам комфортнее знакомиться',
+      return_reason: 'Что должно произойти, чтобы прийти снова', source: 'Откуда узнали о нас',
+    };
     let current = 0;
     let maxReached = 0;
 
@@ -376,6 +442,16 @@
       }
     }
 
+    function syncConditional(field) {
+      const checked = [...form.querySelectorAll(`[name="${field}"]:checked`)]
+        .some((control) => control.value === 'Другое');
+      const wrapper = form.querySelector(`[data-conditional="${field}"]`);
+      const control = form.elements[`${field}_other`];
+      wrapper.hidden = !checked;
+      control.required = checked;
+      if (!checked) control.value = '';
+    }
+
     function clearValidation() {
       form.querySelectorAll('.is-invalid').forEach((element) => {
         element.classList.remove('is-invalid');
@@ -388,12 +464,14 @@
       clearValidation();
       let firstInvalid;
 
-      if (index === 0 && !form.elements.personal_data_consent.checked) {
-        firstInvalid = form.elements.personal_data_consent;
+      if (index === 0) {
+        for (const name of ['policy_acknowledged', 'personal_data_consent']) {
+          if (!form.elements[name].checked) firstInvalid ??= form.elements[name];
+        }
       }
 
       if (index === 1) {
-        for (const name of ['full_name', 'age', 'gender', 'city', 'phone']) {
+        for (const name of ['full_name', 'age', 'gender', 'city', 'phone', 'email']) {
           if (!String(form.elements[name].value).trim()) {
             firstInvalid ??= form.elements[name];
           }
@@ -404,15 +482,12 @@
           firstInvalid ??= form.elements.age;
         }
 
-        const phoneDigits = form.elements.phone.value.replace(/\D/gu, '');
-        const phoneValid = /^\d{10}$/u.test(phoneDigits)
-          || /^[78]\d{10}$/u.test(phoneDigits);
-        if (!phoneValid) {
+        if (!normalizeRussianPhone(form.elements.phone.value)) {
           firstInvalid ??= form.elements.phone;
         }
 
         const email = form.elements.email.value.trim();
-        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)) {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)) {
           firstInvalid ??= form.elements.email;
         }
 
@@ -420,17 +495,38 @@
           firstInvalid ??= visit;
         }
 
-        const profileUrl = form.elements.public_profile_url.value.trim();
-        if (profileUrl) {
+        for (const field of ['profile_or_messenger_url', 'public_profile_url']) {
+          const profileUrl = form.elements[field].value.trim();
+          if (!profileUrl) continue;
           try {
             const parsed = new URL(profileUrl);
             if (!/^https?:$/u.test(parsed.protocol)) {
               throw new Error('invalid_protocol');
             }
           } catch {
-            firstInvalid ??= form.elements.public_profile_url;
+            firstInvalid ??= form.elements[field];
           }
         }
+      }
+
+      if (index === 2) {
+        for (const name of ['occupation', 'life_outside_work']) {
+          if (!form.elements[name].value.trim()) firstInvalid ??= form.elements[name];
+        }
+      }
+
+      if (index === 3) {
+        for (const name of ['desired_connections', 'acquaintance_methods']) {
+          if (!form.querySelector(`[name="${name}"]:checked`)) {
+            firstInvalid ??= form.elements[name][0];
+          }
+          if ([...form.querySelectorAll(`[name="${name}"]:checked`)]
+            .some((control) => control.value === 'Другое')
+            && !form.elements[`${name}_other`].value.trim()) {
+            firstInvalid ??= form.elements[`${name}_other`];
+          }
+        }
+        if (!form.elements.source.value) firstInvalid ??= form.elements.source;
       }
 
       if (firstInvalid) {
@@ -469,7 +565,7 @@
         fields.forEach((field) => {
           const term = document.createElement('dt');
           const description = document.createElement('dd');
-          term.textContent = field;
+          term.textContent = labels[field];
           description.textContent = Array.isArray(data[field])
             ? data[field].join(', ')
             : (data[field] || '—');
@@ -483,7 +579,7 @@
     function go(index) {
       current = index;
       maxReached = Math.max(maxReached, index);
-      if (index === 5) {
+      if (index === 4) {
         reviewAll();
       }
       render();
@@ -535,6 +631,11 @@
     }
 
     city.addEventListener('change', syncVisit);
+    for (const field of ['desired_connections', 'acquaintance_methods']) {
+      form.querySelector(`[data-conditional-group="${field}"]`)
+        .addEventListener('change', () => syncConditional(field));
+      syncConditional(field);
+    }
     syncVisit();
     next.onclick = () => {
       if (validateStep(current)) {
@@ -552,7 +653,8 @@
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
-      if (controller.isSubmitting() || !validateStep(0) || !validateStep(1)) {
+      if (current !== steps.length - 1 || controller.isSubmitting()
+        || !validateStep(0) || !validateStep(1) || !validateStep(2) || !validateStep(3)) {
         return;
       }
 
@@ -576,6 +678,10 @@
       render();
     });
 
+    form.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && current !== steps.length - 1) event.preventDefault();
+    });
+
     newForm.onclick = () => {
       if (!controller.startNewSession()) {
         return;
@@ -584,6 +690,8 @@
       current = 0;
       maxReached = 0;
       syncVisit();
+      syncConditional('desired_connections');
+      syncConditional('acquaintance_methods');
       clearValidation();
       showForm();
       render();
@@ -603,6 +711,7 @@
     createSubmitController,
     responseResult,
     validateFrontendPayload,
+    normalizeRussianPhone,
     mount,
   };
 });

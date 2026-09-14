@@ -2,7 +2,18 @@
 
 `POST /applications` is TEST-only and accepts `application/json` and `Idempotency-Key`.
 
-The payload must include `form_version: "FORM-2.1"`, `personal_data_consent: true`, and legal versions `PPD-2.0` / `CONSENT-PD-2.0`. `telegram` is the optional profile-or-messenger field; `public_profile_url` is the optional page-or-site field and, when present, must be HTTP(S). `comfortable_price` is not accepted or retained for FORM-2.1.
+The canonical payload uses internal `form_version: "FORM-2.2"` and legal versions
+`PPD-2.1` / `CONSENT-PD-2.1`. Both `policy_acknowledged: true` and
+`personal_data_consent: true` are independently required. These version identifiers
+must not be displayed in public form copy.
 
-The supplied handler is a TEST-only reference implementation. It has no Yandex Cloud, YDB, Google Apps Script, photo-upload, or Base64 integration. A future production design must be separately approved and must not be enabled merely by setting a browser endpoint.
+Canonical multi-value fields are `desired_connections` and
+`acquaintance_methods`; both are JSON arrays. The canonical neutral profile field is
+`profile_or_messenger_url`. FORM 2.1 legacy fields are not silently accepted.
 
+Photo status is `LEGAL_PRODUCT_BLOCKED_REQUIRED_PHOTO`. No photo field, upload UI,
+payload value, or storage integration belongs to Phase A.
+
+The supplied handler remains a TEST-only reference implementation. Live migration,
+YDB mutation, deployment, photo handling, and production intake are outside this
+contract.
