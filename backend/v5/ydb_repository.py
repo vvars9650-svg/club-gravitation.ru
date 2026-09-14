@@ -12,7 +12,7 @@ try:
 except ImportError:  # unit-only imports must not silently create memory storage
     ydb = None
 
-from .domain import FORM_FIELDS, FORM_VERSION, ids
+from .domain import CONSENT_VERSION, FORM_FIELDS, FORM_VERSION, MULTI_FIELDS, POLICY_VERSION, ids
 from .repository import DESTRUCTION_CLASSIFICATION, RepositoryUnavailable
 
 
@@ -406,24 +406,21 @@ class YdbRepository:
                 DECLARE $telegram AS Utf8;
                 DECLARE $email AS Utf8;
                 DECLARE $preferred_contact AS Utf8;
+                DECLARE $profile_or_messenger_url AS Utf8;
                 DECLARE $public_profile_url AS Utf8;
 
                 DECLARE $occupation AS Utf8;
                 DECLARE $life_outside_work AS Utf8;
-                DECLARE $interests AS Utf8;
                 DECLARE $what_interested AS Utf8;
-                DECLARE $event_expectations AS Utf8;
+                DECLARE $what_participant_brings AS Utf8;
+                DECLARE $what_friends_value AS Utf8;
                 DECLARE $desired_connections AS Json;
+                DECLARE $desired_connections_other AS Utf8;
                 DECLARE $values_in_people AS Utf8;
                 DECLARE $barriers_to_meeting AS Utf8;
-                DECLARE $social_comfort AS Utf8;
-                DECLARE $initiative AS Utf8;
-                DECLARE $acquaintance_scenario AS Utf8;
-                DECLARE $successful_evening AS Utf8;
+                DECLARE $acquaintance_methods AS Json;
+                DECLARE $acquaintance_methods_other AS Utf8;
                 DECLARE $return_reason AS Utf8;
-                DECLARE $unacceptable_behavior AS Utf8;
-                DECLARE $convenient_days AS Json;
-                DECLARE $comfortable_price AS Utf8;
                 DECLARE $source AS Utf8;
 
                 DECLARE $consent_type AS Utf8;
@@ -452,26 +449,22 @@ class YdbRepository:
                     city,
                     visit_krasnodar,
                     phone,
-                    telegram,
                     email,
                     preferred_contact,
+                    profile_or_messenger_url,
                     public_profile_url,
                     occupation,
                     life_outside_work,
-                    interests,
                     what_interested,
-                    event_expectations,
+                    what_participant_brings,
+                    what_friends_value,
                     desired_connections,
+                    desired_connections_other,
                     values_in_people,
                     barriers_to_meeting,
-                    social_comfort,
-                    initiative,
-                    acquaintance_scenario,
-                    successful_evening,
+                    acquaintance_methods,
+                    acquaintance_methods_other,
                     return_reason,
-                    unacceptable_behavior,
-                    convenient_days,
-                    comfortable_price,
                     source
                 ) VALUES (
                     $environment,
@@ -487,26 +480,22 @@ class YdbRepository:
                     $city,
                     $visit_krasnodar,
                     $phone,
-                    $telegram,
                     $email,
                     $preferred_contact,
+                    $profile_or_messenger_url,
                     $public_profile_url,
                     $occupation,
                     $life_outside_work,
-                    $interests,
                     $what_interested,
-                    $event_expectations,
+                    $what_participant_brings,
+                    $what_friends_value,
                     $desired_connections,
+                    $desired_connections_other,
                     $values_in_people,
                     $barriers_to_meeting,
-                    $social_comfort,
-                    $initiative,
-                    $acquaintance_scenario,
-                    $successful_evening,
+                    $acquaintance_methods,
+                    $acquaintance_methods_other,
                     $return_reason,
-                    $unacceptable_behavior,
-                    $convenient_days,
-                    $comfortable_price,
                     $source
                 );
 
@@ -597,16 +586,17 @@ class YdbRepository:
                 "$city": form["city"],
                 "$visit_krasnodar": form["visit_krasnodar"],
                 "$phone": form["phone"],
-                "$telegram": form["telegram"],
+                "$telegram": form["profile_or_messenger_url"],
                 "$email": form["email"],
                 "$preferred_contact": form["preferred_contact"],
+                "$profile_or_messenger_url": form["profile_or_messenger_url"],
                 "$public_profile_url": form["public_profile_url"],
 
                 "$occupation": form["occupation"],
                 "$life_outside_work": form["life_outside_work"],
-                "$interests": form["interests"],
                 "$what_interested": form["what_interested"],
-                "$event_expectations": form["event_expectations"],
+                "$what_participant_brings": form["what_participant_brings"],
+                "$what_friends_value": form["what_friends_value"],
                 "$desired_connections": ydb.TypedValue(
                     json.dumps(
                         form["desired_connections"],
@@ -614,27 +604,20 @@ class YdbRepository:
                     ),
                     ydb.PrimitiveType.Json,
                 ),
+                "$desired_connections_other": form["desired_connections_other"],
                 "$values_in_people": form["values_in_people"],
                 "$barriers_to_meeting": form["barriers_to_meeting"],
-                "$social_comfort": form["social_comfort"],
-                "$initiative": form["initiative"],
-                "$acquaintance_scenario": form["acquaintance_scenario"],
-                "$successful_evening": form["successful_evening"],
-                "$return_reason": form["return_reason"],
-                "$unacceptable_behavior": form["unacceptable_behavior"],
-                "$convenient_days": ydb.TypedValue(
-                    json.dumps(
-                        form["convenient_days"],
-                        ensure_ascii=False,
-                    ),
+                "$acquaintance_methods": ydb.TypedValue(
+                    json.dumps(form["acquaintance_methods"], ensure_ascii=False),
                     ydb.PrimitiveType.Json,
                 ),
-                "$comfortable_price": "",
+                "$acquaintance_methods_other": form["acquaintance_methods_other"],
+                "$return_reason": form["return_reason"],
                 "$source": form["source"],
 
                 "$consent_type": "personal_data_application",
-                "$consent_version": "CONSENT-PD-2.0",
-                "$policy_version": "PPD-2.0",
+                "$consent_version": CONSENT_VERSION,
+                "$policy_version": POLICY_VERSION,
                 "$form_version": FORM_VERSION,
                 "$consent_text_hash": self.consent_hash,
                 "$consent_source": "website",
@@ -808,10 +791,11 @@ class YdbRepository:
                next_contact_at, decision, internal_comment
         FROM participants WHERE environment = $environment AND participant_id = $participant_id;
         SELECT application_id, submitted_at, form_version, request_id, full_name, age, gender, city,
-               visit_krasnodar, phone, telegram, email, preferred_contact, public_profile_url, occupation,
-               life_outside_work, interests, what_interested, event_expectations, desired_connections,
-               values_in_people, barriers_to_meeting, social_comfort, initiative, acquaintance_scenario,
-               successful_evening, return_reason, unacceptable_behavior, convenient_days, comfortable_price, source
+               visit_krasnodar, phone, email, preferred_contact, profile_or_messenger_url,
+               public_profile_url, occupation, life_outside_work, what_interested,
+               what_participant_brings, what_friends_value, desired_connections,
+               desired_connections_other, values_in_people, barriers_to_meeting,
+               acquaintance_methods, acquaintance_methods_other, return_reason, source
         FROM applications WHERE environment = $environment AND participant_id = $participant_id ORDER BY submitted_at DESC;
         SELECT consent_id, application_id, consent_type, consent_version, policy_version, form_version,
                consent_text_hash, granted, granted_at, source, request_id
@@ -824,7 +808,7 @@ class YdbRepository:
         participant_fields = ("participant_id", "phone", "full_name", "age", "gender", "city", "visit_krasnodar", "telegram", "email", "preferred_contact", "public_profile_url", "lifecycle_status", "owner", "priority", "next_action", "next_contact_at", "decision", "internal_comment")
         application_fields = ("application_id", "submitted_at", "form_version", "request_id", *FORM_FIELDS)
         consent_fields = ("consent_id", "application_id", "consent_type", "consent_version", "policy_version", "form_version", "consent_text_hash", "granted", "granted_at", "source", "request_id")
-        return {"environment": ENVIRONMENT, "participant": {name: self._row_value(participant_rows[0], name, "") for name in participant_fields}, "applications": [{"application_id": self._row_value(row, "application_id", ""), "submitted_at": self._row_value(row, "submitted_at", ""), "form_version": self._row_value(row, "form_version", ""), "request_id": self._row_value(row, "request_id", ""), "form": {name: self._row_value(row, name, [] if name in ("desired_connections", "convenient_days") else "") for name in FORM_FIELDS}} for row in self._rows(result_sets, 1)], "consents": [{name: self._row_value(row, name, "") for name in consent_fields} for row in self._rows(result_sets, 2)]}
+        return {"environment": ENVIRONMENT, "participant": {name: self._row_value(participant_rows[0], name, "") for name in participant_fields}, "applications": [{"application_id": self._row_value(row, "application_id", ""), "submitted_at": self._row_value(row, "submitted_at", ""), "form_version": self._row_value(row, "form_version", ""), "request_id": self._row_value(row, "request_id", ""), "form": {name: self._row_value(row, name, [] if name in MULTI_FIELDS else "") for name in FORM_FIELDS}} for row in self._rows(result_sets, 1)], "consents": [{name: self._row_value(row, name, "") for name in consent_fields} for row in self._rows(result_sets, 2)]}
 
     def update_admin_participant(self, participant_id, changes, actor, request_id):
         """Atomic operational-only update plus minimal audit evidence."""

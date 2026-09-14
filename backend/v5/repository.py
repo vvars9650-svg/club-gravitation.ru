@@ -49,8 +49,9 @@ class FakeRepository:
             "processing_blocked": False, "processing_blocked_at": None,
             "processing_block_reason": "", "processing_block_request_id": "",
         })
-        for field in ("full_name", "age", "gender", "city", "visit_krasnodar", "telegram", "email", "preferred_contact", "public_profile_url"):
+        for field in ("full_name", "age", "gender", "city", "visit_krasnodar", "email", "preferred_contact", "public_profile_url"):
             participant[field] = record["form"][field]
+        participant["telegram"] = record["form"]["profile_or_messenger_url"]
         self.by_key[key] = deepcopy(record)
         self.audit.append({"request_id": record["request_id"], "application_id": record["application_id"], "participant_id": owner, "operation": "application_created", "status": "ok"})
         return True
@@ -62,7 +63,7 @@ class FakeRepository:
             if record["environment"] != "TEST":
                 continue
             participant, form = self.participants[record["participant_id"]], record["form"]
-            row = {"application_id": record["application_id"], "participant_id": record["participant_id"], "submitted_at": record["submitted_at"], "full_name": form["full_name"], "age": form["age"], "city": form["city"], "phone": form["phone"], "telegram": form["telegram"], "preferred_contact": form["preferred_contact"], "environment": "TEST", **{name: participant.get(name) for name in ("lifecycle_status", "owner", "priority", "next_action", "next_contact_at", "decision")}}
+            row = {"application_id": record["application_id"], "participant_id": record["participant_id"], "submitted_at": record["submitted_at"], "full_name": form["full_name"], "age": form["age"], "city": form["city"], "phone": form["phone"], "telegram": form["profile_or_messenger_url"], "preferred_contact": form["preferred_contact"], "environment": "TEST", **{name: participant.get(name) for name in ("lifecycle_status", "owner", "priority", "next_action", "next_contact_at", "decision")}}
             query = str(filters.get("q", "")).strip().lower()
             if query and query not in " ".join(str(row.get(name, "")).lower() for name in ("full_name", "phone", "telegram", "city")):
                 continue
