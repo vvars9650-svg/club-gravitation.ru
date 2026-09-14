@@ -72,3 +72,26 @@ hashed by the existing Admin layer before audit storage.
 After reviewed TEST schema application, `YdbRepository.block_processing()` uses a serializable read/write transaction to set the block and add the minimal `processing_blocked` audit action. A repeated block is idempotent. Intake reads the same block within its transaction and returns `processing_blocked` without writing a participant, application, consent or creation audit event.
 
 `find_participant`, `find_participant_by_phone`, and `find_application` are internal repository helpers only; there are no lifecycle HTTP routes. `destruction_plan()` is dry-run only: it returns IDs/counts (not contact values) and explicit classification for each record category: `contains_personal_data`, `contains_direct_contact_data`, `contains_linkable_identifiers`, and `retention_decision_required`. Consents, technical logs and audit logs are personal data through linkable identifiers even though they contain no direct contacts; technical-log classification applies to records linked by application/request identifiers. It never executes DELETE. Lifecycle audit action names are `processing_blocked`, `destruction_requested`, and `destruction_planned`; no client input or free-text PII is copied into these actions.
+
+## Wave 1 Phase B participant foundation (not migrated or deployed)
+
+The normalized Russian phone produced by `domain.phone()` is the only intake
+identity-resolution key. Resolution and optional Participant creation occur inside
+the same serializable YDB transaction as the immutable Application insert. A phone
+key found without its Participant fails with `phone_key_inconsistent`; it is never
+silently reassigned. A repeat Application links to the existing Participant without
+updating any canonical profile or operational field.
+
+Participant status, Application lifecycle and Application decision use separate
+domain vocabularies in `participant_model.py`. Migration 005 adds separate nullable
+columns without changing the legacy fields. Existing Participant rows require an
+explicit reviewed bootstrap classification; runtime intake does not infer or
+backfill their canonical status.
+
+Migration 004 creates `schema_migrations(environment, migration_id, applied_at)`.
+Stable IDs are declared in `migration_ledger.py`. For a future controlled TEST
+bootstrap: first verify migrations 001 and 002 against the actual schema; apply
+pending 003; apply 004; register verified/applied IDs 001–004; then apply 005 and
+register it. Registration happens only after every statement in that migration
+succeeds. Do not treat column presence alone as ledger evidence. None of these
+steps is performed by application startup, CI, or this repository change.
