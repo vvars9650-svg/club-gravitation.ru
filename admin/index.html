@@ -19,14 +19,14 @@
     <div class="admin-session"><span id="admin-identity"></span><button id="admin-logout" type="button">Выйти</button></div>
     <section class="admin-diagnostic" aria-label="Безопасная диагностика OIDC TEST"><h2>OIDC TEST diagnostics</h2><pre id="admin-token-diagnostic">Метаданные токенов появятся после входа.</pre></section>
     <section class="admin-controls" aria-label="Фильтры заявок">
-      <input id="admin-search" type="search" placeholder="Поиск: имя, телефон, Telegram, город">
+    <input id="admin-search" type="search" placeholder="Поиск: имя, телефон, профиль или мессенджер, город">
       <select id="admin-status"><option value="">Все статусы</option></select>
       <input id="admin-owner" placeholder="Ответственный">
       <select id="admin-priority"><option value="">Любой приоритет</option><option>Высокий</option><option>Средний</option><option>Низкий</option></select>
       <select id="admin-sort"><option value="submitted_at:desc">Сначала новые</option><option value="submitted_at:asc">Сначала старые</option><option value="full_name:asc">Имя А–Я</option><option value="priority:asc">Приоритет</option></select>
     </section>
     <p class="admin-state" id="admin-state" aria-live="polite">Загрузка заявок…</p>
-    <div class="admin-table-wrap"><table><thead><tr><th>Дата заявки</th><th>Имя</th><th>Возраст</th><th>Город</th><th>Телефон</th><th>Telegram</th><th>Связь</th><th>Статус</th><th>Ответственный</th><th>Приоритет</th><th>Следующее действие</th><th>Контакт</th><th>Решение</th></tr></thead><tbody id="admin-list"></tbody></table></div>
+    <div class="admin-table-wrap"><table><thead><tr><th>Дата заявки</th><th>Имя</th><th>Возраст</th><th>Город</th><th>Телефон</th><th>Профиль или мессенджер</th><th>Связь</th><th>Статус</th><th>Ответственный</th><th>Приоритет</th><th>Следующее действие</th><th>Контакт</th><th>Решение</th></tr></thead><tbody id="admin-list"></tbody></table></div>
     <aside class="participant-drawer" id="participant-drawer" hidden aria-label="Карточка участника"><button id="drawer-close" type="button">Закрыть</button><div id="participant-card"></div></aside>
     </section>
   </main>

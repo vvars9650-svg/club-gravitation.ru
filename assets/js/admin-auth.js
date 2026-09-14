@@ -26,7 +26,8 @@
     try {
       const normalized = part.replace(/-/gu, '+').replace(/_/gu, '/');
       const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4);
-      return JSON.parse(atob(padded));
+      const bytes = Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
+      return JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(bytes));
     } catch { return {}; }
   };
   const tokenDiagnostics = (token, includeScope = false) => {
