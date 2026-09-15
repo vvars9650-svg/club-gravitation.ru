@@ -118,6 +118,7 @@ class YdbRepository:
 
         SELECT
             application_id,
+            application_number,
             participant_id,
             payload_fingerprint,
             request_id
@@ -150,6 +151,7 @@ class YdbRepository:
             "application_id": self._row_value(
                 row, "application_id", application_id
             ),
+            "application_number": self._row_value(row, "application_number", None),
             "participant_id": self._row_value(
                 row, "participant_id", ""
             ),
@@ -450,6 +452,15 @@ class YdbRepository:
         LIMIT 1;
         """
 
+        counter_read_query = """
+        DECLARE $environment AS Utf8;
+        SELECT last_value
+        FROM application_counters
+        WHERE environment = $environment
+          AND counter_name = "applications"
+        LIMIT 1;
+        """
+
         def transaction_body(session):
             tx = session.transaction(ydb.QuerySerializableReadWrite())
 
@@ -527,6 +538,18 @@ class YdbRepository:
             if not existing_participant_id and candidate_rows:
                 tx.commit()
                 raise RepositoryConflict("participant_id_conflict")
+
+            with tx.execute(
+                counter_read_query,
+                {"$environment": ENVIRONMENT},
+            ) as result_stream:
+                counter_result_sets = list(result_stream)
+            counter_rows = self._rows(counter_result_sets, 0)
+            last_value = self._row_value(counter_rows[0], "last_value", 0) if counter_rows else 0
+            if isinstance(last_value, bool) or not isinstance(last_value, int) or last_value < 0:
+                tx.commit()
+                raise RepositoryConflict("application_counter_invalid")
+            application_number = last_value + 1
 
             if existing_participant_id:
                 participant_id = existing_participant_id
@@ -613,6 +636,7 @@ class YdbRepository:
                 DECLARE $environment AS Utf8;
                 DECLARE $participant_id AS Utf8;
                 DECLARE $application_id AS Utf8;
+                DECLARE $application_number AS Uint64;
                 DECLARE $consent_id AS Utf8;
                 DECLARE $request_id AS Utf8;
                 DECLARE $payload_fingerprint AS Utf8;
@@ -660,9 +684,20 @@ class YdbRepository:
                 """
                 + participant_write
                 + """
+                UPSERT INTO application_counters (
+                    environment,
+                    counter_name,
+                    last_value
+                ) VALUES (
+                    $environment,
+                    "applications",
+                    $application_number
+                );
+
                 INSERT INTO applications (
                     environment,
                     application_id,
+                    application_number,
                     participant_id,
                     submitted_at,
                     payload_fingerprint,
@@ -697,6 +732,7 @@ class YdbRepository:
                 ) VALUES (
                     $environment,
                     $application_id,
+                    $application_number,
                     $participant_id,
                     CurrentUtcTimestamp(),
                     $payload_fingerprint,
@@ -815,6 +851,10 @@ class YdbRepository:
                 "$environment": ENVIRONMENT,
                 "$participant_id": participant_id,
                 "$application_id": application_id,
+                "$application_number": ydb.TypedValue(
+                    application_number,
+                    ydb.PrimitiveType.Uint64,
+                ),
                 "$consent_id": record["consent_id"],
                 "$request_id": record["request_id"],
                 "$payload_fingerprint": record["payload_fingerprint"],
@@ -880,6 +920,7 @@ class YdbRepository:
             ) as result_stream:
                 for _ in result_stream:
                     pass
+            record["application_number"] = application_number
             return True
 
         return self.pool.retry_operation_sync(
@@ -1051,6 +1092,7 @@ class YdbRepository:
         DECLARE $priority AS Utf8;
         DECLARE $decision AS Utf8;
                 SELECT a.application_id AS application_id,
+                       a.application_number AS application_number,
                a.participant_id AS participant_id,
                a.submitted_at AS submitted_at,
                a.full_name AS full_name,
@@ -1082,7 +1124,7 @@ class YdbRepository:
             "$decision": filters.get("decision", ""),
         }, retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True))
         return [{name: self._row_value(row, name, "") for name in (
-            "application_id", "participant_id", "submitted_at", "full_name", "age", "city", "phone",
+            "application_id", "application_number", "participant_id", "submitted_at", "full_name", "age", "city", "phone",
             "telegram", "preferred_contact", "lifecycle_status", "owner", "priority", "next_action",
             "next_contact_at", "decision") } | {"environment": ENVIRONMENT} for row in self._rows(result_sets)]
 
@@ -1111,9 +1153,9 @@ class YdbRepository:
         if not participant_rows:
             return None
         participant_fields = ("participant_id", "phone", "full_name", "age", "gender", "city", "visit_krasnodar", "telegram", "email", "preferred_contact", "profile_or_messenger_url", "public_profile_url", "occupation", "participant_status", "lifecycle_status", "owner", "priority", "next_action", "next_contact_at", "decision", "internal_comment")
-        application_fields = ("application_id", "submitted_at", "form_version", "application_status", "decision", "request_id", *FORM_FIELDS)
+        application_fields = ("application_id", "application_number", "submitted_at", "form_version", "application_status", "decision", "request_id", *FORM_FIELDS)
         consent_fields = ("consent_id", "application_id", "consent_type", "consent_version", "policy_version", "form_version", "consent_text_hash", "granted", "granted_at", "source", "request_id")
-        return {"environment": ENVIRONMENT, "participant": {name: self._row_value(participant_rows[0], name, "") for name in participant_fields}, "applications": [{"application_id": self._row_value(row, "application_id", ""), "submitted_at": self._row_value(row, "submitted_at", ""), "form_version": self._row_value(row, "form_version", ""), "application_status": self._row_value(row, "application_status", ""), "decision": self._row_value(row, "decision", ""), "request_id": self._row_value(row, "request_id", ""), "form": {name: self._row_value(row, name, [] if name in MULTI_FIELDS else "") for name in FORM_FIELDS}} for row in self._rows(result_sets, 1)], "consents": [{name: self._row_value(row, name, "") for name in consent_fields} for row in self._rows(result_sets, 2)]}
+        return {"environment": ENVIRONMENT, "participant": {name: self._row_value(participant_rows[0], name, "") for name in participant_fields}, "applications": [{"application_id": self._row_value(row, "application_id", ""), "application_number": self._row_value(row, "application_number", None), "submitted_at": self._row_value(row, "submitted_at", ""), "form_version": self._row_value(row, "form_version", ""), "application_status": self._row_value(row, "application_status", ""), "decision": self._row_value(row, "decision", ""), "request_id": self._row_value(row, "request_id", ""), "form": {name: self._row_value(row, name, [] if name in MULTI_FIELDS else "") for name in FORM_FIELDS}} for row in self._rows(result_sets, 1)], "consents": [{name: self._row_value(row, name, "") for name in consent_fields} for row in self._rows(result_sets, 2)]}
 
     def update_admin_participant(self, participant_id, changes, actor, request_id):
         """Atomic operational-only update plus minimal audit evidence."""

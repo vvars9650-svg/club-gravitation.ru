@@ -25,10 +25,11 @@ def ready_photo(key, **changes):
     return row
 
 
-def submission_transaction(key, intake_rows=None, **photo_changes):
+def submission_transaction(key, intake_rows=None, counter_rows=None, **photo_changes):
     return FakeTransaction([
         FakeResultSet(intake_rows or []),
         FakeResultSet([ready_photo(key, **photo_changes)]),
+        FakeResultSet(counter_rows or []),
     ])
 
 
@@ -98,6 +99,10 @@ class FakeTransaction:
             stream = FakeExecuteResult(result)
         elif "SELECT processing_blocked FROM participants" in query:
             stream = FakeExecuteResult(self.read_result_sets)
+        elif "FROM application_counters" in query:
+            result = self.read_result_sets[self.read_index:self.read_index + 1]
+            self.read_index += 1
+            stream = FakeExecuteResult(result)
         elif "FROM schema_migrations" in query or "FROM photo_objects" in query:
             result = self.read_result_sets[self.read_index:self.read_index + 1]
             self.read_index += 1
@@ -232,7 +237,7 @@ class YdbRepositoryTests(unittest.TestCase):
             repo.pool.session.tx_mode,
             ydb.QuerySerializableReadWrite,
         )
-        self.assertEqual(tx.commit_flags, [False, False, True])
+        self.assertEqual(tx.commit_flags, [False, False, False, True])
         self.assertTrue(tx.committed)
 
         for stream in tx.streams:
@@ -292,10 +297,10 @@ class YdbRepositoryTests(unittest.TestCase):
 
         self.assertEqual(
             len(tx.queries),
-            3,
+            4,
         )
 
-        write_query = tx.queries[2]
+        write_query = tx.queries[3]
 
         for table in (
             "participants",
@@ -331,7 +336,7 @@ class YdbRepositoryTests(unittest.TestCase):
             make_record(),
         )
 
-        write_query = tx.queries[2]
+        write_query = tx.queries[3]
 
         participant_pos = write_query.index(
             "INSERT INTO participants"
@@ -377,7 +382,7 @@ class YdbRepositoryTests(unittest.TestCase):
             "PT-EXISTING",
         )
 
-        write_query = tx.queries[2]
+        write_query = tx.queries[3]
 
         self.assertNotIn("UPDATE participants SET", write_query)
         self.assertNotIn("INSERT INTO participants", write_query)
@@ -660,21 +665,36 @@ class YdbRepositoryTests(unittest.TestCase):
         self.assertTrue(repo.save(key, make_record()))
 
         self.assertIsInstance(repo.pool.session.tx_mode, ydb.QuerySerializableReadWrite)
-        self.assertEqual(tx.commit_flags, [False, False, True])
-        self.assertEqual(len(tx.queries), 3)
+        self.assertEqual(tx.commit_flags, [False, False, False, True])
+        self.assertEqual(len(tx.queries), 4)
         self.assertIn("FROM photo_objects", tx.queries[1])
         self.assertEqual(tx.params[1]["$photo_object_id"], PHOTO_ID)
-        write_query = tx.queries[2]
+        write_query = tx.queries[3]
         self.assertIn("photo_object_id", write_query)
         self.assertIn('lifecycle_state = "ATTACHED"', write_query)
         self.assertIn("application_id = $application_id", write_query)
         self.assertIn("participant_id = $participant_id", write_query)
         self.assertEqual(
-            tx.params[2]["$owner_context_hash"],
+            tx.params[3]["$owner_context_hash"],
             hashlib.sha256(key.encode("utf-8")).hexdigest(),
         )
         self.assertNotIn(key, str(tx.params))
         self.assertTrue(tx.committed)
+
+    def test_application_number_counter_is_uint64_and_atomic_with_submission(self):
+        key = "atomic-ydb-number"
+        tx = submission_transaction(key, counter_rows=[{"last_value": 41}])
+        repo = self.make_repo(tx)
+        record = make_record()
+
+        self.assertTrue(repo.save(key, record))
+        self.assertEqual(record["application_number"], 42)
+        self.assertIn("FROM application_counters", tx.queries[2])
+        self.assertIn("UPSERT INTO application_counters", tx.queries[3])
+        application_number = tx.params[3]["$application_number"]
+        self.assertIsInstance(application_number, ydb.TypedValue)
+        self.assertEqual(application_number.value, 42)
+        self.assertEqual(str(application_number.value_type), "Uint64")
 
     def test_atomic_submission_rejects_invalid_photo_before_any_write(self):
         key = "atomic-ydb-reject"
@@ -710,7 +730,7 @@ class YdbRepositoryTests(unittest.TestCase):
         repo = self.make_repo(tx)
 
         self.assertTrue(repo.save(key, make_record()))
-        write_query = tx.queries[2]
+        write_query = tx.queries[3]
         self.assertIn("UPDATE participants", write_query)
         self.assertIn("current_photo_object_id = $photo_object_id", write_query)
         self.assertIn("photo_required_blocked = false", write_query)
@@ -735,7 +755,7 @@ class YdbRepositoryTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "injected_combined_write_failure"):
             repo.save(key, make_record())
         self.assertFalse(tx.committed)
-        self.assertEqual(tx.commit_flags, [False, False, True])
+        self.assertEqual(tx.commit_flags, [False, False, False, True])
 
     def test_transaction_retry_reuses_deterministic_relation_and_commits_once(self):
         class FailingWriteTransaction(FakeTransaction):
@@ -774,8 +794,8 @@ class YdbRepositoryTests(unittest.TestCase):
         self.assertFalse(first.committed)
         self.assertTrue(second.committed)
         self.assertEqual(repo.pool.calls, 1)
-        self.assertEqual(first.params[2]["$application_id"], second.params[2]["$application_id"])
-        self.assertEqual(first.params[2]["$photo_object_id"], second.params[2]["$photo_object_id"])
+        self.assertEqual(first.params[3]["$application_id"], second.params[3]["$application_id"])
+        self.assertEqual(first.params[3]["$photo_object_id"], second.params[3]["$photo_object_id"])
 
     def test_ydb_photo_initiation_is_serializable_pending_and_hash_only(self):
         tx = FakeTransaction([FakeResultSet([])])

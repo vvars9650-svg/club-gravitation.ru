@@ -7,6 +7,11 @@ from .object_storage import ObjectStorageError
 from .admin import admin_handler
 def response(status,body,request_id): return {'statusCode':status,'headers':{'Content-Type':'application/json'},'body':json.dumps({**body,'request_id':request_id},ensure_ascii=False)}
 
+def format_application_number(value):
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return None
+    return str(value).zfill(6)
+
 def trusted_admin_subject(event):
     """Accept an actor only from a JWT authorizer injected by API Gateway."""
     try:
@@ -55,7 +60,10 @@ def handler(event,context=None,repo=None,photo_service=None):
             return response(200,service.complete(data.get('photo_object_id'),key),request_id)
         repo=repo or runtime_repository()
         record,replay=submit(data,key,repo,request_id)
-        return response(200 if replay else 201,{'application_id':record['application_id'],'participant_id':record['participant_id'],'idempotent_replay':replay,'environment':'TEST'},request_id)
+        application_number = format_application_number(record.get('application_number'))
+        if application_number is None:
+            return response(503, {'error': {'code': 'application_number_unavailable'}}, request_id)
+        return response(200 if replay else 201,{'application_id':record['application_id'],'application_number':application_number,'participant_id':record['participant_id'],'idempotent_replay':replay,'environment':'TEST'},request_id)
     except RepositoryConflict as e:
         return response(409, {'error': {'code': str(e)}}, request_id)
     except RepositoryUnavailable as e:

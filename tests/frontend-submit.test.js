@@ -10,6 +10,7 @@ const {
   buildPayload,
   createPhotoUploadAdapter,
   createSubmitController,
+  responseResult,
   validateFrontendPayload,
   normalizeRussianPhone,
 } = require('../assets/js/apply');
@@ -78,7 +79,7 @@ async function testPhotoUploadAdapterFlow() {
   const applicationCalls = [];
   const submit = controller(async (url, options) => {
     applicationCalls.push([url, options]);
-    return response(201, {application_id: 'APP-1'});
+    return response(201, {application_id: 'APP-1', application_number: '000001'});
   }, () => '00000000-0000-4000-8000-000000000042');
   const sharedKey = submit.getIdempotencyKey();
   await adapter(file, sharedKey);
@@ -146,7 +147,7 @@ async function testRequestContractAndPayload() {
   const calls = [];
   const submit = controller(async (...args) => {
     calls.push(args);
-    return response(201, {application_id: 'APP-1'});
+    return response(201, {application_id: 'APP-1', application_number: '000001'});
   });
   const payload = validPayload();
   const result = await submit.submit(payload);
@@ -296,6 +297,7 @@ async function testTimeoutKeepsKey() {
 async function testNewSessionGetsNewKeyAfterSuccess() {
   const submit = controller(async () => response(201, {
     application_id: 'APP-COMPLETE',
+    application_number: '000001',
   }));
   const originalKey = submit.getIdempotencyKey();
 
@@ -309,8 +311,8 @@ async function testNewSessionGetsNewKeyAfterSuccess() {
 
 async function testResponseStates() {
   const cases = [
-    [201, {application_id: 'APP-NEW'}, 'success'],
-    [200, {application_id: 'APP-NEW', idempotent_replay: true}, 'success'],
+    [201, {application_id: 'APP-NEW', application_number: '000001'}, 'success'],
+    [200, {application_id: 'APP-NEW', application_number: '000001', idempotent_replay: true}, 'success'],
     [422, {error: {code: 'invalid_age'}}, 'validation_error'],
     [415, {error: {code: 'unsupported_media_type'}}, 'recoverable_error'],
     [503, {error: {code: 'ydb_unavailable'}}, 'recoverable_error'],
@@ -341,7 +343,7 @@ async function testDoubleSubmitPrevention() {
   assert.strictEqual(first, second);
   assert.equal(calls, 1);
   assert.equal(submit.getState(), 'submitting');
-  resolveFetch(response(201, {application_id: 'APP-ONCE'}));
+  resolveFetch(response(201, {application_id: 'APP-ONCE', application_number: '000001'}));
   const [firstResult, secondResult] = await Promise.all([first, second]);
   assert.deepEqual(firstResult, secondResult);
   assert.equal(firstResult.state, 'success');
@@ -368,6 +370,24 @@ function testForbiddenFrontendIntegrations() {
   ]) {
     assert.equal(frontend.includes(forbidden), false, forbidden);
   }
+
+  assert.match(frontend, /заявка №\$\{applicationnumber\}/u);
+  assert.equal(frontend.includes('data-application-id'), false);
+}
+
+function testApplicationNumberResponseContract() {
+  assert.deepEqual(
+    responseResult(201, {application_id: 'APP-1', application_number: '000001'}, 'key').applicationNumber,
+    '000001',
+  );
+  assert.equal(
+    responseResult(201, {application_id: 'APP-1'}, 'key').code,
+    'application_number_unavailable',
+  );
+  assert.equal(
+    responseResult(200, {application_id: 'APP-1', application_number: '000001', idempotent_replay: true}, 'key').applicationNumber,
+    '000001',
+  );
 }
 
 (async () => {
@@ -381,6 +401,7 @@ function testForbiddenFrontendIntegrations() {
   await testResponseStates();
   await testDoubleSubmitPrevention();
   testForbiddenFrontendIntegrations();
+  testApplicationNumberResponseContract();
   console.log('V5 frontend submit tests passed');
 })().catch((error) => {
   console.error(error);

@@ -7,6 +7,7 @@ MIGRATION_IDS = (
     "004_schema_migration_ledger",
     "005_wave1_participant_foundation",
     "006_wave2_photo_foundation",
+    "007_application_number_sequence",
 )
 
 

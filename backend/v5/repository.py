@@ -39,6 +39,7 @@ class FakeRepository:
         self.blocks = {}
         self.migrations = set()
         self.photo_objects = {}
+        self.application_counters = {}
         self._lock = RLock()
 
     @staticmethod
@@ -210,6 +211,7 @@ class FakeRepository:
             by_phone = deepcopy(self.by_phone)
             participants = deepcopy(self.participants)
             photo_objects = deepcopy(self.photo_objects)
+            application_counters = deepcopy(self.application_counters)
             audit = deepcopy(self.audit)
             if owner is None:
                 owner = record["participant_id"]
@@ -251,10 +253,16 @@ class FakeRepository:
             })
             self._submission_checkpoint("photo_attachment")
 
+            application_number = application_counters.get("TEST", 0) + 1
+            application_counters["TEST"] = application_number
+            record["application_number"] = application_number
+            by_key[key] = deepcopy(record)
+
             self.by_key = by_key
             self.by_phone = by_phone
             self.participants = participants
             self.photo_objects = photo_objects
+            self.application_counters = application_counters
             self.audit = audit
             return True
 
@@ -281,7 +289,7 @@ class FakeRepository:
             if record["environment"] != "TEST":
                 continue
             participant, form = self.participants[record["participant_id"]], record["form"]
-            row = {"application_id": record["application_id"], "participant_id": record["participant_id"], "submitted_at": record["submitted_at"], "full_name": form["full_name"], "age": form["age"], "city": form["city"], "phone": form["phone"], "telegram": form["profile_or_messenger_url"], "preferred_contact": form["preferred_contact"], "environment": "TEST", **{name: participant.get(name) for name in ("lifecycle_status", "owner", "priority", "next_action", "next_contact_at", "decision")}}
+            row = {"application_id": record["application_id"], "application_number": record.get("application_number"), "participant_id": record["participant_id"], "submitted_at": record["submitted_at"], "full_name": form["full_name"], "age": form["age"], "city": form["city"], "phone": form["phone"], "telegram": form["profile_or_messenger_url"], "preferred_contact": form["preferred_contact"], "environment": "TEST", **{name: participant.get(name) for name in ("lifecycle_status", "owner", "priority", "next_action", "next_contact_at", "decision")}}
             query = str(filters.get("q", "")).strip().lower()
             if query and query not in " ".join(str(row.get(name, "")).lower() for name in ("full_name", "phone", "telegram", "city")):
                 continue
@@ -298,7 +306,7 @@ class FakeRepository:
         for record in self.by_key.values():
             if record["participant_id"] != participant_id:
                 continue
-            applications.append({"application_id": record["application_id"], "submitted_at": record["submitted_at"], "form_version": record["consent"]["form_version"], "application_status": record.get("application_status", ""), "decision": record.get("decision", ""), "request_id": record["request_id"], "form": deepcopy(record["form"])})
+            applications.append({"application_id": record["application_id"], "application_number": record.get("application_number"), "submitted_at": record["submitted_at"], "form_version": record["consent"]["form_version"], "application_status": record.get("application_status", ""), "decision": record.get("decision", ""), "request_id": record["request_id"], "form": deepcopy(record["form"])})
             consents.append(deepcopy(record["consent"]))
         return {"environment": "TEST", "participant": deepcopy(participant), "applications": sorted(applications, key=lambda item: item["submitted_at"], reverse=True), "consents": consents}
 

@@ -217,10 +217,20 @@
 
   function responseResult(status, body, key) {
     if (status === 201 || (status === 200 && body.idempotent_replay === true)) {
+      if (typeof body.application_number !== 'string'
+        || !/^\d{6,}$/u.test(body.application_number)
+        || Number(body.application_number) < 1) {
+        return {
+          state: 'recoverable_error',
+          code: 'application_number_unavailable',
+          key,
+        };
+      }
       return {
         state: 'success',
         key,
         applicationId: body.application_id || '',
+        applicationNumber: body.application_number,
       };
     }
 
@@ -411,10 +421,8 @@
       success.hidden = true;
       success.innerHTML = [
         '<div class="success-icon" aria-hidden="true">✓</div>',
-        '<h2>TEST-заявка принята</h2>',
+        '<h2 data-application-number></h2>',
         '<p>Спасибо. Мы сохранили вашу тестовую заявку.</p>',
-        '<small>ИДЕНТИФИКАТОР ЗАЯВКИ</small>',
-        '<strong data-application-id></strong>',
         '<button class="form-next" id="form-new-session" type="button">',
         'НОВАЯ TEST-АНКЕТА</button>',
       ].join('');
@@ -646,14 +654,14 @@
       success.hidden = true;
     }
 
-    function showSuccess(applicationId) {
+    function showSuccess(applicationNumber) {
       form.hidden = true;
       progressBox.hidden = true;
       mobile.hidden = true;
       tabs[0].parentElement.hidden = true;
       success.hidden = false;
-      success.querySelector('[data-application-id]').textContent =
-        applicationId || 'TEST-заявка';
+      success.querySelector('[data-application-number]').textContent =
+        `Заявка №${applicationNumber}`;
     }
 
     function showResult(result) {
@@ -661,7 +669,7 @@
 
       if (result.state === 'success') {
         status.textContent = '';
-        showSuccess(result.applicationId);
+        showSuccess(result.applicationNumber);
       } else if (result.state === 'validation_error') {
         status.textContent =
           'Backend отклонил данные. Проверьте анкету и повторите отправку.';
