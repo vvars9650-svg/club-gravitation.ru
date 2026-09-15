@@ -15,7 +15,7 @@ except ImportError:  # unit-only imports must not silently create memory storage
 from .domain import CONSENT_VERSION, FORM_FIELDS, FORM_VERSION, MULTI_FIELDS, POLICY_VERSION, ids, phone as normalize_phone
 from .participant_model import INITIAL_APPLICATION_STATUS, INITIAL_PARTICIPANT_STATUS
 from .repository import DESTRUCTION_CLASSIFICATION, RepositoryConflict, RepositoryUnavailable
-from .photo_contract import validate_photo_object_id
+from .photo_contract import MAX_PHOTO_BYTES, validate_photo_object_id
 
 
 ENVIRONMENT = "TEST"
@@ -240,6 +240,9 @@ class YdbRepository:
         }
 
     def mark_photo_ready(self, photo_object_id, owner_context_hash, metadata):
+        byte_size = metadata["byte_size"]
+        if isinstance(byte_size, bool) or not isinstance(byte_size, int) or not 0 < byte_size <= MAX_PHOTO_BYTES:
+            raise ValueError("invalid normalized photo byte size")
         read_query = """
         DECLARE $environment AS Utf8;
         DECLARE $photo_object_id AS Utf8;
@@ -264,7 +267,7 @@ class YdbRepository:
             "$photo_object_id": photo_object_id,
             "$detected_format": metadata["detected_format"],
             "$mime_type": metadata["mime_type"],
-            "$byte_size": metadata["byte_size"],
+            "$byte_size": ydb.TypedValue(byte_size, ydb.PrimitiveType.Uint64),
         }
 
         def operation(session):

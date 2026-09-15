@@ -691,7 +691,10 @@ class YdbRepositoryTests(unittest.TestCase):
         })
         self.assertEqual(result["detected_format"], "jpeg")
         self.assertIn('lifecycle_state = "READY"', tx.queries[1])
-        self.assertEqual(tx.params[1]["$byte_size"], 123)
+        byte_size = tx.params[1]["$byte_size"]
+        self.assertIsInstance(byte_size, ydb.TypedValue)
+        self.assertEqual(byte_size.value, 123)
+        self.assertEqual(str(byte_size.value_type), "Uint64")
 
         foreign_tx = FakeTransaction([FakeResultSet([{
             "photo_object_id": photo_id, "lifecycle_state": "PENDING_UPLOAD",
