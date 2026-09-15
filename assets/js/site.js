@@ -57,7 +57,7 @@ document.querySelectorAll('.site-footer').forEach(footer => {
   if (!footer.querySelector('.seller-details')) {
     const seller = document.createElement('div');
     seller.className = 'seller-details';
-    seller.innerHTML = 'Исполнитель: Арсентьев Владислав Владимирович · плательщик НПД<br><a href="tel:+79898080104">+7 989 808-01-04</a> · <a href="mailto:arsvvlad@yandex.ru">arsvvlad@yandex.ru</a>';
+    seller.innerHTML = 'Исполнитель: Арсентьев Владислав Владимирович · плательщик НПД · ИНН: 236903136086<br><a href="tel:+79898080104">+7 989 808-01-04</a> · <a href="mailto:arsvvlad@yandex.ru">arsvvlad@yandex.ru</a>';
     footer.appendChild(seller);
   }
   ['/offer/', '/terms/'].forEach((href, index) => {
@@ -73,7 +73,7 @@ document.querySelectorAll('.site-footer').forEach(footer => {
 if (!document.querySelector('.site-footer')) {
   const footer = document.createElement('footer');
   footer.className = 'site-footer seller-footer';
-  footer.innerHTML = '<a class="footer-brand" href="/"><img src="/assets/brand/logo-mark.svg" alt=""><span>ГРАВИТАЦИЯ</span></a><p>Пространство живых встреч. Краснодар.</p><div class="footer-links"><a href="/about/">О клубе</a><a href="/events/">Мероприятия</a><a href="/privacy/">Политика</a><a href="/offer/">Оферта</a><a href="/terms/">Участие и возврат</a></div><div class="seller-details">Исполнитель: Арсентьев Владислав Владимирович · плательщик НПД<br><a href="tel:+79898080104">+7 989 808-01-04</a> · <a href="mailto:arsvvlad@yandex.ru">arsvvlad@yandex.ru</a></div><small>© <span data-year></span> Гравитация</small>';
+  footer.innerHTML = '<a class="footer-brand" href="/"><img src="/assets/brand/logo-mark.svg" alt=""><span>ГРАВИТАЦИЯ</span></a><p>Пространство живых встреч. Краснодар.</p><div class="footer-links"><a href="/about/">О клубе</a><a href="/events/">Мероприятия</a><a href="/privacy/">Политика</a><a href="/offer/">Оферта</a><a href="/terms/">Участие и возврат</a></div><div class="seller-details">Исполнитель: Арсентьев Владислав Владимирович · плательщик НПД · ИНН: 236903136086<br><a href="tel:+79898080104">+7 989 808-01-04</a> · <a href="mailto:arsvvlad@yandex.ru">arsvvlad@yandex.ru</a></div><small>© <span data-year></span> Гравитация</small>';
   document.body.appendChild(footer);
 }
 })();
