@@ -15,6 +15,9 @@
 
   const TEST_API_URL =
     'https://d5ds805l71s68liu6ge4.fovt0b64.apigw.yandexcloud.net/applications';
+  const PHOTO_UPLOAD_BASE_URL = TEST_API_URL.replace(/\/applications$/u, '');
+  const PHOTO_INITIATE_URL = `${PHOTO_UPLOAD_BASE_URL}/photo-uploads/initiate`;
+  const PHOTO_COMPLETE_URL = `${PHOTO_UPLOAD_BASE_URL}/photo-uploads/complete`;
   const FORM_VERSION = 'FORM-2.2';
   const CONSENT_VERSION = 'CONSENT-PD-2.2';
   const POLICY_VERSION = 'PPD-2.2';
@@ -260,6 +263,45 @@
     };
   }
 
+  async function parseJsonResponse(response) {
+    const body = await response.json().catch(() => ({}));
+    if (!response || !response.ok) {
+      const error = new Error(body.error?.code || 'upload_request_failed');
+      error.code = body.error?.code || 'upload_request_failed';
+      error.status = response?.status;
+      throw error;
+    }
+    return body;
+  }
+
+  function createPhotoUploadAdapter({fetchImpl}) {
+    if (typeof fetchImpl !== 'function') throw new TypeError('fetchImpl_required');
+
+    return async function uploadPhoto(file, idempotencyKey) {
+      const headers = {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'Idempotency-Key': idempotencyKey,
+      };
+      const initiated = await parseJsonResponse(await fetchImpl(PHOTO_INITIATE_URL, {
+        method: 'POST', headers, body: JSON.stringify({}),
+      }));
+      if (!initiated.upload_url || !initiated.photo_object_id
+        || initiated.upload_method !== 'PUT') throw new Error('invalid_upload_contract');
+
+      // The binary goes directly to Object Storage, never through the Function.
+      const putResponse = await fetchImpl(initiated.upload_url, {
+        method: 'PUT', headers: {'Content-Type': file.type}, body: file,
+      });
+      if (!putResponse || !putResponse.ok) throw new Error('photo_put_failed');
+
+      return parseJsonResponse(await fetchImpl(PHOTO_COMPLETE_URL, {
+        method: 'POST', headers,
+        body: JSON.stringify({photo_object_id: initiated.photo_object_id}),
+      }));
+    };
+  }
+
   function createSubmitController({
     fetchImpl,
     randomUUID,
@@ -384,7 +426,9 @@
     const photoInput = form.elements.photo_upload;
     const photoReference = form.elements.photo_object_id;
     const photoStatus = form.querySelector('[data-photo-status]');
-    const uploadPhoto = root.__V5_PHOTO_UPLOAD_ADAPTER__;
+    const retryPhoto = form.querySelector('[data-photo-retry]');
+    const uploadPhoto = root.__V5_PHOTO_UPLOAD_ADAPTER__
+      || createPhotoUploadAdapter({fetchImpl: root.fetch.bind(root)});
     const names = [
       'Согласие',
       'Контакты',
@@ -640,22 +684,22 @@
     }
 
     city.addEventListener('change', syncVisit);
-    photoInput.addEventListener('change', async () => {
+    async function uploadSelectedPhoto() {
       photoReference.value = '';
       const file = photoInput.files?.[0];
       if (!file) {
         photoStatus.textContent = '';
+        retryPhoto.hidden = true;
         return;
       }
       if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)
         || file.size > 10 * 1024 * 1024) {
         photoStatus.textContent = 'Допустимы JPEG, PNG или WebP до 10 МБ.';
+        retryPhoto.hidden = false;
         return;
       }
-      if (typeof uploadPhoto !== 'function') {
-        photoStatus.textContent = 'TEST-загрузка фотографий будет подключена на следующем этапе.';
-        return;
-      }
+      retryPhoto.hidden = true;
+      photoInput.disabled = true;
       photoStatus.textContent = 'Загрузка фотографии…';
       try {
         const result = await uploadPhoto(file, controller.getIdempotencyKey());
@@ -666,8 +710,13 @@
         photoStatus.textContent = 'Фотография загружена.';
       } catch {
         photoStatus.textContent = 'Не удалось загрузить фотографию. Повторите попытку.';
+        retryPhoto.hidden = false;
+      } finally {
+        photoInput.disabled = false;
       }
-    });
+    }
+    photoInput.addEventListener('change', uploadSelectedPhoto);
+    retryPhoto.addEventListener('click', uploadSelectedPhoto);
     for (const field of ['desired_connections', 'acquaintance_methods']) {
       form.querySelector(`[data-conditional-group="${field}"]`)
         .addEventListener('change', () => syncConditional(field));
@@ -740,12 +789,16 @@
 
   return {
     TEST_API_URL,
+    PHOTO_UPLOAD_BASE_URL,
+    PHOTO_INITIATE_URL,
+    PHOTO_COMPLETE_URL,
     FORM_FIELDS,
     FORM_VERSION,
     CONSENT_VERSION,
     POLICY_VERSION,
     buildPayload,
     createIdempotencyKey,
+    createPhotoUploadAdapter,
     createSubmitController,
     responseResult,
     validateFrontendPayload,

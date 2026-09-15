@@ -4,8 +4,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const {
   TEST_API_URL,
+  PHOTO_INITIATE_URL,
+  PHOTO_COMPLETE_URL,
   FORM_FIELDS,
   buildPayload,
+  createPhotoUploadAdapter,
   createSubmitController,
   validateFrontendPayload,
   normalizeRussianPhone,
@@ -27,8 +30,92 @@ function uuidSequence() {
 function response(status, body = {}) {
   return {
     status,
+    ok: status >= 200 && status < 300,
     json: async () => body,
   };
+}
+
+async function testPhotoUploadAdapterFlow() {
+  const calls = [];
+  const file = {type: 'image/jpeg', bytes: 'SYNTHETIC-BINARY'};
+  const adapter = createPhotoUploadAdapter({
+    fetchImpl: async (url, options) => {
+      calls.push([url, options]);
+      if (url === PHOTO_INITIATE_URL) {
+        return response(201, {
+          photo_object_id: 'PHOTO-0000000000000001',
+          upload_url: 'https://storage.example.test/presigned',
+          upload_method: 'PUT',
+        });
+      }
+      if (url === PHOTO_COMPLETE_URL) {
+        return response(200, {
+          photo_object_id: 'PHOTO-0000000000000001',
+          lifecycle_state: 'READY',
+        });
+      }
+      return response(200);
+    },
+  });
+  const result = await adapter(file, 'v5-upload-key');
+
+  assert.equal(result.photo_object_id, 'PHOTO-0000000000000001');
+  assert.deepEqual(calls.map(([url]) => url), [
+    PHOTO_INITIATE_URL,
+    'https://storage.example.test/presigned',
+    PHOTO_COMPLETE_URL,
+  ]);
+  assert.equal(calls[0][1].headers['Idempotency-Key'], 'v5-upload-key');
+  assert.equal(calls[1][1].method, 'PUT');
+  assert.equal(calls[1][1].body, file);
+  assert.equal(calls[2][1].headers['Idempotency-Key'], 'v5-upload-key');
+  assert.deepEqual(JSON.parse(calls[2][1].body), {
+    photo_object_id: 'PHOTO-0000000000000001',
+  });
+  assert.equal(JSON.stringify(calls[0][1].body).includes('base64'), false);
+  assert.equal(JSON.stringify(calls[2][1].body).includes('SYNTHETIC-BINARY'), false);
+
+  const applicationCalls = [];
+  const submit = controller(async (url, options) => {
+    applicationCalls.push([url, options]);
+    return response(201, {application_id: 'APP-1'});
+  }, () => '00000000-0000-4000-8000-000000000042');
+  const sharedKey = submit.getIdempotencyKey();
+  await adapter(file, sharedKey);
+  await submit.submit(validPayload());
+  assert.equal(applicationCalls[0][1].headers['Idempotency-Key'], sharedKey);
+  assert.equal(calls.at(-1)[1].headers['Idempotency-Key'], sharedKey);
+}
+
+async function testPhotoUploadFailureAndRetry() {
+  let attempt = 0;
+  const calls = [];
+  const adapter = createPhotoUploadAdapter({
+    fetchImpl: async (url, options) => {
+      calls.push([url, options]);
+      if (url === PHOTO_INITIATE_URL) {
+        return response(201, {
+          photo_object_id: `PHOTO-000000000000000${attempt + 1}`,
+          upload_url: 'https://storage.example.test/presigned',
+          upload_method: 'PUT',
+        });
+      }
+      if (url.startsWith('https://storage')) {
+        attempt += 1;
+        if (attempt === 1) return response(503);
+        return response(200);
+      }
+      return response(200, {
+        photo_object_id: 'PHOTO-0000000000000002', lifecycle_state: 'READY',
+      });
+    },
+  });
+  await assert.rejects(() => adapter({type: 'image/png'}, 'same-key'), /photo_put_failed/);
+  const result = await adapter({type: 'image/png'}, 'same-key');
+  assert.equal(result.photo_object_id, 'PHOTO-0000000000000002');
+  assert.deepEqual(calls.filter(([url]) => url === PHOTO_INITIATE_URL)
+    .map(([, options]) => options.headers['Idempotency-Key']), ['same-key', 'same-key']);
+  assert.equal(calls.filter(([url]) => url === PHOTO_COMPLETE_URL).length, 1);
 }
 
 function controller(fetchImpl, randomUUID = uuidSequence(), options = {}) {
@@ -284,6 +371,8 @@ function testForbiddenFrontendIntegrations() {
 }
 
 (async () => {
+  await testPhotoUploadAdapterFlow();
+  await testPhotoUploadFailureAndRetry();
   await testRequestContractAndPayload();
   testFrontendValidation();
   await testIdempotencyLifecycleAndErrors();
