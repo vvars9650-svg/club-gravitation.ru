@@ -15,6 +15,7 @@ except ImportError:  # unit-only imports must not silently create memory storage
 from .domain import CONSENT_VERSION, FORM_FIELDS, FORM_VERSION, MULTI_FIELDS, POLICY_VERSION, ids, phone as normalize_phone
 from .participant_model import INITIAL_APPLICATION_STATUS, INITIAL_PARTICIPANT_STATUS
 from .repository import DESTRUCTION_CLASSIFICATION, RepositoryConflict, RepositoryUnavailable
+from .photo_contract import validate_photo_object_id
 
 
 ENVIRONMENT = "TEST"
@@ -167,6 +168,150 @@ class YdbRepository:
     def finalize_photo_for_application(self, photo_object_id, application_id, participant_id):
         """Phase B must implement this with the reviewed 006 schema."""
         raise RepositoryUnavailable("photo_repository_phase_b_required")
+
+    def create_photo_upload(self, photo_object_id, storage_key, owner_context_hash):
+        validate_photo_object_id(photo_object_id)
+        read_query = """
+        DECLARE $environment AS Utf8;
+        DECLARE $photo_object_id AS Utf8;
+        SELECT photo_object_id FROM photo_objects
+        WHERE environment = $environment AND photo_object_id = $photo_object_id;
+        """
+        write_query = """
+        DECLARE $environment AS Utf8;
+        DECLARE $photo_object_id AS Utf8;
+        DECLARE $storage_key AS Utf8;
+        DECLARE $owner_context_hash AS Utf8;
+        INSERT INTO photo_objects (
+            environment, photo_object_id, storage_key, lifecycle_state,
+            owner_context_hash, detected_format, mime_type, byte_size, created_at
+        ) VALUES (
+            $environment, $photo_object_id, $storage_key, "PENDING_UPLOAD",
+            $owner_context_hash, "", "", 0, CurrentUtcTimestamp()
+        );
+        """
+        params = {
+            "$environment": ENVIRONMENT,
+            "$photo_object_id": photo_object_id,
+            "$storage_key": storage_key,
+            "$owner_context_hash": owner_context_hash,
+        }
+
+        def operation(session):
+            tx = session.transaction(ydb.QuerySerializableReadWrite())
+            with tx.execute(read_query, params) as stream:
+                rows = self._rows(list(stream))
+            if rows:
+                tx.commit()
+                raise RepositoryConflict("photo_object_id_conflict")
+            with tx.execute(write_query, params, commit_tx=True) as stream:
+                list(stream)
+            return photo_object_id
+
+        return self.pool.retry_operation_sync(
+            operation, retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True)
+        )
+
+    def get_photo_upload(self, photo_object_id):
+        validate_photo_object_id(photo_object_id)
+        query = """
+        DECLARE $environment AS Utf8;
+        DECLARE $photo_object_id AS Utf8;
+        SELECT photo_object_id, storage_key, lifecycle_state, owner_context_hash,
+               detected_format, mime_type, byte_size
+        FROM photo_objects
+        WHERE environment = $environment AND photo_object_id = $photo_object_id
+        LIMIT 1;
+        """
+        result_sets = self.pool.execute_with_retries(
+            query, {"$environment": ENVIRONMENT, "$photo_object_id": photo_object_id},
+            retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True),
+        )
+        rows = self._rows(result_sets)
+        if not rows:
+            return None
+        row = rows[0]
+        return {
+            name: self._row_value(row, name, 0 if name == "byte_size" else "")
+            for name in (
+                "photo_object_id", "storage_key", "lifecycle_state",
+                "owner_context_hash", "detected_format", "mime_type", "byte_size",
+            )
+        }
+
+    def mark_photo_ready(self, photo_object_id, owner_context_hash, metadata):
+        read_query = """
+        DECLARE $environment AS Utf8;
+        DECLARE $photo_object_id AS Utf8;
+        SELECT photo_object_id, storage_key, lifecycle_state, owner_context_hash,
+               detected_format, mime_type, byte_size
+        FROM photo_objects
+        WHERE environment = $environment AND photo_object_id = $photo_object_id;
+        """
+        write_query = """
+        DECLARE $environment AS Utf8;
+        DECLARE $photo_object_id AS Utf8;
+        DECLARE $detected_format AS Utf8;
+        DECLARE $mime_type AS Utf8;
+        DECLARE $byte_size AS Uint64;
+        UPDATE photo_objects SET lifecycle_state = "READY",
+            detected_format = $detected_format, mime_type = $mime_type,
+            byte_size = $byte_size
+        WHERE environment = $environment AND photo_object_id = $photo_object_id;
+        """
+        params = {
+            "$environment": ENVIRONMENT,
+            "$photo_object_id": photo_object_id,
+            "$detected_format": metadata["detected_format"],
+            "$mime_type": metadata["mime_type"],
+            "$byte_size": metadata["byte_size"],
+        }
+
+        def operation(session):
+            tx = session.transaction(ydb.QuerySerializableReadWrite())
+            with tx.execute(read_query, params) as stream:
+                rows = self._rows(list(stream))
+            if not rows:
+                tx.commit()
+                raise RepositoryConflict("photo_reference_not_found")
+            row = rows[0]
+            if self._row_value(row, "owner_context_hash", "") != owner_context_hash:
+                tx.commit()
+                raise RepositoryConflict("photo_reference_not_owned")
+            state = self._row_value(row, "lifecycle_state", "")
+            if state == "READY":
+                tx.commit()
+                return {
+                    name: self._row_value(row, name, 0 if name == "byte_size" else "")
+                    for name in ("photo_object_id", "detected_format", "mime_type", "byte_size")
+                }
+            if state != "PENDING_UPLOAD":
+                tx.commit()
+                raise RepositoryConflict("photo_reference_not_available")
+            with tx.execute(write_query, params, commit_tx=True) as stream:
+                list(stream)
+            return {"photo_object_id": photo_object_id, **metadata}
+
+        return self.pool.retry_operation_sync(
+            operation, retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True)
+        )
+
+    def reject_photo_upload(self, photo_object_id, lifecycle_state):
+        query = """
+        DECLARE $environment AS Utf8;
+        DECLARE $photo_object_id AS Utf8;
+        DECLARE $lifecycle_state AS Utf8;
+        UPDATE photo_objects SET lifecycle_state = $lifecycle_state
+        WHERE environment = $environment AND photo_object_id = $photo_object_id
+          AND lifecycle_state != "READY";
+        """
+        self.pool.execute_with_retries(
+            query,
+            {"$environment": ENVIRONMENT, "$photo_object_id": photo_object_id,
+             "$lifecycle_state": lifecycle_state[:120]},
+            retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True),
+        )
+        return True
 
     def resolve_phone(self, phone):
         phone = normalize_phone(phone)

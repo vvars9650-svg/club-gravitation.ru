@@ -75,7 +75,7 @@ class FakeTransaction:
             stream = FakeExecuteResult(result)
         elif "SELECT processing_blocked FROM participants" in query:
             stream = FakeExecuteResult(self.read_result_sets)
-        elif "FROM schema_migrations" in query:
+        elif "FROM schema_migrations" in query or "FROM photo_objects" in query:
             result = self.read_result_sets[self.read_index:self.read_index + 1]
             self.read_index += 1
             stream = FakeExecuteResult(result)
@@ -659,6 +659,50 @@ class YdbRepositoryTests(unittest.TestCase):
         repo = YdbRepository.__new__(YdbRepository)
         with self.assertRaisesRegex(Exception, "photo_repository_phase_b_required"):
             repo.reserve_photo_for_submission("PHOTO-0000000000000001", "context", "APP-1")
+
+    def test_ydb_photo_initiation_is_serializable_pending_and_hash_only(self):
+        tx = FakeTransaction([FakeResultSet([])])
+        repo = self.make_repo(tx)
+        photo_id = "PHOTO-0000000000000001"
+        owner_hash = "a" * 64
+        self.assertEqual(
+            repo.create_photo_upload(photo_id, "photos/opaque", owner_hash), photo_id
+        )
+        self.assertIsInstance(repo.pool.session.tx_mode, ydb.QuerySerializableReadWrite)
+        self.assertIn("INSERT INTO photo_objects", tx.queries[1])
+        self.assertIn('"PENDING_UPLOAD"', tx.queries[1])
+        self.assertEqual(tx.params[1]["$owner_context_hash"], owner_hash)
+        self.assertNotIn("Idempotency", str(tx.params))
+        for forbidden in ("original_filename", "presign", " BLOB"):
+            self.assertNotIn(forbidden.lower(), tx.queries[1].lower())
+
+    def test_ydb_photo_ready_update_checks_owner_and_state(self):
+        photo_id = "PHOTO-0000000000000001"
+        owner_hash = "b" * 64
+        tx = FakeTransaction([FakeResultSet([{
+            "photo_object_id": photo_id, "storage_key": "photos/opaque",
+            "lifecycle_state": "PENDING_UPLOAD", "owner_context_hash": owner_hash,
+            "detected_format": "", "mime_type": "", "byte_size": 0,
+        }])])
+        repo = self.make_repo(tx)
+        result = repo.mark_photo_ready(photo_id, owner_hash, {
+            "detected_format": "jpeg", "mime_type": "image/jpeg",
+            "byte_size": 123, "metadata_stripped": True,
+        })
+        self.assertEqual(result["detected_format"], "jpeg")
+        self.assertIn('lifecycle_state = "READY"', tx.queries[1])
+        self.assertEqual(tx.params[1]["$byte_size"], 123)
+
+        foreign_tx = FakeTransaction([FakeResultSet([{
+            "photo_object_id": photo_id, "lifecycle_state": "PENDING_UPLOAD",
+            "owner_context_hash": owner_hash,
+        }])])
+        foreign_repo = self.make_repo(foreign_tx)
+        with self.assertRaisesRegex(RepositoryConflict, "photo_reference_not_owned"):
+            foreign_repo.mark_photo_ready(photo_id, "c" * 64, {
+                "detected_format": "jpeg", "mime_type": "image/jpeg", "byte_size": 1,
+            })
+        self.assertEqual(len(foreign_tx.queries), 1)
 
     def test_ydb_migration_registration_is_idempotent(self):
         created = FakeTransaction([FakeResultSet([])])

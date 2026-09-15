@@ -75,6 +75,59 @@ class FakeRepository:
             }
         return photo_object_id
 
+    def create_photo_upload(self, photo_object_id, storage_key, owner_context_hash):
+        """Persist only opaque identifiers and the already-hashed owner context."""
+        photo_object_id = validate_photo_object_id(photo_object_id)
+        with self._lock:
+            if photo_object_id in self.photo_objects:
+                raise RepositoryConflict("photo_object_id_conflict")
+            self.photo_objects[photo_object_id] = {
+                "environment": "TEST",
+                "photo_object_id": photo_object_id,
+                "storage_key": storage_key,
+                "lifecycle_state": "PENDING_UPLOAD",
+                "owner_context_hash": owner_context_hash,
+                "application_id": None,
+                "participant_id": None,
+                "detected_format": "",
+                "mime_type": "",
+                "byte_size": 0,
+                "metadata_stripped": False,
+                "created_at": "TEST-TIMESTAMP",
+                "deleted_at": None,
+            }
+        return photo_object_id
+
+    def get_photo_upload(self, photo_object_id):
+        with self._lock:
+            photo = self.photo_objects.get(photo_object_id)
+            return deepcopy(photo) if photo else None
+
+    def mark_photo_ready(self, photo_object_id, owner_context_hash, metadata):
+        with self._lock:
+            photo = self.photo_objects.get(photo_object_id)
+            if not photo or photo["owner_context_hash"] != owner_context_hash:
+                raise RepositoryConflict("photo_reference_not_owned")
+            if photo["lifecycle_state"] == "READY":
+                return deepcopy(photo)
+            if photo["lifecycle_state"] != "PENDING_UPLOAD":
+                raise RepositoryConflict("photo_reference_not_available")
+            photo.update({
+                "lifecycle_state": "READY",
+                "detected_format": metadata["detected_format"],
+                "mime_type": metadata["mime_type"],
+                "byte_size": metadata["byte_size"],
+                "metadata_stripped": True,
+            })
+            return deepcopy(photo)
+
+    def reject_photo_upload(self, photo_object_id, lifecycle_state):
+        with self._lock:
+            photo = self.photo_objects.get(photo_object_id)
+            if photo and photo["lifecycle_state"] != "READY":
+                photo["lifecycle_state"] = lifecycle_state
+            return bool(photo)
+
     def reserve_photo_for_submission(self, photo_object_id, upload_context, application_id):
         with self._lock:
             photo = self.photo_objects.get(photo_object_id)

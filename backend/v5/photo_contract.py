@@ -39,10 +39,14 @@ def normalize_photo(source, codec):
         raise DomainError("photo_too_large")
     try:
         normalized, details = codec.normalize(source)
+    except DomainError:
+        raise
     except Exception as exc:
         raise DomainError("invalid_photo") from exc
     if not isinstance(normalized, bytes) or not normalized:
         raise DomainError("invalid_photo")
+    if len(normalized) > MAX_PHOTO_BYTES:
+        raise DomainError("photo_too_large")
     detected_format = str(details.get("format", "")).lower()
     detected_mime = str(details.get("mime_type", "")).lower()
     if ALLOWED_IMAGE_FORMATS.get(detected_format) != detected_mime:

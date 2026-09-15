@@ -1,6 +1,7 @@
 # V5 TEST backend
 
-Runtime: `python314`. Entry point: `index.handler`. Runtime dependency: `ydb==3.31.5`.
+Runtime: `python314`. Entry point: `index.handler`. Runtime dependencies are
+listed and pinned in `requirements.txt`.
 
 Build the deployment artifact from the repository root:
 
@@ -16,6 +17,10 @@ requirements.txt
 v5/
   __init__.py
   domain.py
+  image_codec.py
+  object_storage.py
+  photo_contract.py
+  photo_upload_service.py
   service.py
   repository.py
   ydb_repository.py
@@ -26,7 +31,14 @@ v5/
 
 The builder uses an allowlist: tests, schema, `__pycache__`, `.pyc`, secrets and credentials are not packaged. Do not flatten `backend/v5`; `index.py` imports `handler` from the deployed `v5` package.
 
-Required runtime variables are `YDB_ENDPOINT`, `YDB_DATABASE`, and `V5_TEST_CONSENT_TEXT_HASH` (the hash must start with `TEST-`). The Cloud Function service account supplies credentials. Runtime has no memory-storage fallback; `FakeRepository` is test injection only. Before deployment, manually review/apply schema, configure the TEST variables, deploy the ZIP, and configure the gateway. No migration or deployment is performed by the builder.
+Required runtime variables are `YDB_ENDPOINT`, `YDB_DATABASE`,
+`V5_TEST_CONSENT_TEXT_HASH` (the hash must start with `TEST-`), and
+`V5_TEST_PHOTO_BUCKET`. The Cloud Function invocation token supplies Object
+Storage and PresignService authentication; no static keys are used. Runtime has
+no memory-storage fallback; `FakeRepository` is test injection only. Before
+deployment, manually review/apply schema, configure the TEST variables, deploy
+the ZIP, and configure the gateway. No migration or deployment is performed by
+the builder.
 
 The runtime repository is created lazily on the first POST and reused for the lifetime of a warm Cloud Function instance. `GET /health` neither creates the repository nor opens a YDB connection. A failed initialization is not cached. There is no synthetic shutdown hook; `YdbRepository.close()` exists for explicit local and unit-test lifecycle management and closes the query session pool before the driver.
 
@@ -96,7 +108,7 @@ register it. Registration happens only after every statement in that migration
 succeeds. Do not treat column presence alone as ledger evidence. None of these
 steps is performed by application startup, CI, or this repository change.
 
-## Wave 2 Phase A photo foundation (not migrated or deployed)
+## Wave 2 Phase B photo upload pipeline (code only; not deployed)
 
 FORM 2.2 requires one protected photo reference. Migration 006 only prepares
 additive `photo_object_id`, `current_photo_object_id`, `photo_required_blocked`, and
@@ -106,9 +118,9 @@ presigned URL and has not been applied.
 FakeRepository models ownership with a hash of the pending upload/idempotency
 context, an immutable Application reference, and a separate Participant current
 reference. This is a domain test double, not proof of cloud isolation. The runtime
-YDB adapter deliberately returns `photo_repository_phase_b_required` until Phase B
-implements an atomic reservation against migration 006 and private Yandex Object
-Storage integration.
+YDB adapter implements only the `PENDING_UPLOAD` to `READY` lifecycle against
+migration 006. Application submission reservation and final attachment remain
+fail-closed with `photo_repository_phase_b_required` pending B4B/B5.
 
 Phase B must use JPEG/PNG/WebP detected from decoded content, a 10 MiB input limit,
 and local decode plus fresh re-encode so GPS, device model, timestamps, and other
@@ -116,3 +128,9 @@ unnecessary EXIF are absent from the persistent object. No face detection,
 recognition, matching, scoring, biometric processing, or external image service is
 permitted. Admin access should use the authenticated backend proxy. Real PROD photo
 collection remains disabled by `PROD_PHOTO_RKN_GATE_PENDING`.
+
+The Pillow codec rejects animated/multi-frame images and applies a decompression
+safety ceiling of 40 megapixels and 12,000 pixels on either edge. It fully
+decodes, applies EXIF orientation, copies pixels into a fresh image, and encodes
+JPEG, PNG, or WebP without source metadata. Invalid or oversized objects are
+deleted when possible and never become `READY`.

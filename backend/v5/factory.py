@@ -32,3 +32,26 @@ def _create_runtime_repository():
     from .ydb_repository import YdbRepository
 
     return YdbRepository()
+
+
+def runtime_photo_upload_service(context, repository):
+    """Build invocation-scoped clients so the IAM token is never cached."""
+    from .image_codec import PillowPhotoCodec
+    from .object_storage import (
+        YandexObjectStorageClient,
+        YandexPresignClient,
+        runtime_iam_token,
+    )
+    from .photo_upload_service import PhotoUploadService
+
+    bucket = os.getenv("V5_TEST_PHOTO_BUCKET")
+    if not bucket:
+        raise RepositoryUnavailable("missing_photo_bucket_configuration")
+    token = runtime_iam_token(context)
+    return PhotoUploadService(
+        repository=repository,
+        storage=YandexObjectStorageClient(bucket, token),
+        presigner=YandexPresignClient(token),
+        codec=PillowPhotoCodec(),
+        bucket=bucket,
+    )
