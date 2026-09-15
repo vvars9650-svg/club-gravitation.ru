@@ -60,6 +60,7 @@ class FakeRepository:
             if photo_object_id in self.photo_objects:
                 raise RepositoryConflict("photo_object_id_conflict")
             self.photo_objects[photo_object_id] = {
+                "environment": "TEST",
                 "photo_object_id": photo_object_id,
                 "storage_key": "test-protected/" + photo_object_id,
                 "lifecycle_state": "READY",
@@ -128,36 +129,6 @@ class FakeRepository:
                 photo["lifecycle_state"] = lifecycle_state
             return bool(photo)
 
-    def reserve_photo_for_submission(self, photo_object_id, upload_context, application_id):
-        with self._lock:
-            photo = self.photo_objects.get(photo_object_id)
-            if not photo:
-                raise RepositoryConflict("photo_reference_not_found")
-            if photo["owner_context_hash"] != self._context_hash(upload_context):
-                raise RepositoryConflict("photo_reference_not_owned")
-            if photo["lifecycle_state"] == "RESERVED" and photo["application_id"] == application_id:
-                return True
-            if photo["lifecycle_state"] != "READY" or photo["application_id"] is not None:
-                raise RepositoryConflict("photo_reference_not_available")
-            photo["lifecycle_state"] = "RESERVED"
-            photo["application_id"] = application_id
-            return True
-
-    def finalize_photo_for_application(self, photo_object_id, application_id, participant_id):
-        with self._lock:
-            photo = self.photo_objects.get(photo_object_id)
-            if not photo or photo["application_id"] != application_id:
-                raise RepositoryConflict("photo_reservation_missing")
-            photo.update({
-                "lifecycle_state": "ATTACHED",
-                "participant_id": participant_id,
-            })
-            participant = self.participants[participant_id]
-            if not participant.get("current_photo_object_id"):
-                participant["current_photo_object_id"] = photo_object_id
-            participant["photo_required_blocked"] = False
-            return True
-
     def replace_participant_photo(self, participant_id, photo_object_id, upload_context):
         """Switch current photo without changing any Application snapshot."""
         validate_photo_object_id(photo_object_id)
@@ -195,7 +166,9 @@ class FakeRepository:
             return {"participant_id": participant_id, "photo_object_id": photo_object_id, "participation_deleted": False, "selection_blocked": participant["photo_required_blocked"]}
 
     def get_idempotency(self, key):
-        return self.by_key.get(key)
+        with self._lock:
+            record = self.by_key.get(key)
+            return deepcopy(record) if record else None
 
     def resolve_phone(self, phone):
         participant_id = self.by_phone.get(normalize_phone(phone))
@@ -207,18 +180,41 @@ class FakeRepository:
         with self._lock:
             if key in self.by_key:
                 return False
+            photo_object_id = validate_photo_object_id(record["form"].get("photo_object_id"))
+            photo = self.photo_objects.get(photo_object_id)
+            if not photo:
+                raise RepositoryConflict("photo_reference_not_found")
+            if photo.get("environment") != "TEST":
+                raise RepositoryConflict("photo_reference_not_available")
+            if photo.get("owner_context_hash") != self._context_hash(key):
+                raise RepositoryConflict("photo_reference_not_owned")
+            if (
+                photo.get("lifecycle_state") != "READY"
+                or photo.get("application_id") is not None
+                or photo.get("participant_id") is not None
+            ):
+                raise RepositoryConflict("photo_reference_not_available")
+            self._submission_checkpoint("photo_validation")
+
             phone = record["form"]["phone"]
             owner = self.by_phone.get(phone)
             if owner and owner not in self.participants:
                 raise RepositoryConflict("phone_key_inconsistent")
             if owner in self.blocks:
                 raise RepositoryUnavailable("processing_blocked")
+            if owner is None and record["participant_id"] in self.participants:
+                raise RepositoryConflict("participant_id_conflict")
+            self._submission_checkpoint("participant_resolution")
+
+            by_key = deepcopy(self.by_key)
+            by_phone = deepcopy(self.by_phone)
+            participants = deepcopy(self.participants)
+            photo_objects = deepcopy(self.photo_objects)
+            audit = deepcopy(self.audit)
             if owner is None:
                 owner = record["participant_id"]
-                if owner in self.participants:
-                    raise RepositoryConflict("participant_id_conflict")
                 form = record["form"]
-                self.participants[owner] = {
+                participants[owner] = {
                     "participant_id": owner, "environment": "TEST", "phone": phone,
                     "full_name": form["full_name"], "age": form["age"],
                     "gender": form["gender"], "city": form["city"],
@@ -233,16 +229,38 @@ class FakeRepository:
                     "next_contact_at": None, "decision": "", "internal_comment": "",
                     "processing_blocked": False, "processing_blocked_at": None,
                     "processing_block_reason": "", "processing_block_request_id": "",
-                    "current_photo_object_id": None, "photo_required_blocked": False,
+                    "current_photo_object_id": photo_object_id, "photo_required_blocked": False,
                 }
-                self.by_phone[phone] = owner
+                by_phone[phone] = owner
+            elif not participants[owner].get("current_photo_object_id"):
+                participants[owner]["current_photo_object_id"] = photo_object_id
+                participants[owner]["photo_required_blocked"] = False
             record["participant_id"] = owner
             record["consent"]["participant_id"] = owner
+            record["photo_object_id"] = photo_object_id
             record["application_status"] = INITIAL_APPLICATION_STATUS
             record["decision"] = ""
-            self.by_key[key] = deepcopy(record)
-            self.audit.append({"request_id": record["request_id"], "application_id": record["application_id"], "participant_id": owner, "operation": "application_created", "status": "ok"})
+            by_key[key] = deepcopy(record)
+            audit.append({"request_id": record["request_id"], "application_id": record["application_id"], "participant_id": owner, "operation": "application_created", "status": "ok"})
+            self._submission_checkpoint("application_write")
+
+            photo_objects[photo_object_id].update({
+                "lifecycle_state": "ATTACHED",
+                "application_id": record["application_id"],
+                "participant_id": owner,
+            })
+            self._submission_checkpoint("photo_attachment")
+
+            self.by_key = by_key
+            self.by_phone = by_phone
+            self.participants = participants
+            self.photo_objects = photo_objects
+            self.audit = audit
             return True
+
+    def _submission_checkpoint(self, stage):
+        """Failure-injection seam used to verify the in-memory atomic boundary."""
+        return None
 
     def applied_migrations(self):
         return tuple(sorted(self.migrations))

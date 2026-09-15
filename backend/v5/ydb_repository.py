@@ -161,14 +161,6 @@ class YdbRepository:
             ),
         }
 
-    def reserve_photo_for_submission(self, photo_object_id, upload_context, application_id):
-        """Fail closed until Phase B adds an atomic YDB ownership reservation."""
-        raise RepositoryUnavailable("photo_repository_phase_b_required")
-
-    def finalize_photo_for_application(self, photo_object_id, application_id, participant_id):
-        """Phase B must implement this with the reviewed 006 schema."""
-        raise RepositoryUnavailable("photo_repository_phase_b_required")
-
     def create_photo_upload(self, photo_object_id, storage_key, owner_context_hash):
         validate_photo_object_id(photo_object_id)
         read_query = """
@@ -362,8 +354,10 @@ class YdbRepository:
         Atomically:
         - checks idempotency;
         - resolves/reserves phone;
+        - validates the exact READY photo and hashed ownership context;
         - creates a participant only when no phone key exists;
         - inserts immutable application;
+        - attaches the photo and initializes a missing participant current photo;
         - inserts consent evidence;
         - writes technical log;
         - writes audit event.
@@ -384,6 +378,8 @@ class YdbRepository:
 
         form = record["form"]
         phone = form["phone"]
+        photo_object_id = validate_photo_object_id(form.get("photo_object_id"))
+        owner_context_hash = hashlib.sha256(str(key).encode("utf-8")).hexdigest()
 
         log_id = "LOG-" + hashlib.sha256(
             f"{ENVIRONMENT}:{application_id}:created".encode("utf-8")
@@ -405,7 +401,8 @@ class YdbRepository:
             "" AS key_participant_id,
             participant_id,
             payload_fingerprint,
-            false AS processing_blocked
+            false AS processing_blocked,
+            "" AS current_photo_object_id
         FROM applications
         WHERE environment = $environment
           AND application_id = $application_id
@@ -416,7 +413,8 @@ class YdbRepository:
             k.participant_id AS key_participant_id,
             p.participant_id AS participant_id,
             "" AS payload_fingerprint,
-            p.processing_blocked AS processing_blocked
+            p.processing_blocked AS processing_blocked,
+            COALESCE(p.current_photo_object_id, "") AS current_photo_object_id
         FROM participant_phone_keys AS k
         LEFT JOIN participants AS p
         ON k.environment = p.environment AND k.participant_id = p.participant_id
@@ -429,10 +427,27 @@ class YdbRepository:
             "" AS key_participant_id,
             participant_id,
             "" AS payload_fingerprint,
-            processing_blocked
+            processing_blocked,
+            COALESCE(current_photo_object_id, "") AS current_photo_object_id
         FROM participants
         WHERE environment = $environment
           AND participant_id = $proposed_participant_id;
+        """
+
+        photo_read_query = """
+        DECLARE $environment AS Utf8;
+        DECLARE $photo_object_id AS Utf8;
+
+        SELECT
+            photo_object_id,
+            owner_context_hash,
+            lifecycle_state,
+            application_id,
+            participant_id
+        FROM photo_objects
+        WHERE environment = $environment
+          AND photo_object_id = $photo_object_id
+        LIMIT 1;
         """
 
         def transaction_body(session):
@@ -468,6 +483,31 @@ class YdbRepository:
                 tx.commit()
                 return False
 
+            with tx.execute(
+                photo_read_query,
+                {
+                    "$environment": ENVIRONMENT,
+                    "$photo_object_id": photo_object_id,
+                },
+            ) as result_stream:
+                photo_result_sets = list(result_stream)
+
+            photo_rows = self._rows(photo_result_sets, 0)
+            if not photo_rows:
+                tx.commit()
+                raise RepositoryConflict("photo_reference_not_found")
+            photo = photo_rows[0]
+            if self._row_value(photo, "owner_context_hash", "") != owner_context_hash:
+                tx.commit()
+                raise RepositoryConflict("photo_reference_not_owned")
+            if (
+                self._row_value(photo, "lifecycle_state", "") != "READY"
+                or self._row_value(photo, "application_id", None) is not None
+                or self._row_value(photo, "participant_id", None) is not None
+            ):
+                tx.commit()
+                raise RepositoryConflict("photo_reference_not_available")
+
             existing_participant_id = None
 
             if phone_rows:
@@ -490,7 +530,17 @@ class YdbRepository:
 
             if existing_participant_id:
                 participant_id = existing_participant_id
-                participant_write = ""
+                if self._row_value(phone_rows[0], "current_photo_object_id", ""):
+                    participant_write = ""
+                else:
+                    participant_write = """
+                    UPDATE participants
+                    SET current_photo_object_id = $photo_object_id,
+                        photo_required_blocked = false,
+                        updated_at = CurrentUtcTimestamp()
+                    WHERE environment = $environment
+                      AND participant_id = $participant_id;
+                    """
             else:
                 participant_id = record["participant_id"]
 
@@ -512,6 +562,8 @@ class YdbRepository:
                     occupation,
                     participant_status,
                     lifecycle_status,
+                    current_photo_object_id,
+                    photo_required_blocked,
                     created_at,
                     updated_at
                 ) VALUES (
@@ -531,6 +583,8 @@ class YdbRepository:
                     $occupation,
                     $participant_status,
                     "Новая заявка",
+                    $photo_object_id,
+                    false,
                     CurrentUtcTimestamp(),
                     CurrentUtcTimestamp()
                 );
@@ -550,6 +604,7 @@ class YdbRepository:
 
             record["participant_id"] = participant_id
             record["consent"]["participant_id"] = participant_id
+            record["photo_object_id"] = photo_object_id
             record["application_status"] = INITIAL_APPLICATION_STATUS
             record["decision"] = ""
 
@@ -561,6 +616,8 @@ class YdbRepository:
                 DECLARE $consent_id AS Utf8;
                 DECLARE $request_id AS Utf8;
                 DECLARE $payload_fingerprint AS Utf8;
+                DECLARE $photo_object_id AS Utf8;
+                DECLARE $owner_context_hash AS Utf8;
 
                 DECLARE $full_name AS Utf8;
                 DECLARE $age AS Int32;
@@ -613,6 +670,7 @@ class YdbRepository:
                     request_id,
                     application_status,
                     decision,
+                    photo_object_id,
                     full_name,
                     age,
                     gender,
@@ -646,6 +704,7 @@ class YdbRepository:
                     $request_id,
                     $application_status,
                     $decision,
+                    $photo_object_id,
                     $full_name,
                     $age,
                     $gender,
@@ -670,6 +729,17 @@ class YdbRepository:
                     $return_reason,
                     $source
                 );
+
+                UPDATE photo_objects
+                SET lifecycle_state = "ATTACHED",
+                    application_id = $application_id,
+                    participant_id = $participant_id
+                WHERE environment = $environment
+                  AND photo_object_id = $photo_object_id
+                  AND owner_context_hash = $owner_context_hash
+                  AND lifecycle_state = "READY"
+                  AND application_id IS NULL
+                  AND participant_id IS NULL;
 
                 INSERT INTO consents (
                     environment,
@@ -748,6 +818,8 @@ class YdbRepository:
                 "$consent_id": record["consent_id"],
                 "$request_id": record["request_id"],
                 "$payload_fingerprint": record["payload_fingerprint"],
+                "$photo_object_id": photo_object_id,
+                "$owner_context_hash": owner_context_hash,
 
                 "$full_name": form["full_name"],
                 "$age": ydb.TypedValue(
@@ -1026,8 +1098,9 @@ class YdbRepository:
                visit_krasnodar, phone, email, preferred_contact, profile_or_messenger_url,
                public_profile_url, occupation, life_outside_work, what_interested,
                what_participant_brings, what_friends_value, desired_connections,
-               desired_connections_other, values_in_people, barriers_to_meeting,
-               acquaintance_methods, acquaintance_methods_other, return_reason, source
+                desired_connections_other, values_in_people, barriers_to_meeting,
+                acquaintance_methods, acquaintance_methods_other, return_reason, source,
+                photo_object_id
         FROM applications WHERE environment = $environment AND participant_id = $participant_id ORDER BY submitted_at DESC;
         SELECT consent_id, application_id, consent_type, consent_version, policy_version, form_version,
                consent_text_hash, granted, granted_at, source, request_id

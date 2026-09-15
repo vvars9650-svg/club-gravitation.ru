@@ -108,19 +108,24 @@ register it. Registration happens only after every statement in that migration
 succeeds. Do not treat column presence alone as ledger evidence. None of these
 steps is performed by application startup, CI, or this repository change.
 
-## Wave 2 Phase B photo upload pipeline (code only; not deployed)
+## Wave 2 Phase B photo submission (code only; not deployed)
 
 FORM 2.2 requires one protected photo reference. Migration 006 only prepares
 additive `photo_object_id`, `current_photo_object_id`, `photo_required_blocked`, and
 `photo_objects` metadata. It stores no binary, original filename, public URL, or
-presigned URL and has not been applied.
+presigned URL.
 
-FakeRepository models ownership with a hash of the pending upload/idempotency
+FakeRepository models ownership with a SHA-256 hash of the upload/idempotency
 context, an immutable Application reference, and a separate Participant current
-reference. This is a domain test double, not proof of cloud isolation. The runtime
-YDB adapter implements only the `PENDING_UPLOAD` to `READY` lifecycle against
-migration 006. Application submission reservation and final attachment remain
-fail-closed with `photo_repository_phase_b_required` pending B4B/B5.
+reference. This is a domain test double, not proof of cloud isolation. For
+submission, the runtime YDB adapter reads idempotency, phone/Participant state,
+candidate Participant collision state, and the exact owned `READY` photo inside
+one serializable read/write transaction. That transaction creates the Participant
+when needed, inserts the immutable Application and consent evidence, transitions
+the photo directly from `READY` to `ATTACHED`, and initializes a missing current
+Participant photo in one commit. A repeat Application never replaces an existing
+current Participant photo, and an idempotent replay does not require the already
+attached photo to become `READY` again.
 
 Phase B must use JPEG/PNG/WebP detected from decoded content, a 10 MiB input limit,
 and local decode plus fresh re-encode so GPS, device model, timestamps, and other

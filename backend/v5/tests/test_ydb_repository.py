@@ -1,3 +1,4 @@
+import hashlib
 import threading
 import unittest
 from datetime import datetime, timezone
@@ -7,6 +8,28 @@ import ydb
 
 from backend.v5.repository import DESTRUCTION_CLASSIFICATION, RepositoryConflict
 from backend.v5.ydb_repository import YdbRepository
+
+
+PHOTO_ID = "PHOTO-0000000000000001"
+
+
+def ready_photo(key, **changes):
+    row = {
+        "photo_object_id": PHOTO_ID,
+        "owner_context_hash": hashlib.sha256(str(key).encode("utf-8")).hexdigest(),
+        "lifecycle_state": "READY",
+        "application_id": None,
+        "participant_id": None,
+    }
+    row.update(changes)
+    return row
+
+
+def submission_transaction(key, intake_rows=None, **photo_changes):
+    return FakeTransaction([
+        FakeResultSet(intake_rows or []),
+        FakeResultSet([ready_photo(key, **photo_changes)]),
+    ])
 
 
 class FakeResultSet:
@@ -169,6 +192,7 @@ def make_record():
             "acquaintance_methods_other": "",
             "return_reason": "test",
             "source": "Сайт / поиск",
+            "photo_object_id": PHOTO_ID,
         },
         "consent": {
             "participant_id": "PT-TEST001",
@@ -193,11 +217,7 @@ class YdbRepositoryTests(unittest.TestCase):
         return repo
 
     def test_new_application_uses_serializable_transaction(self):
-        tx = FakeTransaction(
-            [
-                FakeResultSet([]),
-            ]
-        )
+        tx = submission_transaction("test-key-00000001")
 
         repo = self.make_repo(tx)
         record = make_record()
@@ -212,7 +232,7 @@ class YdbRepositoryTests(unittest.TestCase):
             repo.pool.session.tx_mode,
             ydb.QuerySerializableReadWrite,
         )
-        self.assertEqual(tx.commit_flags, [False, True])
+        self.assertEqual(tx.commit_flags, [False, False, True])
         self.assertTrue(tx.committed)
 
         for stream in tx.streams:
@@ -221,11 +241,7 @@ class YdbRepositoryTests(unittest.TestCase):
             self.assertTrue(stream.exited)
 
     def test_server_owned_values_override_client(self):
-        tx = FakeTransaction(
-            [
-                FakeResultSet([]),
-            ]
-        )
+        tx = submission_transaction("test-key-00000002")
 
         repo = self.make_repo(tx)
         record = make_record()
@@ -265,11 +281,7 @@ class YdbRepositoryTests(unittest.TestCase):
         )
 
     def test_transaction_writes_expected_tables(self):
-        tx = FakeTransaction(
-            [
-                FakeResultSet([]),
-            ]
-        )
+        tx = submission_transaction("test-key-00000003")
 
         repo = self.make_repo(tx)
 
@@ -280,10 +292,10 @@ class YdbRepositoryTests(unittest.TestCase):
 
         self.assertEqual(
             len(tx.queries),
-            2,
+            3,
         )
 
-        write_query = tx.queries[1]
+        write_query = tx.queries[2]
 
         for table in (
             "participants",
@@ -292,6 +304,7 @@ class YdbRepositoryTests(unittest.TestCase):
             "consents",
             "technical_logs",
             "audit_log",
+            "photo_objects",
         ):
             self.assertIn(
                 table,
@@ -308,17 +321,8 @@ class YdbRepositoryTests(unittest.TestCase):
             write_query.lower(),
         )
 
-        self.assertNotIn(
-            "photo",
-            write_query.lower(),
-        )
-
     def test_participant_is_written_before_application(self):
-        tx = FakeTransaction(
-            [
-                FakeResultSet([]),
-            ]
-        )
+        tx = submission_transaction("test-key-00000004")
 
         repo = self.make_repo(tx)
 
@@ -327,7 +331,7 @@ class YdbRepositoryTests(unittest.TestCase):
             make_record(),
         )
 
-        write_query = tx.queries[1]
+        write_query = tx.queries[2]
 
         participant_pos = write_query.index(
             "INSERT INTO participants"
@@ -343,22 +347,15 @@ class YdbRepositoryTests(unittest.TestCase):
         )
 
     def test_existing_phone_reuses_participant(self):
-        tx = FakeTransaction(
-            [
-                FakeResultSet(
-                    [
-                        {
-                            "record_type": "phone",
-                            "application_id": "",
-                            "key_participant_id": "PT-EXISTING",
-                            "participant_id": "PT-EXISTING",
-                            "payload_fingerprint": "",
-                            "processing_blocked": False,
-                        }
-                    ]
-                ),
-            ]
-        )
+        tx = submission_transaction("test-key-00000005", [{
+            "record_type": "phone",
+            "application_id": "",
+            "key_participant_id": "PT-EXISTING",
+            "participant_id": "PT-EXISTING",
+            "payload_fingerprint": "",
+            "processing_blocked": False,
+            "current_photo_object_id": "PHOTO-EXISTING00000001",
+        }])
 
         repo = self.make_repo(tx)
         record = make_record()
@@ -380,7 +377,7 @@ class YdbRepositoryTests(unittest.TestCase):
             "PT-EXISTING",
         )
 
-        write_query = tx.queries[1]
+        write_query = tx.queries[2]
 
         self.assertNotIn("UPDATE participants SET", write_query)
         self.assertNotIn("INSERT INTO participants", write_query)
@@ -391,27 +388,27 @@ class YdbRepositoryTests(unittest.TestCase):
         )
 
     def test_broken_phone_key_fails_without_writes(self):
-        tx = FakeTransaction([FakeResultSet([{
+        tx = submission_transaction("broken-phone-key", [{
             "record_type": "phone", "application_id": "",
             "key_participant_id": "PT-MISSING", "participant_id": "",
             "payload_fingerprint": "", "processing_blocked": False,
-        }])])
+        }])
         repo = self.make_repo(tx)
         with self.assertRaisesRegex(RepositoryConflict, "phone_key_inconsistent"):
             repo.save("broken-phone-key", make_record())
-        self.assertEqual(len(tx.queries), 1)
+        self.assertEqual(len(tx.queries), 2)
         self.assertTrue(tx.committed)
 
     def test_proposed_participant_id_collision_fails_without_writes(self):
-        tx = FakeTransaction([FakeResultSet([{
+        tx = submission_transaction("participant-id-collision", [{
             "record_type": "candidate", "application_id": "",
             "key_participant_id": "", "participant_id": "PT-COLLISION",
             "payload_fingerprint": "", "processing_blocked": False,
-        }])])
+        }])
         repo = self.make_repo(tx)
         with self.assertRaisesRegex(RepositoryConflict, "participant_id_conflict"):
             repo.save("participant-id-collision", make_record())
-        self.assertEqual(len(tx.queries), 1)
+        self.assertEqual(len(tx.queries), 2)
         self.assertTrue(tx.committed)
 
     def test_existing_application_is_not_written_again(self):
@@ -575,18 +572,18 @@ class YdbRepositoryTests(unittest.TestCase):
         self.assertEqual(len(already.queries), 1)
 
     def test_blocked_submit_writes_no_application_or_consent(self):
-        tx = FakeTransaction([FakeResultSet([{
+        tx = submission_transaction("blocked-key", [{
             "record_type": "phone",
             "application_id": "",
             "key_participant_id": "PT-BLOCK",
             "participant_id": "PT-BLOCK",
             "payload_fingerprint": "",
             "processing_blocked": True,
-        }])])
+        }])
         repo = self.make_repo(tx)
         with self.assertRaisesRegex(Exception, "processing_blocked"):
             repo.save("blocked-key", make_record())
-        self.assertEqual(len(tx.queries), 1)
+        self.assertEqual(len(tx.queries), 2)
         self.assertTrue(tx.committed)
 
     def test_destruction_plan_query_is_dry_run_and_pii_free(self):
@@ -655,10 +652,130 @@ class YdbRepositoryTests(unittest.TestCase):
         for forbidden in ("DROP", "RENAME", "ALTER COLUMN", "public_url", "original_filename", "base64", " BLOB"):
             self.assertNotIn(forbidden, migration.upper() if forbidden in ("DROP", "RENAME", "ALTER COLUMN", " BLOB") else migration.lower())
 
-    def test_ydb_photo_operations_fail_closed_until_phase_b(self):
+    def test_atomic_submission_reads_and_writes_photo_in_one_serializable_transaction(self):
+        key = "atomic-ydb-shape"
+        tx = submission_transaction(key)
+        repo = self.make_repo(tx)
+
+        self.assertTrue(repo.save(key, make_record()))
+
+        self.assertIsInstance(repo.pool.session.tx_mode, ydb.QuerySerializableReadWrite)
+        self.assertEqual(tx.commit_flags, [False, False, True])
+        self.assertEqual(len(tx.queries), 3)
+        self.assertIn("FROM photo_objects", tx.queries[1])
+        self.assertEqual(tx.params[1]["$photo_object_id"], PHOTO_ID)
+        write_query = tx.queries[2]
+        self.assertIn("photo_object_id", write_query)
+        self.assertIn('lifecycle_state = "ATTACHED"', write_query)
+        self.assertIn("application_id = $application_id", write_query)
+        self.assertIn("participant_id = $participant_id", write_query)
+        self.assertEqual(
+            tx.params[2]["$owner_context_hash"],
+            hashlib.sha256(key.encode("utf-8")).hexdigest(),
+        )
+        self.assertNotIn(key, str(tx.params))
+        self.assertTrue(tx.committed)
+
+    def test_atomic_submission_rejects_invalid_photo_before_any_write(self):
+        key = "atomic-ydb-reject"
+        cases = (
+            ([], "photo_reference_not_found"),
+            ([ready_photo(key, owner_context_hash="f" * 64)], "photo_reference_not_owned"),
+            ([ready_photo(key, lifecycle_state="PENDING_UPLOAD")], "photo_reference_not_available"),
+            ([ready_photo(key, lifecycle_state="REJECTED_INVALID_PHOTO")], "photo_reference_not_available"),
+            ([ready_photo(key, lifecycle_state="ATTACHED")], "photo_reference_not_available"),
+            ([ready_photo(key, application_id="APP-OTHER")], "photo_reference_not_available"),
+            ([ready_photo(key, participant_id="PT-OTHER")], "photo_reference_not_available"),
+        )
+        for photo_rows, expected in cases:
+            with self.subTest(expected=expected, photo_rows=photo_rows):
+                tx = FakeTransaction([FakeResultSet([]), FakeResultSet(photo_rows)])
+                repo = self.make_repo(tx)
+                with self.assertRaisesRegex(RepositoryConflict, expected):
+                    repo.save(key, make_record())
+                self.assertEqual(len(tx.queries), 2)
+                self.assertEqual(tx.commit_flags, [False, False])
+
+    def test_existing_participant_without_current_photo_is_restored_in_atomic_write(self):
+        key = "atomic-ydb-restore"
+        tx = submission_transaction(key, [{
+            "record_type": "phone",
+            "application_id": "",
+            "key_participant_id": "PT-EXISTING",
+            "participant_id": "PT-EXISTING",
+            "payload_fingerprint": "",
+            "processing_blocked": False,
+            "current_photo_object_id": "",
+        }])
+        repo = self.make_repo(tx)
+
+        self.assertTrue(repo.save(key, make_record()))
+        write_query = tx.queries[2]
+        self.assertIn("UPDATE participants", write_query)
+        self.assertIn("current_photo_object_id = $photo_object_id", write_query)
+        self.assertIn("photo_required_blocked = false", write_query)
+
+    def test_failed_combined_write_has_no_commit_boundary(self):
+        class FailingWriteTransaction(FakeTransaction):
+            def execute(self, query, params=None, commit_tx=False):
+                if commit_tx:
+                    self.queries.append(query)
+                    self.params.append(params or {})
+                    self.commit_flags.append(commit_tx)
+                    raise RuntimeError("injected_combined_write_failure")
+                return super().execute(query, params, commit_tx)
+
+        key = "atomic-ydb-failure"
+        tx = FailingWriteTransaction([
+            FakeResultSet([]),
+            FakeResultSet([ready_photo(key)]),
+        ])
+        repo = self.make_repo(tx)
+
+        with self.assertRaisesRegex(RuntimeError, "injected_combined_write_failure"):
+            repo.save(key, make_record())
+        self.assertFalse(tx.committed)
+        self.assertEqual(tx.commit_flags, [False, False, True])
+
+    def test_transaction_retry_reuses_deterministic_relation_and_commits_once(self):
+        class FailingWriteTransaction(FakeTransaction):
+            def execute(self, query, params=None, commit_tx=False):
+                if commit_tx:
+                    self.queries.append(query)
+                    self.params.append(params or {})
+                    self.commit_flags.append(commit_tx)
+                    raise RuntimeError("retryable_conflict")
+                return super().execute(query, params, commit_tx)
+
+        class RetryingPool:
+            def __init__(self, transactions):
+                self.transactions = transactions
+                self.calls = 0
+
+            def retry_operation_sync(self, callee, retry_settings=None):
+                first, second = self.transactions
+                self.calls += 1
+                try:
+                    callee(FakeSession(first))
+                except RuntimeError as exc:
+                    if str(exc) != "retryable_conflict":
+                        raise
+                return callee(FakeSession(second))
+
+        key = "atomic-ydb-retry"
+        first = FailingWriteTransaction([FakeResultSet([]), FakeResultSet([ready_photo(key)])])
+        second = submission_transaction(key)
         repo = YdbRepository.__new__(YdbRepository)
-        with self.assertRaisesRegex(Exception, "photo_repository_phase_b_required"):
-            repo.reserve_photo_for_submission("PHOTO-0000000000000001", "context", "APP-1")
+        repo.consent_hash = "TEST-HASH-ONLY"
+        repo.pool = RetryingPool((first, second))
+        record = make_record()
+
+        self.assertTrue(repo.save(key, record))
+        self.assertFalse(first.committed)
+        self.assertTrue(second.committed)
+        self.assertEqual(repo.pool.calls, 1)
+        self.assertEqual(first.params[2]["$application_id"], second.params[2]["$application_id"])
+        self.assertEqual(first.params[2]["$photo_object_id"], second.params[2]["$photo_object_id"])
 
     def test_ydb_photo_initiation_is_serializable_pending_and_hash_only(self):
         tx = FakeTransaction([FakeResultSet([])])
