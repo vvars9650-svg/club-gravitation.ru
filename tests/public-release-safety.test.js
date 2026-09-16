@@ -4,9 +4,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const {
   FRONTEND_MODES,
+  PHOTO_COMPLETE_URL,
   PHOTO_INITIATE_URL,
   TEST_API_URL,
   TEST_FRONTEND_HOST,
+  createMountedPhotoUploadAdapter,
   createPhotoUploadAdapter,
   createSubmitController,
   resolveFrontendMode,
@@ -110,6 +112,54 @@ async function testPhotoGuard() {
   assert.equal(PHOTO_INITIATE_URL.includes(TEST_API_URL.replace('/applications', '')), true);
 }
 
+async function testMountedDefaultPhotoAdapterUsesResolvedMode() {
+  const testCalls = [];
+  const testRoot = {
+    fetch: async (url, options) => {
+      testCalls.push([url, options]);
+      if (url === PHOTO_INITIATE_URL) {
+        return response(201, {
+          upload_url: 'https://storage.example.test/presigned',
+          photo_object_id: 'PHOTO-0000000000000001',
+          upload_method: 'PUT',
+        });
+      }
+      if (url === 'https://storage.example.test/presigned') {
+        return response(200);
+      }
+      return response(200, {
+        photo_object_id: 'PHOTO-0000000000000001',
+        lifecycle_state: 'READY',
+      });
+    },
+  };
+  const testMode = resolveFrontendMode(TEST_LOCATION);
+  const testUpload = createMountedPhotoUploadAdapter(testRoot, testMode);
+  const result = await testUpload({type: 'image/jpeg'}, 'test-runtime-key');
+
+  assert.equal(result.photo_object_id, 'PHOTO-0000000000000001');
+  assert.deepEqual(testCalls.map(([url]) => url), [
+    PHOTO_INITIATE_URL,
+    'https://storage.example.test/presigned',
+    PHOTO_COMPLETE_URL,
+  ]);
+
+  const publicCalls = [];
+  const publicRoot = {
+    fetch: async (...args) => {
+      publicCalls.push(args);
+      return response(200);
+    },
+  };
+  const publicMode = resolveFrontendMode({hostname: 'club-gravitation.ru', search: ''});
+  const publicUpload = createMountedPhotoUploadAdapter(publicRoot, publicMode);
+  await assert.rejects(
+    () => publicUpload({type: 'image/jpeg'}, 'public-runtime-key'),
+    /public_submission_blocked/,
+  );
+  assert.deepEqual(publicCalls, []);
+}
+
 function testPublicCopyAndNoLegacyFallback() {
   const html = fs.readFileSync('apply/index.html', 'utf8');
   const js = fs.readFileSync('assets/js/apply.js', 'utf8');
@@ -126,6 +176,7 @@ function testPublicCopyAndNoLegacyFallback() {
   testModeMatrix();
   await testSubmitGuard();
   await testPhotoGuard();
+  await testMountedDefaultPhotoAdapterUsesResolvedMode();
   testPublicCopyAndNoLegacyFallback();
   console.log('Public release safety tests passed');
 })().catch((error) => {

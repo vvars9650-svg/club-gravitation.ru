@@ -351,6 +351,11 @@
     };
   }
 
+  function createMountedPhotoUploadAdapter(root, mode) {
+    return root.__V5_PHOTO_UPLOAD_ADAPTER__
+      || createPhotoUploadAdapter({fetchImpl: root.fetch.bind(root), mode});
+  }
+
   function createSubmitController({
     fetchImpl,
     randomUUID,
@@ -487,8 +492,7 @@
     const photoReference = form.elements.photo_object_id;
     const photoStatus = form.querySelector('[data-photo-status]');
     const retryPhoto = form.querySelector('[data-photo-retry]');
-    const uploadPhoto = root.__V5_PHOTO_UPLOAD_ADAPTER__
-      || createPhotoUploadAdapter({fetchImpl: root.fetch.bind(root)});
+    const uploadPhoto = createMountedPhotoUploadAdapter(root, mode);
     const names = [
       'Согласие',
       'Контакты',
@@ -885,6 +889,7 @@
     POLICY_VERSION,
     buildPayload,
     createIdempotencyKey,
+    createMountedPhotoUploadAdapter,
     createPhotoUploadAdapter,
     createSubmitController,
     resolveFrontendMode,
