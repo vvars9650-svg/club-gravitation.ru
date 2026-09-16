@@ -107,6 +107,35 @@ class AdminMvpTests(unittest.TestCase):
         self.assertNotIn("Связаться в TEST", audit["action"])
         self.assertNotIn("+7999", audit["action"])
 
+    def test_full_authorized_read_card_write_and_read_flow(self):
+        list_request = event("GET", "/admin/applications")
+        list_request["requestContext"] = {"authorizer": {"jwt": {"claims": {"sub": "e2e-operator"}, "scopes": [READ_SCOPE]}}}
+        listed = handler(list_request, repo=self.repo)
+        listed_body = self.body(listed)
+        self.assertEqual(listed["statusCode"], 200)
+        self.assertEqual(listed_body["environment"], "TEST")
+        self.assertTrue(any(row["participant_id"] == self.first_id for row in listed_body["applications"]))
+
+        card_request = event("GET", "/admin/participants/" + self.first_id)
+        card_request["requestContext"] = {"authorizer": {"jwt": {"claims": {"sub": "e2e-operator"}, "scopes": [READ_SCOPE]}}}
+        card = handler(card_request, repo=self.repo)
+        self.assertEqual(card["statusCode"], 200)
+        self.assertEqual(self.body(card)["participant"]["participant_id"], self.first_id)
+
+        patch_request = event("PATCH", "/admin/participants/" + self.first_id, {"owner": "E2E оператор"})
+        patch_request["requestContext"] = {"authorizer": {"jwt": {"claims": {"sub": "e2e-operator"}, "scopes": [WRITE_SCOPE]}}}
+        saved = handler(patch_request, repo=self.repo)
+        saved_body = self.body(saved)
+        self.assertEqual(saved["statusCode"], 200)
+        self.assertEqual(saved_body["participant"]["owner"], "E2E оператор")
+        self.assertEqual(saved_body["changed_fields"], ["owner"])
+
+        reread = handler(card_request, repo=self.repo)
+        self.assertEqual(reread["statusCode"], 200)
+        self.assertEqual(self.body(reread)["participant"]["owner"], "E2E оператор")
+        self.assertIn("actor=auth-", self.repo.audit[-1]["action"])
+        self.assertNotIn("e2e-operator", self.repo.audit[-1]["action"])
+
     def test_patch_priority_with_unchanged_empty_next_contact_uses_current_contract(self):
         response = self.call(
             "PATCH", "/admin/participants/" + self.first_id,
