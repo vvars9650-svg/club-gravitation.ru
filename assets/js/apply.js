@@ -15,6 +15,15 @@
 
   const TEST_API_URL =
     'https://d5ds805l71s68liu6ge4.fovt0b64.apigw.yandexcloud.net/applications';
+  const TEST_FRONTEND_HOST =
+    'gravitation-v5-test-frontend-b1g4bdjb.storage.yandexcloud.net';
+  const FRONTEND_MODES = Object.freeze({
+    TEST_ENABLED: 'TEST_ENABLED',
+    PUBLIC_BLOCKED: 'PUBLIC_BLOCKED',
+  });
+  const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1']);
+  const PUBLIC_SUBMISSION_MESSAGE =
+    'Приём заявок временно недоступен. Мы откроем его после завершения подготовки.';
   const PHOTO_UPLOAD_BASE_URL = TEST_API_URL.replace(/\/applications$/u, '');
   const PHOTO_INITIATE_URL = `${PHOTO_UPLOAD_BASE_URL}/photo-uploads/initiate`;
   const PHOTO_COMPLETE_URL = `${PHOTO_UPLOAD_BASE_URL}/photo-uploads/complete`;
@@ -79,6 +88,33 @@
     'Феодосия', 'Фролово', 'Хадыженск', 'Харабали', 'Цимлянск', 'Шахты',
     'Щёлкино', 'Элиста', 'Ялта',
   ];
+
+  function normalizeHostname(hostname) {
+    return typeof hostname === 'string' ? hostname.trim().toLowerCase() : '';
+  }
+
+  function resolveFrontendMode(locationLike = {}) {
+    const hostname = normalizeHostname(locationLike.hostname);
+
+    if (hostname === TEST_FRONTEND_HOST) {
+      return FRONTEND_MODES.TEST_ENABLED;
+    }
+
+    if (LOCAL_HOSTNAMES.has(hostname)) {
+      const search = typeof locationLike.search === 'string' ? locationLike.search : '';
+      if (new URLSearchParams(search).get('test') === 'true') {
+        return FRONTEND_MODES.TEST_ENABLED;
+      }
+    }
+
+    return FRONTEND_MODES.PUBLIC_BLOCKED;
+  }
+
+  function assertTestEnabled(mode) {
+    if (mode !== FRONTEND_MODES.TEST_ENABLED) {
+      throw new Error('public_submission_blocked');
+    }
+  }
 
   function createIdempotencyKey(randomUUID) {
     const uuid = randomUUID();
@@ -284,10 +320,11 @@
     return body;
   }
 
-  function createPhotoUploadAdapter({fetchImpl}) {
+  function createPhotoUploadAdapter({fetchImpl, mode = FRONTEND_MODES.PUBLIC_BLOCKED}) {
     if (typeof fetchImpl !== 'function') throw new TypeError('fetchImpl_required');
 
     return async function uploadPhoto(file, idempotencyKey) {
+      assertTestEnabled(mode);
       const headers = {
         'Content-Type': 'application/json',
         Accept: 'application/json',
@@ -296,6 +333,7 @@
       const initiated = await parseJsonResponse(await fetchImpl(PHOTO_INITIATE_URL, {
         method: 'POST', headers, body: JSON.stringify({}),
       }));
+      assertTestEnabled(mode);
       if (!initiated.upload_url || !initiated.photo_object_id
         || initiated.upload_method !== 'PUT') throw new Error('invalid_upload_contract');
 
@@ -303,6 +341,7 @@
       const putResponse = await fetchImpl(initiated.upload_url, {
         method: 'PUT', headers: {'Content-Type': file.type}, body: file,
       });
+      assertTestEnabled(mode);
       if (!putResponse || !putResponse.ok) throw new Error('photo_put_failed');
 
       return parseJsonResponse(await fetchImpl(PHOTO_COMPLETE_URL, {
@@ -315,6 +354,7 @@
   function createSubmitController({
     fetchImpl,
     randomUUID,
+    mode = FRONTEND_MODES.PUBLIC_BLOCKED,
     timeoutMs = 15000,
     AbortControllerImpl,
   }) {
@@ -362,6 +402,14 @@
     }
 
     function submit(payload) {
+      if (mode !== FRONTEND_MODES.TEST_ENABLED) {
+        state = 'blocked';
+        return Promise.resolve({
+          state,
+          code: 'public_submission_blocked',
+        });
+      }
+
       if (inFlight) {
         return inFlight;
       }
@@ -398,9 +446,12 @@
       return;
     }
 
+    const mode = resolveFrontendMode(root.location);
+    const isTestEnabled = mode === FRONTEND_MODES.TEST_ENABLED;
     const controller = createSubmitController({
       fetchImpl: root.fetch.bind(root),
       randomUUID: root.crypto.randomUUID.bind(root.crypto),
+      mode,
       AbortControllerImpl: root.AbortController,
     });
     const steps = [...form.querySelectorAll('.form-step')];
@@ -413,6 +464,7 @@
     const progress = document.querySelector('#form-progress-bar');
     const progressBox = progress.closest('.form-progress');
     const mobile = document.querySelector('#mobile-step');
+    const availability = document.querySelector('#application-availability');
     let success = document.querySelector('#form-success');
     if (!success) {
       success = document.createElement('section');
@@ -422,9 +474,9 @@
       success.innerHTML = [
         '<div class="success-icon" aria-hidden="true">✓</div>',
         '<h2 data-application-number></h2>',
-        '<p>Спасибо. Мы сохранили вашу тестовую заявку.</p>',
+        '<p>Спасибо. Мы получили вашу заявку.</p>',
         '<button class="form-next" id="form-new-session" type="button">',
-        'НОВАЯ TEST-АНКЕТА</button>',
+        'НОВАЯ АНКЕТА</button>',
       ].join('');
       form.after(success);
     }
@@ -490,7 +542,7 @@
       mobile.textContent = names[current];
       back.hidden = current === 0;
       next.hidden = current === steps.length - 1;
-      submit.disabled = submitting;
+      submit.disabled = submitting || !isTestEnabled;
     }
 
     function syncVisit() {
@@ -667,12 +719,14 @@
     function showResult(result) {
       status.dataset.state = result.state;
 
-      if (result.state === 'success') {
+      if (result.state === 'blocked') {
+        status.textContent = PUBLIC_SUBMISSION_MESSAGE;
+      } else if (result.state === 'success') {
         status.textContent = '';
         showSuccess(result.applicationNumber);
       } else if (result.state === 'validation_error') {
         status.textContent =
-          'Backend отклонил данные. Проверьте анкету и повторите отправку.';
+          'Не удалось принять данные. Проверьте анкету и повторите отправку.';
       } else if (result.code === 'processing_blocked') {
         status.textContent =
           'Отправка заявки сейчас недоступна. Свяжитесь с клубом удобным способом.';
@@ -681,18 +735,26 @@
           'Не удалось подтвердить эту отправку. Проверьте данные и повторите попытку.';
       } else if (result.code === 'unsupported_media_type') {
         status.textContent =
-          'Техническая ошибка запроса. Повторите попытку позднее.';
+          'Не удалось обработать заявку. Повторите попытку позднее.';
       } else if (result.uncertain) {
         status.textContent =
-          'Ответ сервера не получен. Заявка могла быть принята; повторная попытка безопасна.';
+          'Не удалось получить подтверждение. Повторите попытку позднее.';
       } else {
         status.textContent =
-          'TEST-сервис временно недоступен. Повторите попытку позднее.';
+          'Приём заявок временно недоступен. Повторите попытку позднее.';
       }
     }
 
     city.addEventListener('change', syncVisit);
     async function uploadSelectedPhoto() {
+      if (!isTestEnabled) {
+        photoReference.value = '';
+        photoInput.value = '';
+        retryPhoto.hidden = true;
+        photoStatus.textContent = PUBLIC_SUBMISSION_MESSAGE;
+        return;
+      }
+
       photoReference.value = '';
       const file = photoInput.files?.[0];
       if (!file) {
@@ -747,6 +809,10 @@
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
+      if (!isTestEnabled) {
+        showResult({state: 'blocked'});
+        return;
+      }
       if (current !== steps.length - 1 || controller.isSubmitting()
         || !validateStep(0) || !validateStep(1) || !validateStep(2) || !validateStep(3)) {
         return;
@@ -764,7 +830,7 @@
       }
 
       status.dataset.state = 'submitting';
-      status.textContent = 'Отправляем TEST-заявку…';
+      status.textContent = 'Отправляем заявку…';
       const request = controller.submit(payload);
       render();
       const result = await request;
@@ -792,11 +858,24 @@
       render();
     };
 
+    if (!isTestEnabled) {
+      form.dataset.mode = FRONTEND_MODES.PUBLIC_BLOCKED;
+      availability.hidden = false;
+      availability.textContent = PUBLIC_SUBMISSION_MESSAGE;
+      photoInput.disabled = true;
+      retryPhoto.disabled = true;
+      photoStatus.textContent = PUBLIC_SUBMISSION_MESSAGE;
+    } else {
+      form.dataset.mode = FRONTEND_MODES.TEST_ENABLED;
+    }
     render();
   }
 
   return {
     TEST_API_URL,
+    TEST_FRONTEND_HOST,
+    FRONTEND_MODES,
+    PUBLIC_SUBMISSION_MESSAGE,
     PHOTO_UPLOAD_BASE_URL,
     PHOTO_INITIATE_URL,
     PHOTO_COMPLETE_URL,
@@ -808,6 +887,7 @@
     createIdempotencyKey,
     createPhotoUploadAdapter,
     createSubmitController,
+    resolveFrontendMode,
     responseResult,
     validateFrontendPayload,
     normalizeRussianPhone,

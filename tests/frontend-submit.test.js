@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const {
   TEST_API_URL,
+  FRONTEND_MODES,
   PHOTO_INITIATE_URL,
   PHOTO_COMPLETE_URL,
   FORM_FIELDS,
@@ -40,6 +41,7 @@ async function testPhotoUploadAdapterFlow() {
   const calls = [];
   const file = {type: 'image/jpeg', bytes: 'SYNTHETIC-BINARY'};
   const adapter = createPhotoUploadAdapter({
+    mode: FRONTEND_MODES.TEST_ENABLED,
     fetchImpl: async (url, options) => {
       calls.push([url, options]);
       if (url === PHOTO_INITIATE_URL) {
@@ -92,6 +94,7 @@ async function testPhotoUploadFailureAndRetry() {
   let attempt = 0;
   const calls = [];
   const adapter = createPhotoUploadAdapter({
+    mode: FRONTEND_MODES.TEST_ENABLED,
     fetchImpl: async (url, options) => {
       calls.push([url, options]);
       if (url === PHOTO_INITIATE_URL) {
@@ -120,7 +123,12 @@ async function testPhotoUploadFailureAndRetry() {
 }
 
 function controller(fetchImpl, randomUUID = uuidSequence(), options = {}) {
-  return createSubmitController({fetchImpl, randomUUID, ...options});
+  return createSubmitController({
+    fetchImpl,
+    randomUUID,
+    mode: FRONTEND_MODES.TEST_ENABLED,
+    ...options,
+  });
 }
 
 function validPayload() {
