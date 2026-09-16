@@ -1075,7 +1075,7 @@ class YdbRepository:
         return {name: self._row_value(row, name, "") for name in ("application_id", "participant_id", "request_id")}
 
     def list_admin_applications(self, filters=None, sort="submitted_at", order="desc"):
-        """Read-only TEST list for the future protected Admin API."""
+        """Read-only TEST list for the protected Admin API."""
         filters = filters or {}
         direction = "ASC" if order == "asc" else "DESC"
         allowed_sorts = {

@@ -25,6 +25,7 @@ EXPECTED_DEPLOYMENT_FILES = {
     "v5/repository.py",
     "v5/ydb_repository.py",
     "v5/factory.py",
+    "v5/authorizer.py",
     "v5/admin.py",
     "v5/handler.py",
 }

@@ -1,10 +1,11 @@
-import json,uuid
+import json,re,uuid
 from .domain import DomainError
 from .service import submit
 from .factory import runtime_repository, runtime_photo_upload_service
 from .repository import RepositoryConflict, RepositoryUnavailable
 from .object_storage import ObjectStorageError
 from .admin import admin_handler
+from .authorizer import AdminAuthorizationError, authorize_admin, required_scope_for_request
 def response(status,body,request_id): return {'statusCode':status,'headers':{'Content-Type':'application/json'},'body':json.dumps({**body,'request_id':request_id},ensure_ascii=False)}
 
 def format_application_number(value):
@@ -12,28 +13,24 @@ def format_application_number(value):
         return None
     return str(value).zfill(6)
 
-def trusted_admin_subject(event):
-    """Accept an actor only from a JWT authorizer injected by API Gateway."""
-    try:
-        claims = event['requestContext']['authorizer']['jwt']['claims']
-        subject = claims.get('sub')
-    except (KeyError, TypeError, AttributeError):
-        return None
-    return subject if isinstance(subject, str) and subject.strip() else None
+def is_admin_path(path):
+    return bool(re.search(r'(?:^|/)admin(?:/|$)', str(path or '').split('?', 1)[0]))
 
 def handler(event,context=None,repo=None,photo_service=None):
     request_id=getattr(context,'request_id',None) or str(uuid.uuid4())
     # A direct Function call has no Gateway authorizer context and remains
     # closed. Client headers, cookies, body and query parameters are ignored.
-    if '/admin/' in event.get('path',''):
-        actor_identity=trusted_admin_subject(event)
-        if not actor_identity:
-            return admin_handler(event,context,repo=repo,actor_identity=None)
+    path = event.get('path', '')
+    if is_admin_path(path):
+        try:
+            principal = authorize_admin(event, required_scope_for_request(event.get('httpMethod')))
+        except AdminAuthorizationError as error:
+            return response(error.status, {'error': {'code': error.code}}, request_id)
         try:
             admin_repo=repo if repo is not None else runtime_repository()
         except RepositoryUnavailable as e:
             return response(503,{'error':{'code':str(e)}},request_id)
-        return admin_handler(event,context,repo=admin_repo,actor_identity=actor_identity)
+        return admin_handler(event,context,repo=admin_repo,actor_identity=principal.subject)
     if event.get('httpMethod')=='GET' and event.get('path','').endswith('/health'): return response(200,{'status':'synthetic-test-only','environment':'TEST'},request_id)
     if event.get('httpMethod')!='POST': return response(405,{'error':{'code':'method_not_allowed'}},request_id)
     if not str(event.get('headers',{}).get('Content-Type',event.get('headers',{}).get('content-type',''))).startswith('application/json'): return response(415,{'error':{'code':'unsupported_media_type'}},request_id)

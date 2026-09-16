@@ -4,20 +4,19 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="robots" content="noindex,nofollow,noarchive">
-  <title>ГРАВИТАЦИЯ — Admin TEST</title>
+  <title>ГРАВИТАЦИЯ — Панель заявок</title>
   <link rel="stylesheet" href="/assets/css/site.css">
   <link rel="stylesheet" href="/assets/css/admin.css">
 </head>
 <body class="admin-page">
   <main class="admin-shell" id="admin-app">
-    <header class="admin-header"><div><p class="eyebrow eyebrow--gold">ЗАКРЫТЫЙ ИНТЕРФЕЙС</p><h1>ГРАВИТАЦИЯ <span>ADMIN</span></h1></div><strong class="env-badge">TEST</strong></header>
+    <header class="admin-header"><div><p class="eyebrow eyebrow--gold">ЗАКРЫТЫЙ РАЗДЕЛ</p><h1>ГРАВИТАЦИЯ <span>ЗАЯВКИ</span></h1></div></header>
     <section class="admin-auth" id="admin-auth" aria-live="polite">
-      <p data-auth-state>Проверяем авторизацию…</p>
-      <button class="admin-login" id="admin-login" type="button">ВОЙТИ ЧЕРЕЗ IDENTITY HUB</button>
+      <p data-auth-state>Проверяем доступ…</p>
+      <button class="admin-login" id="admin-login" type="button">ВОЙТИ</button>
     </section>
     <section id="admin-workspace" hidden>
     <div class="admin-session"><span id="admin-identity"></span><button id="admin-logout" type="button">Выйти</button></div>
-    <section class="admin-diagnostic" aria-label="Безопасная диагностика OIDC TEST"><h2>OIDC TEST diagnostics</h2><pre id="admin-token-diagnostic">Метаданные токенов появятся после входа.</pre></section>
     <section class="admin-controls" aria-label="Фильтры заявок">
     <input id="admin-search" type="search" placeholder="Поиск: имя, телефон, профиль или мессенджер, город">
       <select id="admin-status"><option value="">Все статусы</option></select>

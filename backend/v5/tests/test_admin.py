@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from backend.v5.admin import STATUSES, admin_handler
+from backend.v5.authorizer import READ_SCOPE, WRITE_SCOPE, AdminAuthorizationError, authorize_admin
 from backend.v5.handler import handler
 from backend.v5.repository import FakeRepository, RepositoryUnavailable
 from backend.v5.service import submit
@@ -132,29 +133,31 @@ class AdminMvpTests(unittest.TestCase):
         self.assertEqual(response["statusCode"], 404)
         self.assertEqual(self.body(response)["error"]["code"], "admin_not_published")
         runtime_response = handler(event("GET", "/admin/applications"), repo=self.repo)
-        self.assertEqual(runtime_response["statusCode"], 404)
+        self.assertEqual(runtime_response["statusCode"], 401)
+        self.assertEqual(self.body(runtime_response)["error"]["code"], "admin_authentication_required")
 
     def test_handler_accepts_only_trusted_gateway_jwt_sub(self):
         spoofed = event("GET", "/admin/applications")
-        spoofed["headers"].update({"X-User": "spoof", "Authorization": "Bearer spoof"})
-        spoofed["body"] = json.dumps({"actor_identity": "spoof"})
-        spoofed["queryStringParameters"] = {"actor": "spoof"}
-        self.assertEqual(handler(spoofed, repo=self.repo)["statusCode"], 404)
+        spoofed["headers"].update({"X-User": "spoof", "X-Admin-Scopes": "admin:read admin:write", "Authorization": "Bearer spoof", "Cookie": "sub=spoof; scope=admin:write"})
+        spoofed["body"] = json.dumps({"actor_identity": "spoof", "scopes": ["admin:read", "admin:write"]})
+        spoofed["queryStringParameters"] = {"actor": "spoof", "scope": "admin:write"}
+        spoofed["cookies"] = ["sub=spoof", "scope=admin:write"]
+        self.assertEqual(handler(spoofed, repo=self.repo)["statusCode"], 401)
         trusted = event("GET", "/admin/applications")
-        trusted["requestContext"] = {"authorizer": {"jwt": {"claims": {"sub": "identity-hub-subject"}}}}
+        trusted["requestContext"] = {"authorizer": {"jwt": {"claims": {"sub": "identity-hub-subject"}, "scopes": [READ_SCOPE]}}}
         self.assertEqual(handler(trusted, repo=self.repo)["statusCode"], 200)
         patch = event("PATCH", "/admin/participants/" + self.first_id, {"owner": "Лара"})
-        patch["requestContext"] = {"authorizer": {"jwt": {"claims": {"sub": "identity-hub-subject"}}}}
+        patch["requestContext"] = {"authorizer": {"jwt": {"claims": {"sub": "identity-hub-subject"}, "scopes": [WRITE_SCOPE]}}}
         self.assertEqual(handler(patch, repo=self.repo)["statusCode"], 200)
         self.assertIn("actor=auth-", self.repo.audit[-1]["action"])
         self.assertNotIn("identity-hub-subject", self.repo.audit[-1]["action"])
         missing_sub = event("GET", "/admin/applications")
-        missing_sub["requestContext"] = {"authorizer": {"jwt": {"claims": {"email": "not-an-actor@example.test"}}}}
-        self.assertEqual(handler(missing_sub, repo=self.repo)["statusCode"], 404)
+        missing_sub["requestContext"] = {"authorizer": {"jwt": {"claims": {"email": "not-an-actor@example.test"}, "scopes": [READ_SCOPE]}}}
+        self.assertEqual(handler(missing_sub, repo=self.repo)["statusCode"], 401)
 
     def test_handler_builds_runtime_repository_for_trusted_admin(self):
         trusted = event("GET", "/admin/applications")
-        trusted["requestContext"] = {"authorizer": {"jwt": {"claims": {"sub": "identity-hub-subject"}}}}
+        trusted["requestContext"] = {"authorizer": {"jwt": {"claims": {"sub": "identity-hub-subject"}, "scopes": [READ_SCOPE]}}}
         with patch("backend.v5.handler.runtime_repository", return_value=self.repo) as runtime:
             response = handler(trusted)
         runtime.assert_called_once_with()
@@ -162,7 +165,7 @@ class AdminMvpTests(unittest.TestCase):
 
     def test_handler_uses_injected_admin_repository_without_runtime_creation(self):
         trusted = event("GET", "/admin/applications")
-        trusted["requestContext"] = {"authorizer": {"jwt": {"claims": {"sub": "identity-hub-subject"}}}}
+        trusted["requestContext"] = {"authorizer": {"jwt": {"claims": {"sub": "identity-hub-subject"}, "scopes": [READ_SCOPE]}}}
         with patch("backend.v5.handler.runtime_repository") as runtime:
             response = handler(trusted, repo=self.repo)
         runtime.assert_not_called()
@@ -174,12 +177,12 @@ class AdminMvpTests(unittest.TestCase):
         with patch("backend.v5.handler.runtime_repository") as runtime:
             response = handler(spoofed)
         runtime.assert_not_called()
-        self.assertEqual(response["statusCode"], 404)
-        self.assertEqual(self.body(response)["error"]["code"], "admin_not_published")
+        self.assertEqual(response["statusCode"], 401)
+        self.assertEqual(self.body(response)["error"]["code"], "admin_authentication_required")
 
     def test_handler_returns_runtime_repository_error_for_trusted_admin(self):
         trusted = event("GET", "/admin/applications")
-        trusted["requestContext"] = {"authorizer": {"jwt": {"claims": {"sub": "identity-hub-subject"}}}}
+        trusted["requestContext"] = {"authorizer": {"jwt": {"claims": {"sub": "identity-hub-subject"}, "scopes": [READ_SCOPE]}}}
         with patch("backend.v5.handler.runtime_repository", side_effect=RepositoryUnavailable("ydb_unavailable")):
             response = handler(trusted)
         self.assertEqual(response["statusCode"], 503)
@@ -191,6 +194,57 @@ class AdminMvpTests(unittest.TestCase):
         intake["headers"]["Idempotency-Key"] = "intake-auth-independent"
         intake["body"] = json.dumps(payload_with_photo(self.repo, "intake-auth-independent"))
         self.assertEqual(handler(intake, repo=self.repo)["statusCode"], 201)
+
+    def test_authorizer_requires_gateway_context_and_scopes(self):
+        with self.assertRaisesRegex(AdminAuthorizationError, "admin_authentication_required"):
+            authorize_admin(event("GET", "/admin/applications"), READ_SCOPE)
+
+        missing_scope = event("GET", "/admin/applications")
+        missing_scope["requestContext"] = {"authorizer": {"jwt": {"claims": {"sub": "subject"}, "scopes": []}}}
+        with self.assertRaisesRegex(AdminAuthorizationError, "admin_access_denied"):
+            authorize_admin(missing_scope, READ_SCOPE)
+
+        claim_only_scope = event("GET", "/admin/applications")
+        claim_only_scope["requestContext"] = {"authorizer": {"jwt": {"claims": {"sub": "subject", "scope": READ_SCOPE}}}}
+        with self.assertRaisesRegex(AdminAuthorizationError, "admin_access_denied"):
+            authorize_admin(claim_only_scope, READ_SCOPE)
+
+        write = event("PATCH", "/admin/participants/PT-1", {"owner": "TEST"})
+        write["requestContext"] = {"authorizer": {"jwt": {"claims": {"sub": "subject"}, "scopes": [WRITE_SCOPE]}}}
+        principal = authorize_admin(write, WRITE_SCOPE)
+        self.assertEqual(principal.subject, "subject")
+
+    def test_handler_keeps_write_scope_separate_from_read_scope(self):
+        request = event("PATCH", "/admin/participants/" + self.first_id, {"owner": "Лара"})
+        request["requestContext"] = {"authorizer": {"jwt": {"claims": {"sub": "identity-hub-subject"}, "scopes": [READ_SCOPE]}}}
+        with patch("backend.v5.handler.runtime_repository") as runtime:
+            response = handler(request)
+        runtime.assert_not_called()
+        self.assertEqual(response["statusCode"], 403)
+        self.assertEqual(self.body(response)["error"]["code"], "admin_access_denied")
+
+    def test_handler_requires_read_scope_before_repository_access(self):
+        read = event("GET", "/admin/applications")
+        read["requestContext"] = {"authorizer": {"jwt": {"claims": {"sub": "identity-hub-subject"}, "scopes": [WRITE_SCOPE]}}}
+        with patch("backend.v5.handler.runtime_repository") as runtime:
+            response = handler(read)
+        runtime.assert_not_called()
+        self.assertEqual(response["statusCode"], 403)
+        self.assertEqual(self.body(response)["error"]["code"], "admin_access_denied")
+
+    def test_every_admin_endpoint_fails_closed_without_gateway_authorization(self):
+        requests = (
+            ("GET", "/admin/applications", None),
+            ("GET", "/admin/participants/" + self.first_id, None),
+            ("PATCH", "/admin/participants/" + self.first_id, {"owner": "spoof"}),
+        )
+        for method, path, body in requests:
+            with self.subTest(method=method, path=path):
+                with patch("backend.v5.handler.runtime_repository") as runtime:
+                    response = handler(event(method, path, body))
+                runtime.assert_not_called()
+                self.assertEqual(response["statusCode"], 401)
+                self.assertEqual(self.body(response)["error"]["code"], "admin_authentication_required")
 
     def test_statuses_are_approved(self):
         self.assertEqual(STATUSES, ("Новая заявка", "На рассмотрении", "Нужен контакт", "Интервью назначено", "Интервью пройдено", "Одобрен", "Активный участник", "Пауза", "Не подходит"))

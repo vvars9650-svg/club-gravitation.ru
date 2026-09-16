@@ -1,0 +1,93 @@
+openapi: 3.0.0
+info:
+  title: GRAVITATION V5 Admin API (TEST)
+  version: 1.0.0
+  description: >-
+    Additive TEST gateway fragment for the protected Admin API. Keep the
+    existing public application and photo routes in the gateway specification.
+x-yc-apigateway:
+  variables:
+    admin_function_id:
+      default: SET_TEST_ADMIN_FUNCTION_ID
+      description: Existing TEST Cloud Function ID for backend/v5/deployment/index.py.
+    admin_function_tag:
+      default: "$latest"
+      description: TEST function tag selected by the gateway.
+    admin_audience:
+      default: aje25t7tefbfr547phru
+      description: TEST OIDC audience/client identifier; never a client secret.
+    admin_origin:
+      default: http://127.0.0.1:8000
+      description: TEST origin serving admin/index.html.
+
+components:
+  securitySchemes:
+    adminJwt:
+      type: openIdConnect
+      openIdConnectUrl: https://auth.yandex.cloud/.well-known/openid-configuration
+      x-yc-apigateway-authorizer:
+        type: jwt
+        identitySource:
+          in: header
+          name: Authorization
+          prefix: "Bearer "
+        issuers:
+          - https://auth.yandex.cloud
+        audiences:
+          - ${var.admin_audience}
+        requiredClaims:
+          - sub
+        # Do not cache an authorization decision. Public signing-key caching
+        # is safe and limits discovery traffic without extending token access.
+        jwkTtlInSeconds: 3600
+
+paths:
+  /admin/applications:
+    x-yc-apigateway-cors:
+      origin: ${var.admin_origin}
+      methods: [GET, OPTIONS]
+      allowedHeaders: [Authorization, Content-Type]
+      maxAge: 300
+    get:
+      summary: List TEST applications
+      operationId: adminListApplications
+      security:
+        - adminJwt: [admin:read]
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: ${var.admin_function_id}
+        tag: ${var.admin_function_tag}
+        payload_format_version: '0.1'
+
+  /admin/participants/{id}:
+    x-yc-apigateway-cors:
+      origin: ${var.admin_origin}
+      methods: [GET, PATCH, OPTIONS]
+      allowedHeaders: [Authorization, Content-Type]
+      maxAge: 300
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Read a TEST participant card
+      operationId: adminGetParticipant
+      security:
+        - adminJwt: [admin:read]
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: ${var.admin_function_id}
+        tag: ${var.admin_function_tag}
+        payload_format_version: '0.1'
+    patch:
+      summary: Update TEST operational fields
+      operationId: adminPatchParticipant
+      security:
+        - adminJwt: [admin:write]
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: ${var.admin_function_id}
+        tag: ${var.admin_function_tag}
+        payload_format_version: '0.1'

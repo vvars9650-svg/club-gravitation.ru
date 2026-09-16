@@ -22,6 +22,7 @@ PACKAGE_FILES = (
     "repository.py",
     "ydb_repository.py",
     "factory.py",
+    "authorizer.py",
     "admin.py",
     "handler.py",
 )

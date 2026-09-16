@@ -6,6 +6,7 @@
   'use strict';
 
   const TRANSIENT_KEY = 'gravitation.v5.admin.pkce';
+  const ADMIN_SCOPES = ['admin:read', 'admin:write'];
   const base64url = (bytes) => {
     let binary = '';
     bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
@@ -72,7 +73,9 @@
     if (!config.issuer && !config.openid_configuration_url && !config.authorization_endpoint) {
       throw new Error('oidc_configuration_required');
     }
-    return {...config, scopes: config.scopes || ['openid', 'email', 'profile']};
+    const scopes = config.scopes || ['openid', 'email', 'profile'];
+    if (!Array.isArray(scopes) || !ADMIN_SCOPES.every((scope) => scopes.includes(scope))) throw new Error('oidc_configuration_required');
+    return {...config, scopes};
   };
   async function resolveEndpoints(config, fetchImpl) {
     const known = config.authorization_endpoint && config.token_endpoint;
@@ -115,5 +118,5 @@
     }
     return {signIn, consumeCallback, getSession: () => session, getAccessToken: () => session && session.accessToken, getIdToken: () => session && session.idToken, signOut: () => { session = null; storage.removeItem(TRANSIENT_KEY); }};
   }
-  return {TRANSIENT_KEY, random, pkceChallenge, decodeJwt, normalizeOidcDisplayNameClaim, displayNameFromClaims, tokenDiagnostics, normalizeConfig, resolveEndpoints, createAuthClient};
+  return {TRANSIENT_KEY, ADMIN_SCOPES, random, pkceChallenge, decodeJwt, normalizeOidcDisplayNameClaim, displayNameFromClaims, tokenDiagnostics, normalizeConfig, resolveEndpoints, createAuthClient};
 });
