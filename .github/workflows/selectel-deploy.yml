@@ -1,0 +1,155 @@
+name: Deploy public site to Selectel
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Deploy a new release or roll back the current symlink
+        required: true
+        type: choice
+        default: deploy
+        options:
+          - deploy
+          - rollback
+      rollback_release_id:
+        description: Optional release ID; leave empty to use shared/previous-release
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: selectel-production
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: ${{ inputs.operation == 'deploy' && 'Deploy' || 'Rollback' }} public site
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: selectel-production
+
+    steps:
+      - name: Check out selected revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Node.js
+        if: inputs.operation == 'deploy'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+
+      - name: Run public release checks
+        if: inputs.operation == 'deploy'
+        run: |
+          node --check scripts/build-public.js
+          node --check assets/js/apply.js
+          node --check tests/public-release-safety.test.js
+          node --check tests/public-artifact-safety.test.js
+          node --check tests/selectel-deploy-safety.test.js
+          node tests/public-release-safety.test.js
+          node scripts/build-public.js
+          node tests/public-artifact-safety.test.js
+          node tests/selectel-deploy-safety.test.js
+
+      - name: Package verified public artifact
+        if: inputs.operation == 'deploy'
+        id: package
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          release_id="$(date -u +%Y%m%dT%H%M%SZ)-${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          archive="${RUNNER_TEMP}/gravitation-${release_id}.tar.gz"
+          tar --create --gzip --file "$archive" --directory public-dist .
+          checksum="$(sha256sum "$archive" | cut -d ' ' -f 1)"
+          printf 'release_id=%s\n' "$release_id" >> "$GITHUB_OUTPUT"
+          printf 'archive=%s\n' "$archive" >> "$GITHUB_OUTPUT"
+          printf 'checksum=%s\n' "$checksum" >> "$GITHUB_OUTPUT"
+
+      - name: Configure verified SSH connection
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SELECTEL_SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ secrets.SELECTEL_SSH_HOST }}
+          SSH_USER: ${{ secrets.SELECTEL_SSH_USER }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SELECTEL_SSH_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+          [[ -n "$SSH_PRIVATE_KEY" && -n "$SSH_HOST" && -n "$SSH_USER" && -n "$SSH_KNOWN_HOSTS" ]]
+          [[ "$SSH_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [[ "$SSH_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]]
+
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/selectel_deploy"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" | tr -d '\r' > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/selectel_deploy" "$HOME/.ssh/known_hosts"
+          ssh-keygen -F "$SSH_HOST" -f "$HOME/.ssh/known_hosts" >/dev/null
+
+          {
+            printf 'Host selectel-deploy\n'
+            printf '  HostName %s\n' "$SSH_HOST"
+            printf '  User %s\n' "$SSH_USER"
+            printf '  IdentityFile %s\n' "$HOME/.ssh/selectel_deploy"
+            printf '  UserKnownHostsFile %s\n' "$HOME/.ssh/known_hosts"
+            printf '  StrictHostKeyChecking yes\n'
+            printf '  IdentitiesOnly yes\n'
+            printf '  BatchMode yes\n'
+            printf '  PasswordAuthentication no\n'
+            printf '  KbdInteractiveAuthentication no\n'
+            printf '  ConnectTimeout 15\n'
+            printf '  LogLevel ERROR\n'
+          } > "$HOME/.ssh/config"
+          chmod 600 "$HOME/.ssh/config"
+
+          ssh selectel-deploy \
+            'test -w /srv/gravitation/releases && test -w /srv/gravitation/shared && test -L /srv/gravitation/current'
+
+      - name: Upload and activate verified release
+        if: inputs.operation == 'deploy'
+        shell: bash
+        env:
+          RELEASE_ID: ${{ steps.package.outputs.release_id }}
+          ARCHIVE: ${{ steps.package.outputs.archive }}
+          CHECKSUM: ${{ steps.package.outputs.checksum }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$RELEASE_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$ ]]
+          [[ "$CHECKSUM" =~ ^[a-f0-9]{64}$ ]]
+          ssh selectel-deploy 'umask 077; mkdir -p /srv/gravitation/shared/incoming'
+          scp "$ARCHIVE" "selectel-deploy:/srv/gravitation/shared/incoming/${RELEASE_ID}.tar.gz"
+          ssh selectel-deploy "bash -s -- deploy '$RELEASE_ID' '$CHECKSUM'" \
+            < scripts/selectel-release.sh
+
+      - name: Record deployment summary
+        if: inputs.operation == 'deploy' && success()
+        continue-on-error: true
+        shell: bash
+        env:
+          RELEASE_ID: ${{ steps.package.outputs.release_id }}
+        run: |
+          {
+            printf '### Selectel deployment prepared release\n\n'
+            printf -- '- Release ID: `%s`\n' "$RELEASE_ID"
+            printf -- '- Commit: `%s`\n' "$GITHUB_SHA"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Roll back current symlink
+        if: inputs.operation == 'rollback'
+        shell: bash
+        env:
+          ROLLBACK_RELEASE_ID: ${{ inputs.rollback_release_id }}
+        run: |
+          set -Eeuo pipefail
+          if [[ -n "$ROLLBACK_RELEASE_ID" ]]; then
+            [[ "$ROLLBACK_RELEASE_ID" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$ ]]
+          fi
+          ssh selectel-deploy "bash -s -- rollback '$ROLLBACK_RELEASE_ID' ''" \
+            < scripts/selectel-release.sh
+
+      - name: Record rollback summary
+        if: inputs.operation == 'rollback' && success()
+        continue-on-error: true
+        shell: bash
+        run: |
+          printf '### Selectel rollback completed\n' >> "$GITHUB_STEP_SUMMARY"
