@@ -6,11 +6,13 @@ const {
   FRONTEND_MODES,
   PHOTO_COMPLETE_URL,
   PHOTO_INITIATE_URL,
+  PUBLIC_SUBMISSION_MESSAGE,
   TEST_API_URL,
   TEST_FRONTEND_HOST,
   createMountedPhotoUploadAdapter,
   createPhotoUploadAdapter,
   createSubmitController,
+  mount,
   resolveFrontendMode,
 } = require('../assets/js/apply');
 
@@ -25,6 +27,176 @@ function response(status, body = {}) {
     status,
     ok: status >= 200 && status < 300,
     json: async () => body,
+  };
+}
+
+class FakeClassList {
+  constructor(...names) {
+    this.names = new Set(names);
+  }
+
+  add(name) {
+    this.names.add(name);
+  }
+
+  remove(name) {
+    this.names.delete(name);
+  }
+
+  contains(name) {
+    return this.names.has(name);
+  }
+
+  toggle(name, force) {
+    const enabled = force === undefined ? !this.names.has(name) : Boolean(force);
+    if (enabled) this.names.add(name);
+    else this.names.delete(name);
+    return enabled;
+  }
+}
+
+class FakeElement {
+  constructor(...classNames) {
+    this.classList = new FakeClassList(...classNames);
+    this.dataset = {};
+    this.style = {};
+    this.hidden = false;
+    this.disabled = false;
+    this.required = false;
+    this.checked = false;
+    this.value = '';
+    this.files = [];
+    this.textContent = '';
+    this.parentElement = {hidden: false};
+    this.listeners = new Map();
+  }
+
+  addEventListener(type, listener) {
+    const listeners = this.listeners.get(type) || [];
+    listeners.push(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  async dispatch(type, event = {}) {
+    for (const listener of this.listeners.get(type) || []) {
+      await listener(event);
+    }
+  }
+
+  setAttribute(name, value) {
+    this[name] = value;
+  }
+
+  closest() {
+    return this.closestElement || {hidden: false};
+  }
+
+  focus() {
+    this.focused = true;
+  }
+}
+
+function createPublicMountHarness() {
+  const steps = Array.from({length: 5}, (_, index) =>
+    new FakeElement(...(index === 0 ? ['form-step', 'is-active'] : ['form-step'])));
+  const tabs = Array.from({length: 5}, (_, index) =>
+    new FakeElement(...(index === 0 ? ['form-tab', 'is-active'] : ['form-tab'])));
+  const controls = {};
+  const control = (name) => {
+    controls[name] = new FakeElement();
+    return controls[name];
+  };
+
+  for (const name of [
+    'policy_acknowledged', 'personal_data_consent', 'full_name', 'age', 'gender',
+    'city', 'visit_krasnodar', 'phone', 'email', 'profile_or_messenger_url',
+    'public_profile_url', 'photo_upload', 'photo_object_id', 'occupation',
+    'life_outside_work', 'desired_connections_other', 'acquaintance_methods_other',
+    'source',
+  ]) control(name);
+
+  controls.age.options = [];
+  controls.age.add = (option) => controls.age.options.push(option);
+  controls.city.options = [];
+  controls.city.add = (option) => controls.city.options.push(option);
+  const cityVisit = new FakeElement();
+  controls.visit_krasnodar.closestElement = cityVisit;
+  controls.desired_connections = [new FakeElement()];
+  controls.acquaintance_methods = [new FakeElement()];
+
+  const photoStatus = new FakeElement();
+  const retryPhoto = new FakeElement();
+  const conditionalGroups = {
+    desired_connections: new FakeElement(),
+    acquaintance_methods: new FakeElement(),
+  };
+  const conditionalWrappers = {
+    desired_connections: new FakeElement(),
+    acquaintance_methods: new FakeElement(),
+  };
+  const form = new FakeElement();
+  form.elements = controls;
+  form.querySelectorAll = (selector) => {
+    if (selector === '.form-step') return steps;
+    if (selector === '.is-invalid') {
+      return Object.values(controls).flat()
+        .filter((element) => element.classList?.contains('is-invalid'));
+    }
+    const checked = selector.match(/^\[name="([^"]+)"\]:checked$/u);
+    if (checked) return (controls[checked[1]] || []).filter((element) => element.checked);
+    return [];
+  };
+  form.querySelector = (selector) => {
+    if (selector === '[data-photo-status]') return photoStatus;
+    if (selector === '[data-photo-retry]') return retryPhoto;
+    const group = selector.match(/^\[data-conditional-group="([^"]+)"\]$/u);
+    if (group) return conditionalGroups[group[1]];
+    const wrapper = selector.match(/^\[data-conditional="([^"]+)"\]$/u);
+    if (wrapper) return conditionalWrappers[wrapper[1]];
+    return null;
+  };
+
+  const back = new FakeElement();
+  const next = new FakeElement();
+  const status = new FakeElement();
+  const review = new FakeElement();
+  const submit = new FakeElement();
+  const progress = new FakeElement();
+  progress.closestElement = new FakeElement();
+  const mobile = new FakeElement();
+  const availability = new FakeElement();
+  const newForm = new FakeElement();
+  const applicationNumber = new FakeElement();
+  const success = new FakeElement();
+  success.querySelector = (selector) => selector === '#form-new-session'
+    ? newForm
+    : applicationNumber;
+
+  const byId = new Map([
+    ['#application-v5', form], ['#form-back', back], ['#form-next', next],
+    ['#form-status', status], ['#review', review], ['#form-submit', submit],
+    ['#form-progress-bar', progress], ['#mobile-step', mobile],
+    ['#application-availability', availability], ['#form-success', success],
+  ]);
+  const document = {
+    querySelector: (selector) => byId.get(selector) || null,
+    querySelectorAll: (selector) => selector === '.form-tab' ? tabs : [],
+  };
+  const networkCalls = [];
+  const root = {
+    document,
+    location: {hostname: '135.106.219.97', search: ''},
+    crypto: {},
+    fetch: async (...args) => {
+      networkCalls.push(args);
+      return response(500);
+    },
+    AbortController,
+  };
+
+  return {
+    root, form, steps, next, submit, status, photoStatus, retryPhoto,
+    controls, networkCalls,
   };
 }
 
@@ -56,9 +228,10 @@ async function testSubmitGuard() {
       publicCalls.push(args);
       return response(201);
     },
-    randomUUID: uuid,
     mode: FRONTEND_MODES.PUBLIC_BLOCKED,
   });
+  assert.equal(publicSubmit.getIdempotencyKey(), null);
+  assert.equal(publicSubmit.startNewSession(), null);
   const blocked = await publicSubmit.submit({full_name: 'blocked'});
   assert.equal(blocked.state, 'blocked');
   assert.equal(blocked.code, 'public_submission_blocked');
@@ -76,6 +249,57 @@ async function testSubmitGuard() {
   await testSubmit.submit({full_name: 'synthetic'});
   assert.equal(testCalls.length, 1);
   assert.equal(testCalls[0][0], TEST_API_URL);
+  assert.match(testSubmit.getIdempotencyKey(), /^v5-[0-9a-f-]{36}$/u);
+  assert.throws(
+    () => createSubmitController({
+      fetchImpl: async () => response(201),
+      mode: FRONTEND_MODES.TEST_ENABLED,
+    }),
+    /secure_random_uuid_unavailable/u,
+  );
+}
+
+async function testPublicMountWithoutSecureRandomUUID() {
+  const previousOption = global.Option;
+  global.Option = class Option {
+    constructor(text, value) {
+      this.text = text;
+      this.value = value;
+    }
+  };
+
+  try {
+    const harness = createPublicMountHarness();
+    assert.doesNotThrow(() => mount(harness.root));
+    assert.equal(harness.form.dataset.mode, FRONTEND_MODES.PUBLIC_BLOCKED);
+    assert.equal(harness.submit.disabled, true);
+    assert.equal(harness.controls.photo_upload.disabled, true);
+    assert.equal(harness.retryPhoto.disabled, true);
+
+    harness.controls.policy_acknowledged.checked = true;
+    harness.controls.personal_data_consent.checked = true;
+    harness.next.onclick();
+    assert.equal(harness.steps[0].classList.contains('is-active'), false);
+    assert.equal(harness.steps[1].classList.contains('is-active'), true);
+    assert.equal(harness.submit.disabled, true);
+
+    let prevented = false;
+    await harness.form.dispatch('submit', {
+      preventDefault: () => { prevented = true; },
+    });
+    assert.equal(prevented, true);
+    assert.equal(harness.status.dataset.state, 'blocked');
+
+    harness.controls.photo_upload.value = 'synthetic.jpg';
+    harness.controls.photo_upload.files = [{type: 'image/jpeg', size: 128}];
+    await harness.controls.photo_upload.dispatch('change');
+    assert.equal(harness.controls.photo_upload.value, '');
+    assert.equal(harness.photoStatus.textContent, PUBLIC_SUBMISSION_MESSAGE);
+    assert.deepEqual(harness.networkCalls, []);
+  } finally {
+    if (previousOption === undefined) delete global.Option;
+    else global.Option = previousOption;
+  }
 }
 
 async function testPhotoGuard() {
@@ -170,11 +394,13 @@ function testPublicCopyAndNoLegacyFallback() {
   assert.doesNotMatch(visible, /\b(?:TEST|PROD|API|backend|endpoint|server|JWT|YDB|Object Storage|environment)\b/iu);
   assert.doesNotMatch(js, /script\.google|google apps script/iu);
   assert.doesNotMatch(js, /fallback/iu);
+  assert.doesNotMatch(js, /Math\.random/u);
 }
 
 (async () => {
   testModeMatrix();
   await testSubmitGuard();
+  await testPublicMountWithoutSecureRandomUUID();
   await testPhotoGuard();
   await testMountedDefaultPhotoAdapterUsesResolvedMode();
   testPublicCopyAndNoLegacyFallback();

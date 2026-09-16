@@ -117,6 +117,9 @@
   }
 
   function createIdempotencyKey(randomUUID) {
+    if (typeof randomUUID !== 'function') {
+      throw new Error('secure_random_uuid_unavailable');
+    }
     const uuid = randomUUID();
     const key = `v5-${uuid}`;
 
@@ -363,7 +366,9 @@
     timeoutMs = 15000,
     AbortControllerImpl,
   }) {
-    let idempotencyKey = createIdempotencyKey(randomUUID);
+    let idempotencyKey = mode === FRONTEND_MODES.TEST_ENABLED
+      ? createIdempotencyKey(randomUUID)
+      : null;
     let state = 'idle';
     let inFlight = null;
 
@@ -426,7 +431,7 @@
     }
 
     function startNewSession() {
-      if (inFlight) {
+      if (mode !== FRONTEND_MODES.TEST_ENABLED || inFlight) {
         return null;
       }
 
@@ -455,7 +460,9 @@
     const isTestEnabled = mode === FRONTEND_MODES.TEST_ENABLED;
     const controller = createSubmitController({
       fetchImpl: root.fetch.bind(root),
-      randomUUID: root.crypto.randomUUID.bind(root.crypto),
+      randomUUID: isTestEnabled && typeof root.crypto?.randomUUID === 'function'
+        ? root.crypto.randomUUID.bind(root.crypto)
+        : undefined,
       mode,
       AbortControllerImpl: root.AbortController,
     });
