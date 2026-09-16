@@ -14,11 +14,11 @@
 <main class="apply-layout">
   <aside class="apply-intro"><p class="eyebrow eyebrow--gold">ВОЗМОЖНО, ТВОИ ЛЮДИ УЖЕ ЗДЕСЬ</p><h1>ПОДАТЬ<br>ЗАЯВКУ</h1></aside>
   <section class="form-card">
-    <p class="form-availability" id="application-availability" role="status" hidden>Приём заявок временно недоступен. Мы откроем его после завершения подготовки.</p>
-    <div class="form-progress"><span id="form-progress-bar"></span></div>
-    <div class="mobile-step" id="mobile-step"></div>
-    <nav class="form-tabs" aria-label="Шаги анкеты"><button class="form-tab is-active" type="button">Согласие</button><button class="form-tab" type="button">Контакты</button><button class="form-tab" type="button">О вас</button><button class="form-tab" type="button">Знакомства</button><button class="form-tab" type="button">Проверка</button></nav>
-    <form id="application-v5" novalidate>
+    <p class="form-availability" id="application-availability" role="status">Приём заявок временно недоступен. Мы откроем его после завершения подготовки.</p>
+    <div class="form-progress" hidden><span id="form-progress-bar"></span></div>
+    <div class="mobile-step" id="mobile-step" hidden></div>
+    <nav class="form-tabs" aria-label="Шаги анкеты" hidden><button class="form-tab is-active" type="button">Согласие</button><button class="form-tab" type="button">Контакты</button><button class="form-tab" type="button">О вас</button><button class="form-tab" type="button">Знакомства</button><button class="form-tab" type="button">Проверка</button></nav>
+    <form id="application-v5" novalidate hidden>
       <section class="form-step is-active" data-step="0">
         <h2>Согласие</h2>
         <p class="sensitive-warning">Не указывайте сведения специальных категорий персональных данных.</p>

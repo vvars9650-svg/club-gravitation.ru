@@ -3,4 +3,5 @@
 @media(max-width:560px){.apply-intro{padding:52px 20px 38px}.apply-intro h1{font-size:3rem}.form-card{padding:22px 20px 28px}.dropzone{grid-template-columns:1fr;text-align:center}.photo-preview{margin:auto}.review-grid{grid-template-columns:1fr;gap:4px}.review-grid dd{margin-bottom:8px}.form-next{min-width:48%}.consent{font-size:.78rem}}
 .form-status[data-state="submitting"]{color:#766b62}.form-status[data-state="recoverable_error"]{color:#8a5b27}.form-status[data-state="validation_error"]{color:#9c2c2c}.form-submit:disabled{cursor:wait;opacity:.62}
 .form-availability{border:1px solid rgba(156,44,44,.2);border-radius:12px;background:#fff7f0;color:#604f40;font-size:.85rem;line-height:1.5;margin:0 0 22px;padding:14px 16px}
+.page-apply [hidden]{display:none!important}
 .form-progress span{width:20%}.form-tabs{grid-template-columns:repeat(5,1fr)}.form-step label>small{display:block;color:#85786d;font-size:.7rem;line-height:1.45;margin-top:6px}.sensitive-warning{border-left:3px solid #9c7148;background:#f5ece1;color:#604f40;padding:12px 14px;border-radius:8px;font-size:.8rem;line-height:1.5;margin:0 0 20px}

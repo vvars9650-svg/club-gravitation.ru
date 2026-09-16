@@ -135,6 +135,7 @@ function createPublicMountHarness() {
     acquaintance_methods: new FakeElement(),
   };
   const form = new FakeElement();
+  form.hidden = true;
   form.elements = controls;
   form.querySelectorAll = (selector) => {
     if (selector === '.form-step') return steps;
@@ -163,8 +164,12 @@ function createPublicMountHarness() {
   const submit = new FakeElement();
   const progress = new FakeElement();
   progress.closestElement = new FakeElement();
+  progress.closestElement.hidden = true;
   const mobile = new FakeElement();
+  mobile.hidden = true;
   const availability = new FakeElement();
+  const tabsBox = new FakeElement();
+  tabsBox.hidden = true;
   const newForm = new FakeElement();
   const applicationNumber = new FakeElement();
   const success = new FakeElement();
@@ -177,6 +182,7 @@ function createPublicMountHarness() {
     ['#form-status', status], ['#review', review], ['#form-submit', submit],
     ['#form-progress-bar', progress], ['#mobile-step', mobile],
     ['#application-availability', availability], ['#form-success', success],
+    ['.form-tabs', tabsBox], ['.form-progress', progress.closestElement],
   ]);
   const document = {
     querySelector: (selector) => byId.get(selector) || null,
@@ -195,7 +201,8 @@ function createPublicMountHarness() {
   };
 
   return {
-    root, form, steps, next, submit, status, photoStatus, retryPhoto,
+    root, form, steps, back, next, submit, status, photoStatus, retryPhoto,
+    progressBox: progress.closestElement, mobile, availability, tabsBox,
     controls, networkCalls,
   };
 }
@@ -259,7 +266,24 @@ async function testSubmitGuard() {
   );
 }
 
-async function testPublicMountWithoutSecureRandomUUID() {
+function testPublicMountShowsOnlyBlockedState() {
+  const harness = createPublicMountHarness();
+  assert.doesNotThrow(() => mount(harness.root));
+  assert.equal(harness.form.dataset.mode, FRONTEND_MODES.PUBLIC_BLOCKED);
+  assert.equal(harness.availability.hidden, false);
+  assert.equal(harness.availability.textContent, PUBLIC_SUBMISSION_MESSAGE);
+  assert.equal(harness.form.hidden, true);
+  assert.equal(harness.progressBox.hidden, true);
+  assert.equal(harness.tabsBox.hidden, true);
+  assert.equal(harness.mobile.hidden, true);
+  assert.equal(harness.next.onclick, undefined);
+  assert.equal(harness.back.onclick, undefined);
+  assert.equal(harness.form.listeners.has('submit'), false);
+  assert.equal(harness.controls.photo_upload.listeners.has('change'), false);
+  assert.deepEqual(harness.networkCalls, []);
+}
+
+function testEnabledMountKeepsFullForm() {
   const previousOption = global.Option;
   global.Option = class Option {
     constructor(text, value) {
@@ -270,31 +294,27 @@ async function testPublicMountWithoutSecureRandomUUID() {
 
   try {
     const harness = createPublicMountHarness();
+    harness.root.location = TEST_LOCATION;
+    harness.root.crypto = {randomUUID: uuid};
     assert.doesNotThrow(() => mount(harness.root));
-    assert.equal(harness.form.dataset.mode, FRONTEND_MODES.PUBLIC_BLOCKED);
-    assert.equal(harness.submit.disabled, true);
-    assert.equal(harness.controls.photo_upload.disabled, true);
-    assert.equal(harness.retryPhoto.disabled, true);
+    assert.equal(harness.form.dataset.mode, FRONTEND_MODES.TEST_ENABLED);
+    assert.equal(harness.availability.hidden, true);
+    assert.equal(harness.form.hidden, false);
+    assert.equal(harness.progressBox.hidden, false);
+    assert.equal(harness.tabsBox.hidden, false);
+    assert.equal(harness.mobile.hidden, false);
+    assert.equal(harness.submit.disabled, false);
+    assert.equal(harness.controls.photo_upload.disabled, false);
+    assert.equal(typeof harness.next.onclick, 'function');
+    assert.equal(typeof harness.back.onclick, 'function');
+    assert.equal(harness.form.listeners.has('submit'), true);
+    assert.equal(harness.controls.photo_upload.listeners.has('change'), true);
 
     harness.controls.policy_acknowledged.checked = true;
     harness.controls.personal_data_consent.checked = true;
     harness.next.onclick();
     assert.equal(harness.steps[0].classList.contains('is-active'), false);
     assert.equal(harness.steps[1].classList.contains('is-active'), true);
-    assert.equal(harness.submit.disabled, true);
-
-    let prevented = false;
-    await harness.form.dispatch('submit', {
-      preventDefault: () => { prevented = true; },
-    });
-    assert.equal(prevented, true);
-    assert.equal(harness.status.dataset.state, 'blocked');
-
-    harness.controls.photo_upload.value = 'synthetic.jpg';
-    harness.controls.photo_upload.files = [{type: 'image/jpeg', size: 128}];
-    await harness.controls.photo_upload.dispatch('change');
-    assert.equal(harness.controls.photo_upload.value, '');
-    assert.equal(harness.photoStatus.textContent, PUBLIC_SUBMISSION_MESSAGE);
     assert.deepEqual(harness.networkCalls, []);
   } finally {
     if (previousOption === undefined) delete global.Option;
@@ -387,6 +407,7 @@ async function testMountedDefaultPhotoAdapterUsesResolvedMode() {
 function testPublicCopyAndNoLegacyFallback() {
   const html = fs.readFileSync('apply/index.html', 'utf8');
   const js = fs.readFileSync('assets/js/apply.js', 'utf8');
+  const css = fs.readFileSync('assets/css/apply.css', 'utf8');
   const visible = html.replace(/<script[\s\S]*?<\/script>/giu, '')
     .replace(/<[^>]+>/gu, ' ')
     .replace(/\s+/gu, ' ');
@@ -395,12 +416,19 @@ function testPublicCopyAndNoLegacyFallback() {
   assert.doesNotMatch(js, /script\.google|google apps script/iu);
   assert.doesNotMatch(js, /fallback/iu);
   assert.doesNotMatch(js, /Math\.random/u);
+  assert.match(html, /id="application-availability" role="status">Приём заявок временно недоступен\. Мы откроем его после завершения подготовки\.<\/p>/u);
+  assert.match(html, /class="form-progress" hidden/u);
+  assert.match(html, /class="mobile-step" id="mobile-step" hidden/u);
+  assert.match(html, /class="form-tabs"[^>]* hidden/u);
+  assert.match(html, /<form id="application-v5" novalidate hidden>/u);
+  assert.match(css, /\.page-apply \[hidden\]\{display:none!important\}/u);
 }
 
 (async () => {
   testModeMatrix();
   await testSubmitGuard();
-  await testPublicMountWithoutSecureRandomUUID();
+  testPublicMountShowsOnlyBlockedState();
+  testEnabledMountKeepsFullForm();
   await testPhotoGuard();
   await testMountedDefaultPhotoAdapterUsesResolvedMode();
   testPublicCopyAndNoLegacyFallback();

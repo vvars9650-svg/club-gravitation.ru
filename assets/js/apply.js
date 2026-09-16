@@ -458,25 +458,44 @@
 
     const mode = resolveFrontendMode(root.location);
     const isTestEnabled = mode === FRONTEND_MODES.TEST_ENABLED;
+    const tabsBox = document.querySelector('.form-tabs');
+    const progressBox = document.querySelector('.form-progress');
+    const mobile = document.querySelector('#mobile-step');
+    const availability = document.querySelector('#application-availability');
+
+    if (!isTestEnabled) {
+      form.dataset.mode = FRONTEND_MODES.PUBLIC_BLOCKED;
+      form.hidden = true;
+      progressBox.hidden = true;
+      tabsBox.hidden = true;
+      mobile.hidden = true;
+      availability.hidden = false;
+      availability.textContent = PUBLIC_SUBMISSION_MESSAGE;
+      return;
+    }
+
+    availability.hidden = true;
+    form.hidden = false;
+    progressBox.hidden = false;
+    tabsBox.hidden = false;
+    mobile.hidden = false;
+
+    const tabs = [...document.querySelectorAll('.form-tab')];
+    const progress = document.querySelector('#form-progress-bar');
     const controller = createSubmitController({
       fetchImpl: root.fetch.bind(root),
-      randomUUID: isTestEnabled && typeof root.crypto?.randomUUID === 'function'
+      randomUUID: typeof root.crypto?.randomUUID === 'function'
         ? root.crypto.randomUUID.bind(root.crypto)
         : undefined,
       mode,
       AbortControllerImpl: root.AbortController,
     });
     const steps = [...form.querySelectorAll('.form-step')];
-    const tabs = [...document.querySelectorAll('.form-tab')];
     const back = document.querySelector('#form-back');
     const next = document.querySelector('#form-next');
     const status = document.querySelector('#form-status');
     const review = document.querySelector('#review');
     const submit = document.querySelector('#form-submit');
-    const progress = document.querySelector('#form-progress-bar');
-    const progressBox = progress.closest('.form-progress');
-    const mobile = document.querySelector('#mobile-step');
-    const availability = document.querySelector('#application-availability');
     let success = document.querySelector('#form-success');
     if (!success) {
       success = document.createElement('section');
@@ -713,7 +732,7 @@
       form.hidden = false;
       progressBox.hidden = false;
       mobile.hidden = false;
-      tabs[0].parentElement.hidden = false;
+      tabsBox.hidden = false;
       success.hidden = true;
     }
 
@@ -721,7 +740,7 @@
       form.hidden = true;
       progressBox.hidden = true;
       mobile.hidden = true;
-      tabs[0].parentElement.hidden = true;
+      tabsBox.hidden = true;
       success.hidden = false;
       success.querySelector('[data-application-number]').textContent =
         `Заявка №${applicationNumber}`;
@@ -869,16 +888,7 @@
       render();
     };
 
-    if (!isTestEnabled) {
-      form.dataset.mode = FRONTEND_MODES.PUBLIC_BLOCKED;
-      availability.hidden = false;
-      availability.textContent = PUBLIC_SUBMISSION_MESSAGE;
-      photoInput.disabled = true;
-      retryPhoto.disabled = true;
-      photoStatus.textContent = PUBLIC_SUBMISSION_MESSAGE;
-    } else {
-      form.dataset.mode = FRONTEND_MODES.TEST_ENABLED;
-    }
+    form.dataset.mode = FRONTEND_MODES.TEST_ENABLED;
     render();
   }
 
