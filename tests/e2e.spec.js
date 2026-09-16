@@ -229,3 +229,26 @@ test('mobile menu still exposes all main routes', async ({ page }) => {
   await expect(page.locator('.site-nav a[href="/founders/"]')).toBeVisible();
   await expect(page.locator('.site-nav a[href="/apply/"]')).toBeVisible();
 });
+
+test('public admin is a closed page without test integrations', async ({ page }) => {
+  const requests = [];
+  page.on('request', request => requests.push(request.url()));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, '/admin/');
+  await expect(page.locator('body')).toContainText('Раздел закрыт');
+  await expect(page.locator('body')).toContainText('Вход для сотрудников временно недоступен.');
+  expect(await page.locator('script').count()).toBe(0);
+  expect(requests.some(url => /admin-config|admin-auth|\/admin\/applications|127\.0\.0\.1:8000|openid|oauth|d5ds805l71s68liu6ge4/iu.test(url))).toBeFalsy();
+});
+
+test('public application remains visibly blocked and sends no test request', async ({ page }) => {
+  const requests = [];
+  page.on('request', request => requests.push(request.url()));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, '/apply/');
+  await expect(page.locator('#application-availability')).toBeVisible();
+  await expect(page.locator('#application-availability')).toContainText('Приём заявок временно недоступен.');
+  await page.locator('#application-v5').evaluate(form => form.dispatchEvent(new Event('submit', {bubbles: true, cancelable: true})));
+  await expect(page.locator('#form-status')).toContainText('Приём заявок временно недоступен.');
+  expect(requests.some(url => /d5ds805l71s68liu6ge4|applications|storage\.yandexcloud\.net/iu.test(url))).toBeFalsy();
+});

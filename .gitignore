@@ -2,3 +2,6 @@ __pycache__/
 *.py[cod]
 backend/v5/dist/
 .codex/
+public-dist/
+test-results/
+playwright-report/
