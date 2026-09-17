@@ -21,12 +21,12 @@
     return TEST_ADMIN_API_URL;
   };
   class ApiError extends Error { constructor(code, status) { super(code); this.code = code; this.status = status; } }
-  function createClient(root, fetchImpl, getAccessToken, onAuthFailure) {
+  function createClient(root, fetchImpl, getGatewayToken, onAuthFailure) {
     let base;
     try { base = endpoint(root); } catch { base = ''; }
     async function request(path, options = {}) {
       if (!base) throw new ApiError('admin_not_configured');
-      const token = getAccessToken && getAccessToken();
+      const token = getGatewayToken && getGatewayToken();
       if (!token) throw new ApiError('authentication_required', 401);
       const response = await fetchImpl(`${base}${path}`, { ...options, headers: {'Authorization': `Bearer ${token}`, ...(options.headers || {})} });
       if (response.status === 401) { onAuthFailure && onAuthFailure('expired'); throw new ApiError('session_expired', 401); }
@@ -54,7 +54,7 @@
       endpoint(root);
       auth = authApi.createAuthClient({config: runtimeConfig.auth, fetchImpl: root.fetch.bind(root), cryptoImpl: root.crypto, storage: root.sessionStorage, location: root.location});
     } catch { showSignedOut('Вход временно недоступен. Обратитесь к ответственному.'); return; }
-    const client = createClient(root, root.fetch.bind(root), () => auth.getAccessToken(), authFailure);
+    const client = createClient(root, root.fetch.bind(root), () => auth.getGatewayToken(), authFailure);
     const query = () => { const [sort, order] = ui.sort.value.split(':'); return {q: ui.search.value.trim(), lifecycle_status: ui.status.value, owner: ui.owner.value.trim(), priority: ui.priority.value, sort, order}; };
     const load = async () => { state(ui.state, 'Загрузка заявок…', 'loading'); list.replaceChildren(); try { const body = await client.list(query()); if (body.environment !== 'TEST') throw new ApiError('environment'); const rows = body.applications || []; if (!rows.length) { state(ui.state, 'Заявок по выбранным условиям нет.', 'empty'); return; } state(ui.state, `Найдено: ${rows.length}`, 'ready'); rows.forEach((row) => { const tr = doc.createElement('tr'); ['submitted_at','full_name','age','city','phone','telegram','preferred_contact','lifecycle_status','owner','priority','next_action','next_contact_at','decision'].forEach((field, index) => { const td = doc.createElement('td'); if (index === 1) { const button = doc.createElement('button'); button.textContent = text(row[field]); button.onclick = () => openCard(row.participant_id); td.append(button); } else td.textContent = displayValue(field, row[field]); tr.append(td); }); list.append(tr); }); } catch (error) { state(ui.state, error.code === 'access_denied' ? 'У вас нет прав для просмотра заявок.' : error.code === 'session_expired' ? 'Сеанс завершён. Войдите снова.' : 'Сервис временно недоступен. Попробуйте позже.', 'error'); } };
     const section = (title, values) => `<section class="card-section"><h3>${esc(title)}</h3><dl class="card-grid">${values.map(([key, value]) => `<div><dt>${esc(labels[key] || key)}</dt><dd>${esc(Array.isArray(value) ? value.join(', ') : value)}</dd></div>`).join('')}</dl></section>`;

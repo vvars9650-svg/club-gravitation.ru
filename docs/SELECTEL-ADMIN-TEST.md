@@ -41,8 +41,11 @@ fallback. Любой другой build origin отклоняется.
    нужны, так как браузер отправляет bearer token, а не cookie.
 4. В OIDC application `gravitation-v5-admin-test` должен быть назначен только
    Влад. SPA запрашивает только `openid email profile`; custom Admin scopes не
-   используются. Gateway проверяет issuer, audience `aje25t7tefbfr547phru` и
-   обязательный `sub`. Валидный member token даёт полный TEST Admin read/write.
+   используются. Для вызовов API SPA передаёт именно OIDC `id_token` как
+   `Authorization: Bearer`; OAuth `access_token` не используется и не имеет
+   fallback-семантики. Gateway проверяет issuer, audience
+   `aje25t7tefbfr547phru` и обязательный `sub`. Валидный member token даёт
+   полный TEST Admin read/write.
 
 Отдельной read-only роли на этом этапе нет. Её добавление потребует новой модели
 claims/groups и отдельной security review.

@@ -131,12 +131,12 @@
       storage.removeItem(TRANSIENT_KEY);
       if (!response.ok) throw new Error('oidc_token_exchange_failed');
       const tokens = await response.json();
-      if (!tokens.access_token) throw new Error('oidc_token_missing');
-      const claims = decodeJwt(tokens.id_token || tokens.access_token);
-      session = {accessToken: tokens.access_token, idToken: tokens.id_token || null, user: {name: displayNameFromClaims(claims), email: claims.email || ''}};
+      if (typeof tokens.id_token !== 'string' || !tokens.id_token.trim()) throw new Error('oidc_id_token_missing');
+      const claims = decodeJwt(tokens.id_token);
+      session = {gatewayToken: tokens.id_token, idToken: tokens.id_token, user: {name: displayNameFromClaims(claims), email: claims.email || ''}};
       return session;
     }
-    return {signIn, consumeCallback, getSession: () => session, getAccessToken: () => session && session.accessToken, getIdToken: () => session && session.idToken, signOut: () => { session = null; storage.removeItem(TRANSIENT_KEY); }};
+    return {signIn, consumeCallback, getSession: () => session, getGatewayToken: () => session && session.gatewayToken, getIdToken: () => session && session.idToken, signOut: () => { session = null; storage.removeItem(TRANSIENT_KEY); }};
   }
   return {TRANSIENT_KEY, OIDC_SCOPES, TEST_ISSUER, TEST_DISCOVERY_URL, TEST_CLIENT_ID, random, pkceChallenge, decodeJwt, normalizeOidcDisplayNameClaim, displayNameFromClaims, tokenDiagnostics, normalizeConfig, resolveEndpoints, createAuthClient};
 });

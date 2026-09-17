@@ -68,11 +68,12 @@ supported scopes `openid email profile` (`groups` is not requested). Direct endp
 also be injected as `authorization_endpoint` and `token_endpoint`. No client
 secret, token, or production configuration belongs in the repository.
 
-The access token is memory-only. The transient PKCE verifier/state is held in
-`sessionStorage` solely across the authorization redirect; no `localStorage` is
-used. The Admin API client sends `Authorization: Bearer <token>`, never cookie
-credentials. On 401 it signs out locally and does not retry PATCH; on 403 it
-shows access denied.
+The OIDC ID token is held in memory as the Gateway bearer token; the OAuth
+access token is not stored or sent to the Admin API. The transient PKCE
+verifier/state is held in `sessionStorage` solely across the authorization
+redirect; no `localStorage` is used. The Admin API client sends
+`Authorization: Bearer <id_token>`, never cookie credentials. On 401 it signs
+out locally and does not retry PATCH; on 403 it shows access denied.
 
 For `/admin/*`, `handler.py` delegates to `authorizer.py`, which reads only
 `requestContext.authorizer.jwt.claims.sub`. Missing context or `sub` fails
