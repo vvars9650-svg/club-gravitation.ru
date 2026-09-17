@@ -8,7 +8,7 @@ from backend.v5.domain import DomainError
 from backend.v5.migration_ledger import validate_migration_id
 from backend.v5.repository import FakeRepository
 from backend.v5.service import submit
-from backend.v5.tests.test_v5 import payload_with_photo
+from backend.v5.tests.test_v5 import P, payload_with_photo
 
 
 class FailingRepository(FakeRepository):
@@ -29,7 +29,7 @@ class ApplicationNumberTests(unittest.TestCase):
     def test_first_and_second_new_applications_allocate_sequential_numbers(self):
         repo = FakeRepository()
         first_payload = payload_with_photo(repo, "number-first")
-        second_payload = payload_with_photo(repo, "number-second")
+        second_payload = payload_with_photo(repo, "number-second", {**P, "phone": "+79990000002"})
 
         first, _ = submit(first_payload, "number-first", repo, "request-first")
         second, _ = submit(second_payload, "number-second", repo, "request-second")
@@ -65,7 +65,7 @@ class ApplicationNumberTests(unittest.TestCase):
         with self.assertRaisesRegex(DomainError, "idempotency_conflict"):
             submit({**first_payload, "full_name": "Changed"}, "number-conflict", repo, "request-conflict")
 
-        next_payload = payload_with_photo(repo, "number-after-conflict")
+        next_payload = payload_with_photo(repo, "number-after-conflict", {**P, "phone": "+79990000002"})
         next_record, _ = submit(next_payload, "number-after-conflict", repo, "request-next")
         self.assertEqual(first["application_number"], 1)
         self.assertEqual(next_record["application_number"], 2)
@@ -91,7 +91,7 @@ class ApplicationNumberTests(unittest.TestCase):
         def worker(index):
             key = "number-concurrent-" + str(index)
             try:
-                payload = payload_with_photo(repo, key)
+                payload = payload_with_photo(repo, key, {**P, "phone": "+7999000" + str(index).zfill(4)})
                 barrier.wait()
                 record, replay = submit(payload, key, repo, "request-" + str(index))
                 outcomes.append((record["application_number"], replay))
@@ -108,7 +108,7 @@ class ApplicationNumberTests(unittest.TestCase):
         self.assertEqual(sorted(number for number, replay in outcomes), list(range(1, 9)))
         self.assertTrue(all(replay is False for _, replay in outcomes))
 
-    def test_repeat_participant_gets_new_number_and_application_id_stays_technical(self):
+    def test_repeat_participant_keeps_original_number_and_application(self):
         repo = FakeRepository()
         first_payload = payload_with_photo(repo, "number-repeat-first")
         second_payload = payload_with_photo(repo, "number-repeat-second")
@@ -116,8 +116,10 @@ class ApplicationNumberTests(unittest.TestCase):
         second, _ = submit(second_payload, "number-repeat-second", repo, "request-second")
 
         self.assertEqual(first["application_number"], 1)
-        self.assertEqual(second["application_number"], 2)
-        self.assertNotEqual(first["application_id"], second["application_id"])
+        self.assertEqual(second["application_number"], 1)
+        self.assertEqual(first["application_id"], second["application_id"])
+        self.assertTrue(second["duplicate_submission"])
+        self.assertEqual(repo.application_counters, {"TEST": 1})
         self.assertTrue(first["application_id"].startswith("APP-"))
         self.assertTrue(second["application_id"].startswith("APP-"))
 

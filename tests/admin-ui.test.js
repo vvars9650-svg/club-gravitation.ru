@@ -5,6 +5,7 @@ const auth = require('../assets/js/admin-auth.js');
 const adminSource = fs.readFileSync(require.resolve('../assets/js/admin.js'), 'utf8');
 const configSource = fs.readFileSync(require.resolve('../assets/js/admin-config.test.js'), 'utf8');
 const adminHtml = fs.readFileSync(require.resolve('../admin/index.html'), 'utf8');
+const adminCss = fs.readFileSync(require.resolve('../assets/css/admin.css'), 'utf8');
 const visibleAdminHtml = adminHtml.replace(/<script\b[^>]*>[\s\S]*?<\/script>/giu, ' ').replace(/<[^>]+>/gu, ' ').replace(/\s+/gu, ' ').trim();
 
 const storage = () => { const values = new Map(); return {getItem: (key) => values.get(key) || null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key), values}; };
@@ -12,10 +13,14 @@ const config = {environment: 'TEST', issuer: auth.TEST_ISSUER, openid_configurat
 const runtime = {environment: 'TEST', api_url: admin.TEST_ADMIN_API_URL, auth: config};
 const cryptoImpl = {getRandomValues: (bytes) => { bytes.fill(7); return bytes; }, subtle: crypto.subtle};
 
-assert.equal(admin.STATUSES.length, 9);
+assert.equal(admin.STATUSES.length, 10);
 assert.deepEqual(auth.OIDC_SCOPES, ['openid', 'email', 'profile']);
-assert.deepEqual(admin.OPERATIONAL, ['lifecycle_status', 'owner', 'priority', 'next_action', 'next_contact_at', 'decision', 'internal_comment']);
-assert.deepEqual(admin.DISPLAY_VALUES, {application_pending:'Новая заявка', pending:'На рассмотрении', approved:'Одобрена', rejected:'Отказано'});
+assert.deepEqual(admin.OPERATIONAL, ['owner', 'priority', 'next_action', 'next_contact_at', 'decision', 'internal_comment']);
+assert.deepEqual(admin.DECISIONS, admin.STATUSES.slice(1));
+assert.deepEqual(admin.OWNERS, ['Влад', 'Лара']);
+assert.deepEqual(admin.PRIORITIES, ['Высокий', 'Средний', 'Низкий']);
+assert.deepEqual(admin.WORKFLOW_ACTIONS['Интервью назначено'], ['Провести интервью']);
+assert.deepEqual(admin.WORKFLOW_ACTIONS['Пауза'], ['Связаться позже']);
 assert.ok(admin.FIELDS.includes('occupation'));
 assert.ok(admin.FIELDS.includes('acquaintance_methods'));
 assert.equal(admin.FIELDS.includes('unacceptable_behavior'), false);
@@ -29,7 +34,7 @@ assert.match(adminSource, /За что вас ценят друзья и зна�
 assert.match(adminSource, /Какие знакомства вам сейчас интересны\?/);
 assert.match(adminSource, /Откуда узнали о нас\?/);
 assert.doesNotMatch(adminSource, /Статус заявки \(legacy\)/);
-assert.match(adminSource, /telegram:'Профиль или мессенджер'/);
+assert.match(adminSource, /profile_or_messenger_url:'Профиль или мессенджер'/);
 assert.match(adminHtml, /Профиль или мессенджер/);
 assert.doesNotMatch(adminHtml, />Telegram</);
 assert.match(visibleAdminHtml, /ГРАВИТАЦИЯ ЗАЯВКИ/);
@@ -38,6 +43,16 @@ assert.doesNotMatch(visibleAdminHtml, /\b(?:JWT|OIDC|API|token|scope|authorizer|
 assert.match(adminSource, /У вас нет прав для просмотра заявок/);
 assert.match(adminSource, /У вас нет прав для этого действия/);
 assert.match(adminSource, /Сервис временно недоступен\. Попробуйте позже/);
+assert.match(adminSource, /AbortController/);
+assert.match(adminSource, /duplicate_attempt_count/);
+assert.match(adminSource, /События заявки/);
+assert.doesNotMatch(adminSource, /История заявок/);
+assert.match(adminHtml, /card-header/);
+assert.match(adminCss, /\.admin-table-wrap th\{position:sticky/);
+assert.match(adminCss, /\.card-header\{position:sticky/);
+assert.match(adminCss, /\.admin-page\{min-height:100vh/);
+assert.match(adminSource, /list\.replaceChildren\(\)/);
+assert.doesNotMatch(adminSource, /new Set\([^)]*application/);
 assert.match(adminSource, /=> auth\.getGatewayToken\(\)/);
 assert.doesNotMatch(adminSource, /=> auth\.getAccessToken\(\)/);
 assert.ok(!fs.readFileSync(require.resolve('../assets/js/admin-auth.js'), 'utf8').includes('localStorage'));
@@ -52,6 +67,13 @@ assert.doesNotMatch(configSource, /admin:read|admin:write/);
 assert.match(adminHtml, /admin-config\.test\.js[\s\S]*admin-auth\.js/);
 
 (async () => {
+  class TestAbortController { constructor() { this.signal = {aborted:false}; } abort() { this.signal.aborted = true; } }
+  const gate = admin.createLatestRequest(TestAbortController);
+  const stale = gate.begin();
+  const latest = gate.begin();
+  assert.equal(stale.signal.aborted, true);
+  assert.equal(gate.isLatest(stale.generation), false);
+  assert.equal(gate.isLatest(latest.generation), true);
   assert.deepEqual(auth.normalizeConfig(config).scopes, ['openid', 'email', 'profile']);
   assert.throws(() => auth.normalizeConfig({...config, scopes: ['openid', 'email']}), /oidc_configuration_required/);
   assert.throws(() => auth.normalizeConfig({...config, scopes: [...config.scopes, 'admin:read']}), /oidc_configuration_required/);

@@ -45,17 +45,84 @@ The runtime repository is created lazily on the first POST and reused for the li
 
 ## Protected Admin API (TEST-ready)
 
-`backend/v5/admin.py` provides the TEST-only Admin contract for list
-applications, participant card, and operational PATCH. `authorizer.py` is the
+`backend/v5/admin.py` provides the TEST-only Admin contract for the application
+list, application card, and application-scoped operational PATCH. `authorizer.py` is the
 backend authorization boundary for a Yandex API Gateway JWT authorizer:
 unauthenticated `/admin/*` requests fail closed.
-There is no header, token, or development bypass in this code. The only mutable fields are
-`lifecycle_status`, `owner`, `priority`, `next_action`, `next_contact_at`,
-`decision`, and `internal_comment`. Each PATCH emits a minimal `audit_log` action
+There is no header, token, or development bypass in this code. Status is read-only;
+the only mutable fields are `owner`, `priority`, `next_action`, `next_contact_at`,
+`decision`, and `internal_comment`. A non-empty decision atomically becomes the
+Application status. Each PATCH emits a minimal `audit_log` action
 containing a hashed actor token and changed field names, never a participant
-payload. The existing schema is unchanged. Authorization and gateway configuration are
+payload. Authorization and gateway configuration are
 documented in `ADMIN-AUTH.md` and `deployment/admin-api.test.yaml`; they are
 TEST-only artifacts and are not deployed by this repository.
+
+## Admin CRM V2 migration 008 (prepared, not applied)
+
+`schema/008_admin_crm_v2.sql` is additive TEST-only DDL. It adds Application-owned
+`owner`, `priority`, `next_action`, `next_contact_at`, and `internal_comment`, plus
+the duplicate warning summary. Existing `application_status` and `decision` from
+migration 005 become the CRM V2 status/decision fields. It creates:
+
+- `application_phone_keys`, whose `(environment, normalized_phone)` primary key
+  maps the normalized pilot phone to the one original Application and protects
+  concurrent POST requests at the database transaction boundary;
+- `application_submission_keys`, which maps a rejected duplicate submission's
+  deterministic idempotency identifier to the original Application without
+  retaining a second form or consuming an application number.
+
+The runtime handles a duplicate inside the same serializable transaction: it
+keeps the original Application and Participant unchanged, increments the original
+warning count, records `duplicate_submission|basis=normalized_phone` in
+`audit_log`, records a minimal technical success event, schedules the unused new
+photo for deletion, and returns the original number. Secondary identifiers are
+not automatic merge keys.
+
+Migration 008 deliberately contains no data-changing backfill. Before deploying
+the new TEST function, use only synthetic TEST data and perform this reviewed
+reconciliation:
+
+1. Export an ID-only inventory grouped by the already-normalized `applications.phone`.
+   Include application ID, participant ID, number, and submitted time; do not put
+   contact values in logs or tickets.
+2. For each phone with one row, insert that row into `application_phone_keys`.
+   Initialize missing operational values on that Application to empty values,
+   status `Новая заявка`, next action `Рассмотреть`, and duplicate count `0`.
+3. For each duplicate group, select the earliest `submitted_at`; break an exact
+   timestamp tie with the lowest positive `application_number`, then
+   `application_id`. This is the preserved original. Do not merge profile, email,
+   photo, or answers from later rows into it.
+4. Insert only the preserved original into `application_phone_keys`. For every
+   later synthetic row, add one audit duplicate event linked to the original and
+   increment its duplicate summary. The Admin list joins through this key table,
+   so those later rows cease to be canonical visible CRM records while remaining
+   preserved in storage. Keep a reviewed ID mapping until acceptance is complete.
+5. Later synthetic Application/consent/photo rows must not be deleted by an
+   automated migration. Their final quarantine/deletion is a separate, explicitly
+   approved TEST cleanup after the ID mapping and counts are verified.
+6. Verify that each normalized phone has exactly one phone-key row, each key
+   points to an existing Application/Participant pair, all visible applications
+   have positive unique numbers, and the counter is at least their maximum.
+Register migration 008 only after DDL and this verification succeed.
+
+Recovery contract: preflight the additive objects before applying DDL; treat
+the schema phase and reconciliation phase separately.  The reconciliation
+job is resumable and repeat-safe (deterministic canonical selection plus
+UPSERTs and stable event identities).  Set the final ledger entry only after
+verification reports `ready_for_deployment`; deployment is blocked while that
+state is false.  A failed backfill is resumed, never by blindly rerunning the
+DDL file.
+
+The Python suite is intentionally consolidated for CRM V2: the former
+participant-oriented Admin tests were replaced by application-scoped CRM
+tests, while duplicate, workflow, and authorization coverage was retained.
+This accounts for the baseline 121 methods versus the current 120; it is an
+intentional rename/consolidation, not a skipped test.
+
+Because current TEST data may contain synthetic duplicate Application rows, the
+new function must not be deployed between the DDL and the reviewed key backfill.
+The repository does not apply, backfill, delete, deploy, or register this migration.
 
 ## STEP 7B OIDC/JWT client foundation (not deployed)
 

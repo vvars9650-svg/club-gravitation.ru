@@ -20,8 +20,8 @@ class PhaseBParticipantTests(unittest.TestCase):
     def test_approved_state_sets_are_exact(self):
         self.assertEqual(PARTICIPANT_STATUSES, ("Кандидат", "Одобрен", "Не одобрен", "Неактивен"))
         self.assertEqual(PROCESSING_STATES, ("Разрешена", "Заблокирована"))
-        self.assertEqual(APPLICATION_STATUSES, ("Новая", "На рассмотрении", "Интервью назначено", "Интервью проведено", "Закрыта"))
-        self.assertEqual(APPLICATION_DECISIONS, ("Одобрен", "Отклонён", "На обсуждение"))
+        self.assertEqual(APPLICATION_STATUSES, ("Новая заявка", "На рассмотрении", "Нужен контакт", "Интервью назначено", "Интервью пройдено", "Одобрен", "Ожидаем ответ", "Пауза", "Активный участник", "Не подходит"))
+        self.assertEqual(APPLICATION_DECISIONS, APPLICATION_STATUSES[1:])
 
     def test_new_application_creates_canonical_participant_and_phone_key(self):
         repo = FakeRepository()
@@ -32,10 +32,10 @@ class PhaseBParticipantTests(unittest.TestCase):
         self.assertEqual(participant["phone"], "+79990000001")
         self.assertEqual(participant["participant_status"], "Кандидат")
         self.assertEqual(participant["processing_state"], "Разрешена")
-        self.assertEqual(record["application_status"], "Новая")
+        self.assertEqual(record["application_status"], "Новая заявка")
         self.assertEqual(record["decision"], "")
 
-    def test_second_application_reuses_participant_without_overwrite(self):
+    def test_second_submission_preserves_original_application_and_records_warning(self):
         repo = FakeRepository()
         first_payload = payload_with_photo(repo, "phase-b-first")
         first, _ = submit(first_payload, "phase-b-first", repo, "request-first")
@@ -53,19 +53,19 @@ class PhaseBParticipantTests(unittest.TestCase):
         }
         second, _ = submit(payload_with_photo(repo, "phase-b-second", changed), "phase-b-second", repo, "request-second")
         self.assertEqual(second["participant_id"], first["participant_id"])
-        self.assertEqual(len(repo.by_key), 2)
+        self.assertEqual(len(repo.by_key), 1)
         self.assertEqual(len(repo.participants), 1)
         self.assertEqual(len(repo.by_phone), 1)
         self.assertEqual(repo.find_participant(first["participant_id"]), participant_before)
-        self.assertEqual(repo.by_key["phase-b-first"], first_snapshot)
-        self.assertEqual(repo.by_key["phase-b-second"]["form"]["full_name"], "Другое Имя")
-        self.assertEqual(repo.by_key["phase-b-second"]["form"]["occupation"], "Другая сфера")
+        self.assertEqual(repo.by_key["phase-b-first"], first_snapshot | {"duplicate_attempt_count": 1, "last_duplicate_at": second["duplicate_attempt_at"], "last_duplicate_match_basis": "normalized_phone"})
+        self.assertTrue(second["duplicate_submission"])
+        self.assertEqual(repo.audit[-1]["action"], "duplicate_submission|basis=normalized_phone")
 
     def test_participant_admin_change_does_not_mutate_application(self):
         repo = FakeRepository()
         record, _ = submit(payload_with_photo(repo, "phase-b-admin"), "phase-b-admin", repo, "request")
         snapshot = copy.deepcopy(repo.by_key["phase-b-admin"]["form"])
-        repo.update_admin_participant(record["participant_id"], {"owner": "Лара"}, "actor", "admin-request")
+        repo.update_admin_application(record["application_id"], {"owner": "Лара"}, "actor", "admin-request")
         self.assertEqual(repo.by_key["phase-b-admin"]["form"], snapshot)
 
     def test_idempotent_replay_and_conflicting_replay(self):
@@ -91,7 +91,7 @@ class PhaseBParticipantTests(unittest.TestCase):
         with self.assertRaises(RepositoryConflict):
             repo.resolve_phone("8 (999) 000-00-01")
 
-    def test_concurrent_first_applications_share_one_participant(self):
+    def test_concurrent_same_phone_creates_one_application(self):
         repo = FakeRepository()
         barrier = threading.Barrier(2)
         errors = []
@@ -109,8 +109,10 @@ class PhaseBParticipantTests(unittest.TestCase):
         for thread in threads:
             thread.join()
         self.assertEqual(errors, [])
-        self.assertEqual((len(repo.by_key), len(repo.participants), len(repo.by_phone)), (2, 1, 1))
+        self.assertEqual((len(repo.by_key), len(repo.participants), len(repo.by_phone)), (1, 1, 1))
         self.assertEqual(len({record["participant_id"] for record in repo.by_key.values()}), 1)
+        self.assertEqual(repo.application_counters, {"TEST": 1})
+        self.assertEqual(next(iter(repo.by_key.values()))["duplicate_attempt_count"], 1)
 
     def test_migration_ledger_is_stable_idempotent_and_pii_free(self):
         repo = FakeRepository()

@@ -379,7 +379,8 @@ function testForbiddenFrontendIntegrations() {
     assert.equal(frontend.includes(forbidden), false, forbidden);
   }
 
-  assert.match(frontend, /заявка №\$\{applicationnumber\}/u);
+  assert.match(frontend, /ваша заявка принята\. №\$\{applicationnumber\}/u);
+  assert.match(frontend, /ваша заявка уже зарегистрирована\. №\$\{applicationnumber\}/u);
   assert.equal(frontend.includes('data-application-id'), false);
 }
 
@@ -396,6 +397,9 @@ function testApplicationNumberResponseContract() {
     responseResult(200, {application_id: 'APP-1', application_number: '000001', idempotent_replay: true}, 'key').applicationNumber,
     '000001',
   );
+  const duplicate = responseResult(200, {application_id: 'APP-1', application_number: '000001', already_registered: true}, 'key');
+  assert.equal(duplicate.state, 'success');
+  assert.equal(duplicate.alreadyRegistered, true);
 }
 
 (async () => {

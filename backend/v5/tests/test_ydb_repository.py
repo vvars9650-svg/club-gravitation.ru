@@ -392,6 +392,31 @@ class YdbRepositoryTests(unittest.TestCase):
             write_query,
         )
 
+    def test_existing_phone_application_records_duplicate_without_counter_or_insert(self):
+        key = "duplicate-phone-key"
+        tx = FakeTransaction([
+            FakeResultSet([{
+                "record_type": "phone_application",
+                "application_id": "APP-ORIGINAL",
+                "application_number": 7,
+                "participant_id": "PT-EXISTING",
+            }]),
+            FakeResultSet([ready_photo(key)]),
+        ])
+        repo = self.make_repo(tx)
+        record = make_record()
+
+        self.assertTrue(repo.save(key, record))
+
+        self.assertTrue(record["duplicate_submission"])
+        self.assertEqual(record["application_id"], "APP-ORIGINAL")
+        self.assertEqual(record["application_number"], 7)
+        duplicate_query = tx.queries[-1]
+        self.assertIn("INSERT INTO application_submission_keys", duplicate_query)
+        self.assertIn("duplicate_submission|basis=normalized_phone", duplicate_query)
+        self.assertNotIn("INSERT INTO applications", duplicate_query)
+        self.assertFalse(any("FROM application_counters" in query for query in tx.queries))
+
     def test_broken_phone_key_fails_without_writes(self):
         tx = submission_transaction("broken-phone-key", [{
             "record_type": "phone", "application_id": "",
@@ -479,30 +504,32 @@ class YdbRepositoryTests(unittest.TestCase):
         repo = YdbRepository.__new__(YdbRepository)
         repo.pool = AdminReadPool()
         rows = repo.list_admin_applications(
-            {"q": "Тест", "lifecycle_status": "Новая заявка"},
+            {"q": "ТеСт", "status": "Новая заявка"},
             "submitted_at", "desc",
         )
         query, params = repo.pool.queries[0]
         self.assertEqual(rows[0]["environment"], "TEST")
         self.assertEqual(params["$environment"], "TEST")
         self.assertIn("FROM applications", query)
-        self.assertIn("INNER JOIN participants", query)
+        self.assertNotIn("JOIN participants", query)
+        self.assertIn("Unicode::ToLower", query)
+        self.assertEqual(params["$q"], "тест")
         self.assertNotIn("raw_payload", query)
         self.assertNotIn("internal_comment", query)
 
     def test_admin_patch_writes_only_operational_fields_and_audit(self):
         tx = FakeTransaction([FakeResultSet([])])
         repo = self.make_repo(tx)
-        repo.get_admin_participant = lambda participant_id: {
-            "participant": {"participant_id": participant_id, "owner": "Влад"}
+        repo.get_admin_application = lambda application_id: {
+            "application": {"application_id": application_id, "participant_id": "PT-ADMIN", "owner": "Влад"}
         }
-        participant = repo.update_admin_participant(
-            "PT-ADMIN", {"owner": "Влад", "internal_comment": "TEST note"},
+        application = repo.update_admin_application(
+            "APP-ADMIN", {"owner": "Влад", "internal_comment": "TEST note"},
             "auth-test", "REQ-ADMIN",
         )
         query = tx.queries[0]
-        self.assertEqual(participant["participant_id"], "PT-ADMIN")
-        self.assertIn("UPDATE participants SET", query)
+        self.assertEqual(application["application_id"], "APP-ADMIN")
+        self.assertIn("UPDATE applications SET", query)
         self.assertIn("INSERT INTO audit_log", query)
         self.assertIn("fields=internal_comment,owner", tx.params[0]["$action"])
         self.assertNotIn("TEST note", tx.params[0]["$action"])
@@ -512,16 +539,16 @@ class YdbRepositoryTests(unittest.TestCase):
     def test_admin_patch_priority_with_unchanged_next_contact_uses_optional_timestamp(self):
         tx = FakeTransaction([FakeResultSet([])])
         repo = self.make_repo(tx)
-        repo.get_admin_participant = lambda participant_id: {
-            "participant": {"participant_id": participant_id, "priority": "Высокий", "next_contact_at": None}
+        repo.get_admin_application = lambda application_id: {
+            "application": {"application_id": application_id, "participant_id": "PT-ADMIN", "status": "Новая заявка", "next_action": "Рассмотреть", "priority": "Высокий", "next_contact_at": None}
         }
 
-        participant = repo.update_admin_participant(
-            "PT-ADMIN", {"priority": "Высокий", "next_contact_at": None},
+        application = repo.update_admin_application(
+            "APP-ADMIN", {"priority": "Высокий", "next_contact_at": None},
             "auth-test", "REQ-PRIORITY",
         )
 
-        self.assertEqual(participant["participant_id"], "PT-ADMIN")
+        self.assertEqual(application["application_id"], "APP-ADMIN")
         timestamp = tx.params[0]["$next_contact_at"]
         self.assertIsInstance(timestamp, ydb.TypedValue)
         self.assertIsNone(timestamp.value)
@@ -530,12 +557,12 @@ class YdbRepositoryTests(unittest.TestCase):
     def test_admin_patch_null_next_contact_clears_timestamp_and_is_audited(self):
         tx = FakeTransaction([FakeResultSet([])])
         repo = self.make_repo(tx)
-        repo.get_admin_participant = lambda participant_id: {
-            "participant": {"participant_id": participant_id, "next_contact_at": None}
+        repo.get_admin_application = lambda application_id: {
+            "application": {"application_id": application_id, "participant_id": "PT-ADMIN", "status": "Новая заявка", "next_action": "Рассмотреть", "next_contact_at": None}
         }
 
-        repo.update_admin_participant(
-            "PT-ADMIN", {"next_contact_at": None}, "auth-test", "REQ-NULL",
+        repo.update_admin_application(
+            "APP-ADMIN", {"next_contact_at": None}, "auth-test", "REQ-NULL",
         )
 
         self.assertIsNone(tx.params[0]["$next_contact_at"].value)
@@ -545,19 +572,19 @@ class YdbRepositoryTests(unittest.TestCase):
     def test_admin_patch_valid_next_contact_binds_utc_datetime_and_reads_back(self):
         tx = FakeTransaction([FakeResultSet([])])
         repo = self.make_repo(tx)
-        repo.get_admin_participant = lambda participant_id: {
-            "participant": {"participant_id": participant_id, "next_contact_at": "2026-09-13T12:34:56Z"}
+        repo.get_admin_application = lambda application_id: {
+            "application": {"application_id": application_id, "participant_id": "PT-ADMIN", "status": "Новая заявка", "next_action": "Рассмотреть", "next_contact_at": "2026-09-13T12:34:56Z"}
         }
 
-        participant = repo.update_admin_participant(
-            "PT-ADMIN", {"next_contact_at": "2026-09-13T12:34:56Z"},
+        application = repo.update_admin_application(
+            "APP-ADMIN", {"next_contact_at": "2026-09-13T12:34:56Z"},
             "auth-test", "REQ-DATE",
         )
 
         bound = tx.params[0]["$next_contact_at"]
         self.assertEqual(bound.value, datetime(2026, 9, 13, 12, 34, 56, tzinfo=timezone.utc))
         self.assertEqual(str(bound.value_type), "Timestamp?")
-        self.assertEqual(participant["next_contact_at"], "2026-09-13T12:34:56Z")
+        self.assertEqual(application["next_contact_at"], "2026-09-13T12:34:56Z")
 
     def test_block_processing_is_serializable_idempotent_and_audited_without_reason(self):
         tx = FakeTransaction([FakeResultSet([{"processing_blocked": False}])])

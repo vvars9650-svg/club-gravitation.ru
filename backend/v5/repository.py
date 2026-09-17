@@ -40,6 +40,8 @@ class FakeRepository:
         self.migrations = set()
         self.photo_objects = {}
         self.application_counters = {}
+        self.application_phone_keys = {}
+        self.duplicate_by_key = {}
         self._lock = RLock()
 
     @staticmethod
@@ -168,7 +170,7 @@ class FakeRepository:
 
     def get_idempotency(self, key):
         with self._lock:
-            record = self.by_key.get(key)
+            record = self.by_key.get(key) or self.duplicate_by_key.get(key)
             return deepcopy(record) if record else None
 
     def resolve_phone(self, phone):
@@ -207,11 +209,55 @@ class FakeRepository:
                 raise RepositoryConflict("participant_id_conflict")
             self._submission_checkpoint("participant_resolution")
 
+            original = next(
+                (
+                    existing for existing in self.by_key.values()
+                    if existing.get("participant_id") == owner
+                ),
+                None,
+            ) if owner else None
+            if original:
+                timestamp = record["submitted_at"]
+                original["duplicate_attempt_count"] = original.get("duplicate_attempt_count", 0) + 1
+                original["last_duplicate_at"] = timestamp
+                original["last_duplicate_match_basis"] = "normalized_phone"
+                photo["lifecycle_state"] = "DELETE_SCHEDULED"
+                duplicate = deepcopy(original)
+                duplicate["payload_fingerprint"] = record["payload_fingerprint"]
+                duplicate["duplicate_submission"] = True
+                duplicate["duplicate_attempt_at"] = timestamp
+                duplicate["duplicate_match_basis"] = "normalized_phone"
+                self.duplicate_by_key[key] = duplicate
+                self.audit.append({
+                    "timestamp": timestamp,
+                    "request_id": record["request_id"],
+                    "application_id": original["application_id"],
+                    "participant_id": owner,
+                    "action": "duplicate_submission|basis=normalized_phone",
+                })
+                record.clear()
+                record.update(deepcopy(duplicate))
+                return True
+
+            # Secondary identifiers are review signals only: never merge or
+            # block creation when phone differs.
+            form = record["form"]
+            email = str(form.get("email", "")).strip().casefold()
+            profile = str(form.get("profile_or_messenger_url", "")).strip().casefold()
+            possible = []
+            for existing in self.by_key.values():
+                existing_form = existing.get("form", {})
+                if email and email == str(existing_form.get("email", "")).strip().casefold():
+                    possible.append(("email", existing["application_id"]))
+                elif profile and profile == str(existing_form.get("profile_or_messenger_url", "")).strip().casefold():
+                    possible.append(("profile_or_messenger", existing["application_id"]))
+
             by_key = deepcopy(self.by_key)
             by_phone = deepcopy(self.by_phone)
             participants = deepcopy(self.participants)
             photo_objects = deepcopy(self.photo_objects)
             application_counters = deepcopy(self.application_counters)
+            application_phone_keys = deepcopy(self.application_phone_keys)
             audit = deepcopy(self.audit)
             if owner is None:
                 owner = record["participant_id"]
@@ -226,9 +272,7 @@ class FakeRepository:
                     "occupation": form["occupation"],
                     "preferred_contact": form["preferred_contact"],
                     "public_profile_url": form["public_profile_url"],
-                    "participant_status": INITIAL_PARTICIPANT_STATUS, "lifecycle_status": "Новая заявка",
-                    "owner": "", "priority": "", "next_action": "",
-                    "next_contact_at": None, "decision": "", "internal_comment": "",
+                    "participant_status": INITIAL_PARTICIPANT_STATUS,
                     "processing_blocked": False, "processing_blocked_at": None,
                     "processing_block_reason": "", "processing_block_request_id": "",
                     "current_photo_object_id": photo_object_id, "photo_required_blocked": False,
@@ -241,9 +285,23 @@ class FakeRepository:
             record["consent"]["participant_id"] = owner
             record["photo_object_id"] = photo_object_id
             record["application_status"] = INITIAL_APPLICATION_STATUS
+            record["owner"] = ""
+            record["priority"] = ""
+            record["next_action"] = "Рассмотреть"
+            record["next_contact_at"] = None
             record["decision"] = ""
+            record["internal_comment"] = ""
+            record["duplicate_attempt_count"] = 0
+            record["last_duplicate_at"] = None
+            record["last_duplicate_match_basis"] = ""
+            record["possible_duplicate_count"] = len(possible)
+            record["possible_duplicate_match_basis"] = possible[0][0] if possible else ""
+            record["possible_duplicate_application_id"] = possible[0][1] if possible else ""
             by_key[key] = deepcopy(record)
-            audit.append({"request_id": record["request_id"], "application_id": record["application_id"], "participant_id": owner, "operation": "application_created", "status": "ok"})
+            application_phone_keys[phone] = record["application_id"]
+            audit.append({"timestamp": record["submitted_at"], "request_id": record["request_id"], "application_id": record["application_id"], "participant_id": owner, "action": "application_created"})
+            for basis, application_id in possible:
+                audit.append({"timestamp": record["submitted_at"], "request_id": record["request_id"], "application_id": record["application_id"], "participant_id": owner, "action": f"possible_duplicate|basis={basis}|reference={application_id}"})
             self._submission_checkpoint("application_write")
 
             photo_objects[photo_object_id].update({
@@ -263,6 +321,7 @@ class FakeRepository:
             self.participants = participants
             self.photo_objects = photo_objects
             self.application_counters = application_counters
+            self.application_phone_keys = application_phone_keys
             self.audit = audit
             return True
 
@@ -288,36 +347,75 @@ class FakeRepository:
         for record in self.by_key.values():
             if record["environment"] != "TEST":
                 continue
-            participant, form = self.participants[record["participant_id"]], record["form"]
-            row = {"application_id": record["application_id"], "application_number": record.get("application_number"), "participant_id": record["participant_id"], "submitted_at": record["submitted_at"], "full_name": form["full_name"], "age": form["age"], "city": form["city"], "phone": form["phone"], "telegram": form["profile_or_messenger_url"], "preferred_contact": form["preferred_contact"], "environment": "TEST", **{name: participant.get(name) for name in ("lifecycle_status", "owner", "priority", "next_action", "next_contact_at", "decision")}}
-            query = str(filters.get("q", "")).strip().lower()
-            if query and query not in " ".join(str(row.get(name, "")).lower() for name in ("full_name", "phone", "telegram", "city")):
+            form = record["form"]
+            row = {"application_id": record["application_id"], "application_number": record.get("application_number"), "participant_id": record["participant_id"], "submitted_at": record["submitted_at"], "full_name": form["full_name"], "age": form["age"], "city": form["city"], "phone": form["phone"], "email": form.get("email", ""), "profile_or_messenger_url": form["profile_or_messenger_url"], "preferred_contact": form["preferred_contact"], "environment": "TEST", "status": record.get("application_status", INITIAL_APPLICATION_STATUS), **{name: record.get(name) for name in ("owner", "priority", "next_action", "next_contact_at", "decision", "duplicate_attempt_count", "last_duplicate_at", "last_duplicate_match_basis", "possible_duplicate_count", "possible_duplicate_match_basis", "possible_duplicate_application_id")}}
+            query = str(filters.get("q", "")).strip().casefold()
+            searchable = ("application_number", "submitted_at", "full_name", "age", "city", "phone", "email", "profile_or_messenger_url", "preferred_contact", "status", "owner", "priority", "next_action", "next_contact_at", "decision")
+            if query and query not in " ".join(str(row.get(name, "")).casefold() for name in searchable):
                 continue
-            if any(filters.get(name) and row.get(name) != filters[name] for name in ("lifecycle_status", "owner", "priority", "decision")):
+            if any(filters.get(name) and row.get(name) != filters[name] for name in ("status", "owner", "priority", "decision")):
                 continue
             rows.append(row)
         return sorted(rows, key=lambda row: str(row.get(sort) or ""), reverse=order != "asc")
 
-    def get_admin_participant(self, participant_id):
-        participant = self.participants.get(participant_id)
-        if not participant or participant.get("environment") != "TEST":
+    def get_admin_application(self, application_id):
+        record = next((item for item in self.by_key.values() if item.get("application_id") == application_id), None)
+        if not record or record.get("environment") != "TEST":
             return None
-        applications, consents = [], []
-        for record in self.by_key.values():
-            if record["participant_id"] != participant_id:
-                continue
-            applications.append({"application_id": record["application_id"], "application_number": record.get("application_number"), "submitted_at": record["submitted_at"], "form_version": record["consent"]["form_version"], "application_status": record.get("application_status", ""), "decision": record.get("decision", ""), "request_id": record["request_id"], "form": deepcopy(record["form"])})
-            consents.append(deepcopy(record["consent"]))
-        return {"environment": "TEST", "participant": deepcopy(participant), "applications": sorted(applications, key=lambda item: item["submitted_at"], reverse=True), "consents": consents}
+        application = {
+            "application_id": record["application_id"],
+            "application_number": record.get("application_number"),
+            "participant_id": record["participant_id"],
+            "submitted_at": record["submitted_at"],
+            "status": record.get("application_status", INITIAL_APPLICATION_STATUS),
+            "owner": record.get("owner", ""),
+            "priority": record.get("priority", ""),
+            "next_action": record.get("next_action", ""),
+            "next_contact_at": record.get("next_contact_at"),
+            "decision": record.get("decision", ""),
+            "internal_comment": record.get("internal_comment", ""),
+            "duplicate_attempt_count": record.get("duplicate_attempt_count", 0),
+            "last_duplicate_at": record.get("last_duplicate_at"),
+            "last_duplicate_match_basis": record.get("last_duplicate_match_basis", ""),
+            "possible_duplicate_count": record.get("possible_duplicate_count", 0),
+            "possible_duplicate_match_basis": record.get("possible_duplicate_match_basis", ""),
+            "possible_duplicate_application_id": record.get("possible_duplicate_application_id", ""),
+            "form": deepcopy(record["form"]),
+        }
+        events = [deepcopy(item) for item in self.audit if item.get("application_id") == application_id]
+        events.sort(key=lambda item: str(item.get("timestamp", "")), reverse=True)
+        return {"environment": "TEST", "application": application, "consents": [deepcopy(record["consent"])], "events": events}
+
+    def update_admin_application(self, application_id, changes, actor, request_id):
+        record = next((item for item in self.by_key.values() if item.get("application_id") == application_id), None)
+        if not record or record.get("environment") != "TEST":
+            return None
+        from .admin import validate_workflow
+        status = changes.get("decision") or record.get("application_status", INITIAL_APPLICATION_STATUS)
+        next_action = changes.get("next_action", record.get("next_action", ""))
+        next_contact_at = changes.get("next_contact_at", record.get("next_contact_at"))
+        validate_workflow(
+            status,
+            next_action,
+            next_contact_at,
+            strict=bool({"decision", "next_action", "next_contact_at"}.intersection(changes)),
+        )
+        record.update(changes)
+        if changes.get("decision"):
+            record["application_status"] = changes["decision"]
+        action = "application_operational_updated|actor={}|fields={}".format(actor, ",".join(sorted(changes)))
+        self.audit.append({"timestamp": "TEST-TIMESTAMP", "request_id": request_id, "application_id": application_id, "participant_id": record["participant_id"], "action": action})
+        return self.get_admin_application(application_id)["application"]
+
+    # Internal lifecycle compatibility helpers. Admin routes never use these
+    # participant-scoped names after CRM V2.
+    def get_admin_participant(self, participant_id):
+        record = next((item for item in self.by_key.values() if item.get("participant_id") == participant_id), None)
+        return self.get_admin_application(record["application_id"]) if record else None
 
     def update_admin_participant(self, participant_id, changes, actor, request_id):
-        participant = self.participants.get(participant_id)
-        if not participant or participant.get("environment") != "TEST":
-            return None
-        participant.update(changes)
-        action = "participant_operational_updated|actor={}|fields={}".format(actor, ",".join(sorted(changes)))
-        self.audit.append({"request_id": request_id, "application_id": None, "participant_id": participant_id, "action": action})
-        return deepcopy(participant)
+        record = next((item for item in self.by_key.values() if item.get("participant_id") == participant_id), None)
+        return self.update_admin_application(record["application_id"], changes, actor, request_id) if record else None
 
     def find_participant(self, participant_id):
         participant = self.participants.get(participant_id)

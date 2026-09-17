@@ -6,7 +6,7 @@ from unittest import mock
 from backend.v5 import factory
 from backend.v5.handler import handler
 from backend.v5.repository import FakeRepository, RepositoryUnavailable
-from backend.v5.tests.test_v5 import e, payload_with_photo
+from backend.v5.tests.test_v5 import P, e, payload_with_photo
 
 
 class RuntimeRepositoryLifecycleTests(unittest.TestCase):
@@ -19,7 +19,7 @@ class RuntimeRepositoryLifecycleTests(unittest.TestCase):
     def test_two_posts_reuse_one_runtime_repository(self):
         repository = FakeRepository()
         first_payload = payload_with_photo(repository, "runtime-one")
-        second_payload = payload_with_photo(repository, "runtime-two")
+        second_payload = payload_with_photo(repository, "runtime-two", {**P, "phone": "+79990000002"})
 
         with mock.patch.object(
             factory,

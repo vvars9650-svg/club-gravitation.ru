@@ -255,7 +255,7 @@
   }
 
   function responseResult(status, body, key) {
-    if (status === 201 || (status === 200 && body.idempotent_replay === true)) {
+    if (status === 201 || (status === 200 && (body.idempotent_replay === true || body.already_registered === true))) {
       if (typeof body.application_number !== 'string'
         || !/^\d{6,}$/u.test(body.application_number)
         || Number(body.application_number) < 1) {
@@ -270,6 +270,7 @@
         key,
         applicationId: body.application_id || '',
         applicationNumber: body.application_number,
+        alreadyRegistered: body.already_registered === true,
       };
     }
 
@@ -736,14 +737,16 @@
       success.hidden = true;
     }
 
-    function showSuccess(applicationNumber) {
+    function showSuccess(applicationNumber, alreadyRegistered = false) {
       form.hidden = true;
       progressBox.hidden = true;
       mobile.hidden = true;
       tabsBox.hidden = true;
       success.hidden = false;
       success.querySelector('[data-application-number]').textContent =
-        `Заявка №${applicationNumber}`;
+        alreadyRegistered
+          ? `Ваша заявка уже зарегистрирована. №${applicationNumber}`
+          : `Ваша заявка принята. №${applicationNumber}`;
     }
 
     function showResult(result) {
@@ -753,7 +756,7 @@
         status.textContent = PUBLIC_SUBMISSION_MESSAGE;
       } else if (result.state === 'success') {
         status.textContent = '';
-        showSuccess(result.applicationNumber);
+        showSuccess(result.applicationNumber, result.alreadyRegistered);
       } else if (result.state === 'validation_error') {
         status.textContent =
           'Не удалось принять данные. Проверьте анкету и повторите отправку.';

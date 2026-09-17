@@ -8,6 +8,7 @@ MIGRATION_IDS = (
     "005_wave1_participant_foundation",
     "006_wave2_photo_foundation",
     "007_application_number_sequence",
+    "008_admin_crm_v2",
 )
 
 

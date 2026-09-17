@@ -60,7 +60,24 @@ def handler(event,context=None,repo=None,photo_service=None):
         application_number = format_application_number(record.get('application_number'))
         if application_number is None:
             return response(503, {'error': {'code': 'application_number_unavailable'}}, request_id)
-        return response(200 if replay else 201,{'application_id':record['application_id'],'application_number':application_number,'participant_id':record['participant_id'],'idempotent_replay':replay,'environment':'TEST'},request_id)
+        duplicate = record.get('duplicate_submission') is True
+        return response(
+            200 if replay or duplicate else 201,
+            {
+                'application_id': record['application_id'],
+                'application_number': application_number,
+                'participant_id': record['participant_id'],
+                'idempotent_replay': replay,
+                'already_registered': duplicate,
+                'message': (
+                    'Ваша заявка уже зарегистрирована. №' + application_number
+                    if duplicate
+                    else 'Ваша заявка принята. №' + application_number
+                ),
+                'environment': 'TEST',
+            },
+            request_id,
+        )
     except RepositoryConflict as e:
         return response(409, {'error': {'code': str(e)}}, request_id)
     except RepositoryUnavailable as e:

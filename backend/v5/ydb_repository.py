@@ -117,14 +117,29 @@ class YdbRepository:
         DECLARE $application_id AS Utf8;
 
         SELECT
-            application_id,
-            application_number,
-            participant_id,
-            payload_fingerprint,
-            request_id
-        FROM applications
-        WHERE environment = $environment
-          AND application_id = $application_id
+            a.application_id AS application_id,
+            a.application_number AS application_number,
+            a.participant_id AS participant_id,
+            source.payload_fingerprint AS payload_fingerprint,
+            a.request_id AS request_id,
+            source.duplicate_submission AS duplicate_submission
+        FROM (
+            SELECT COALESCE(k.application_id, candidate.application_id) AS application_id,
+                   candidate.payload_fingerprint AS payload_fingerprint,
+                   false AS duplicate_submission
+            FROM applications AS candidate
+            LEFT JOIN application_phone_keys AS k
+            ON k.environment = candidate.environment
+               AND k.normalized_phone = candidate.phone
+            WHERE candidate.environment = $environment
+              AND candidate.application_id = $application_id
+            UNION ALL
+            SELECT application_id, payload_fingerprint, true AS duplicate_submission
+            FROM application_submission_keys
+            WHERE environment = $environment AND submission_id = $application_id
+        ) AS source
+        INNER JOIN applications AS a
+        ON a.environment = $environment AND a.application_id = source.application_id
         LIMIT 1;
         """
 
@@ -160,6 +175,9 @@ class YdbRepository:
             ),
             "request_id": self._row_value(
                 row, "request_id", ""
+            ),
+            "duplicate_submission": self._row_value(
+                row, "duplicate_submission", False
             ),
         }
 
@@ -396,6 +414,8 @@ class YdbRepository:
         DECLARE $application_id AS Utf8;
         DECLARE $proposed_participant_id AS Utf8;
         DECLARE $phone AS Utf8;
+        DECLARE $email AS Utf8;
+        DECLARE $profile_or_messenger_url AS Utf8;
 
         SELECT
             "application" AS record_type,
@@ -404,10 +424,24 @@ class YdbRepository:
             participant_id,
             payload_fingerprint,
             false AS processing_blocked,
-            "" AS current_photo_object_id
+            "" AS current_photo_object_id,
+            COALESCE(application_number, CAST(0 AS Uint64)) AS application_number
         FROM applications
         WHERE environment = $environment
           AND application_id = $application_id
+        UNION ALL
+        SELECT
+            "submission" AS record_type,
+            submission_id AS application_id,
+            "" AS key_participant_id,
+            participant_id,
+            payload_fingerprint,
+            false AS processing_blocked,
+            "" AS current_photo_object_id,
+            CAST(0 AS Uint64) AS application_number
+        FROM application_submission_keys
+        WHERE environment = $environment
+          AND submission_id = $application_id
         UNION ALL
         SELECT
             "phone" AS record_type,
@@ -416,7 +450,8 @@ class YdbRepository:
             p.participant_id AS participant_id,
             "" AS payload_fingerprint,
             p.processing_blocked AS processing_blocked,
-            COALESCE(p.current_photo_object_id, "") AS current_photo_object_id
+            COALESCE(p.current_photo_object_id, "") AS current_photo_object_id,
+            CAST(0 AS Uint64) AS application_number
         FROM participant_phone_keys AS k
         LEFT JOIN participants AS p
         ON k.environment = p.environment AND k.participant_id = p.participant_id
@@ -430,10 +465,36 @@ class YdbRepository:
             participant_id,
             "" AS payload_fingerprint,
             processing_blocked,
-            COALESCE(current_photo_object_id, "") AS current_photo_object_id
+            COALESCE(current_photo_object_id, "") AS current_photo_object_id,
+            CAST(0 AS Uint64) AS application_number
         FROM participants
         WHERE environment = $environment
-          AND participant_id = $proposed_participant_id;
+          AND participant_id = $proposed_participant_id
+        UNION ALL
+        SELECT
+            "phone_application" AS record_type,
+            application_id,
+            "" AS key_participant_id,
+            participant_id,
+            payload_fingerprint,
+            false AS processing_blocked,
+            "" AS current_photo_object_id,
+            COALESCE(application_number, CAST(0 AS Uint64)) AS application_number
+        FROM applications
+        WHERE environment = $environment
+          AND phone = $phone;
+        UNION ALL
+        SELECT "secondary_email" AS record_type, application_id, "" AS key_participant_id,
+               participant_id, "" AS payload_fingerprint, false AS processing_blocked,
+               "" AS current_photo_object_id, CAST(0 AS Uint64) AS application_number
+        FROM applications
+        WHERE environment = $environment AND email = $email AND phone != $phone
+        UNION ALL
+        SELECT "secondary_profile" AS record_type, application_id, "" AS key_participant_id,
+               participant_id, "" AS payload_fingerprint, false AS processing_blocked,
+               "" AS current_photo_object_id, CAST(0 AS Uint64) AS application_number
+        FROM applications
+        WHERE environment = $environment AND profile_or_messenger_url = $profile_or_messenger_url AND profile_or_messenger_url != "" AND phone != $phone;
         """
 
         photo_read_query = """
@@ -471,6 +532,8 @@ class YdbRepository:
                     "$application_id": application_id,
                     "$proposed_participant_id": record["participant_id"],
                     "$phone": phone,
+                    "$email": record["form"].get("email", ""),
+                    "$profile_or_messenger_url": record["form"].get("profile_or_messenger_url", ""),
                 },
             ) as result_stream:
                 intake_result_sets = list(result_stream)
@@ -478,8 +541,21 @@ class YdbRepository:
             intake_rows = self._rows(intake_result_sets, 0)
             application_rows = [
                 row for row in intake_rows
-                if self._row_value(row, "application_id", "")
+                if self._row_value(row, "record_type", "") in ("application", "submission")
+                or (
+                    not self._row_value(row, "record_type", "")
+                    and self._row_value(row, "application_id", "")
+                )
             ]
+            existing_application_rows = [
+                row for row in intake_rows
+                if self._row_value(row, "record_type", "") == "phone_application"
+            ]
+            existing_application_rows.sort(key=lambda row: (
+                self._row_value(row, "application_number", 0) or 0,
+                self._row_value(row, "application_id", ""),
+            ))
+            secondary_rows = [row for row in intake_rows if self._row_value(row, "record_type", "") in ("secondary_email", "secondary_profile")]
             phone_rows = [
                 row for row in intake_rows
                 if not self._row_value(row, "application_id", "")
@@ -538,6 +614,99 @@ class YdbRepository:
             if not existing_participant_id and candidate_rows:
                 tx.commit()
                 raise RepositoryConflict("participant_id_conflict")
+
+            if existing_application_rows:
+                original = existing_application_rows[0]
+                original_application_id = self._row_value(original, "application_id", "")
+                original_participant_id = self._row_value(original, "participant_id", existing_participant_id or "")
+                if not original_application_id or not original_participant_id:
+                    tx.commit()
+                    raise RepositoryConflict("application_phone_key_inconsistent")
+                duplicate_audit_id = "AUD-" + hashlib.sha256(
+                    f"{ENVIRONMENT}:{application_id}:duplicate".encode("utf-8")
+                ).hexdigest()[:24]
+                duplicate_log_id = "LOG-" + hashlib.sha256(
+                    f"{ENVIRONMENT}:{application_id}:duplicate".encode("utf-8")
+                ).hexdigest()[:24]
+                duplicate_write_query = """
+                DECLARE $environment AS Utf8;
+                DECLARE $submission_id AS Utf8;
+                DECLARE $application_id AS Utf8;
+                DECLARE $participant_id AS Utf8;
+                DECLARE $payload_fingerprint AS Utf8;
+                DECLARE $request_id AS Utf8;
+                DECLARE $phone AS Utf8;
+                DECLARE $photo_object_id AS Utf8;
+                DECLARE $audit_id AS Utf8;
+                DECLARE $log_id AS Utf8;
+
+                UPSERT INTO application_phone_keys (
+                    environment, normalized_phone, application_id,
+                    participant_id, created_at
+                ) VALUES (
+                    $environment, $phone, $application_id,
+                    $participant_id, CurrentUtcTimestamp()
+                );
+                INSERT INTO application_submission_keys (
+                    environment, submission_id, application_id, participant_id,
+                    payload_fingerprint, outcome, created_at
+                ) VALUES (
+                    $environment, $submission_id, $application_id, $participant_id,
+                    $payload_fingerprint, "duplicate", CurrentUtcTimestamp()
+                );
+                UPDATE applications
+                SET duplicate_attempt_count = COALESCE(duplicate_attempt_count, 0) + 1,
+                    last_duplicate_at = CurrentUtcTimestamp(),
+                    last_duplicate_match_basis = "normalized_phone"
+                WHERE environment = $environment AND application_id = $application_id;
+                UPDATE photo_objects
+                SET lifecycle_state = "DELETE_SCHEDULED"
+                WHERE environment = $environment
+                  AND photo_object_id = $photo_object_id
+                  AND lifecycle_state = "READY";
+                INSERT INTO technical_logs (
+                    environment, log_id, request_id, timestamp, application_id,
+                    operation, status, error_code
+                ) VALUES (
+                    $environment, $log_id, $request_id, CurrentUtcTimestamp(),
+                    $application_id, "duplicate_submission", "ok", ""
+                );
+                INSERT INTO audit_log (
+                    environment, audit_id, timestamp, request_id, application_id,
+                    participant_id, action
+                ) VALUES (
+                    $environment, $audit_id, CurrentUtcTimestamp(), $request_id,
+                    $application_id, $participant_id,
+                    "duplicate_submission|basis=normalized_phone"
+                );
+                """
+                duplicate_params = {
+                    "$environment": ENVIRONMENT,
+                    "$submission_id": application_id,
+                    "$application_id": original_application_id,
+                    "$participant_id": original_participant_id,
+                    "$payload_fingerprint": record["payload_fingerprint"],
+                    "$request_id": record["request_id"],
+                    "$phone": phone,
+                    "$photo_object_id": photo_object_id,
+                    "$audit_id": duplicate_audit_id,
+                    "$log_id": duplicate_log_id,
+                }
+                with tx.execute(duplicate_write_query, duplicate_params, commit_tx=True) as result_stream:
+                    for _ in result_stream:
+                        pass
+                return {
+                    "duplicate_submission": True,
+                    "application_id": original_application_id,
+                    "application_number": self._row_value(original, "application_number", None),
+                    "participant_id": original_participant_id,
+                }
+
+            secondary_basis = ""
+            secondary_reference = ""
+            if secondary_rows:
+                secondary_basis = "email" if self._row_value(secondary_rows[0], "record_type", "") == "secondary_email" else "profile_or_messenger"
+                secondary_reference = self._row_value(secondary_rows[0], "application_id", "")
 
             with tx.execute(
                 counter_read_query,
@@ -684,6 +853,20 @@ class YdbRepository:
                 """
                 + participant_write
                 + """
+                INSERT INTO application_phone_keys (
+                    environment,
+                    normalized_phone,
+                    application_id,
+                    participant_id,
+                    created_at
+                ) VALUES (
+                    $environment,
+                    $phone,
+                    $application_id,
+                    $participant_id,
+                    CurrentUtcTimestamp()
+                );
+
                 UPSERT INTO application_counters (
                     environment,
                     counter_name,
@@ -705,6 +888,16 @@ class YdbRepository:
                     request_id,
                     application_status,
                     decision,
+                    owner,
+                    priority,
+                    next_action,
+                    next_contact_at,
+                    internal_comment,
+                    duplicate_attempt_count,
+                    last_duplicate_match_basis,
+                    possible_duplicate_count,
+                    possible_duplicate_match_basis,
+                    possible_duplicate_application_id,
                     photo_object_id,
                     full_name,
                     age,
@@ -740,6 +933,16 @@ class YdbRepository:
                     $request_id,
                     $application_status,
                     $decision,
+                    "",
+                    "",
+                    "Рассмотреть",
+                    NULL,
+                    "",
+                    0,
+                    "",
+                    CASE WHEN $possible_duplicate_application_id = "" THEN 0 ELSE 1 END,
+                    $possible_duplicate_match_basis,
+                    $possible_duplicate_application_id,
                     $photo_object_id,
                     $full_name,
                     $age,
@@ -860,6 +1063,8 @@ class YdbRepository:
                 "$payload_fingerprint": record["payload_fingerprint"],
                 "$photo_object_id": photo_object_id,
                 "$owner_context_hash": owner_context_hash,
+                "$possible_duplicate_match_basis": secondary_basis,
+                "$possible_duplicate_application_id": secondary_reference,
 
                 "$full_name": form["full_name"],
                 "$age": ydb.TypedValue(
@@ -923,13 +1128,17 @@ class YdbRepository:
             record["application_number"] = application_number
             return True
 
-        return self.pool.retry_operation_sync(
+        outcome = self.pool.retry_operation_sync(
             transaction_body,
             retry_settings=ydb.RetrySettings(
                 max_retries=5,
                 idempotent=True,
             ),
         )
+        if isinstance(outcome, dict) and outcome.get("duplicate_submission"):
+            record.update(outcome)
+            return True
+        return outcome
 
     def find_participant(self, participant_id):
         query = """
@@ -1078,108 +1287,180 @@ class YdbRepository:
         """Read-only TEST list for the protected Admin API."""
         filters = filters or {}
         direction = "ASC" if order == "asc" else "DESC"
-        allowed_sorts = {
-            "submitted_at", "full_name", "age", "city", "lifecycle_status",
-            "priority", "next_contact_at",
+        sort_columns = {
+            "submitted_at": "submitted_at",
+            "application_number": "application_number",
+            "full_name": "full_name",
+            "age": "age",
+            "city": "city",
+            "status": "application_status",
+            "priority": "priority",
+            "next_contact_at": "next_contact_at",
         }
-        if sort not in allowed_sorts:
+        if sort not in sort_columns:
             raise RepositoryUnavailable("invalid_admin_sort")
         query = """
         DECLARE $environment AS Utf8;
         DECLARE $q AS Utf8;
-        DECLARE $lifecycle_status AS Utf8;
+        DECLARE $status AS Utf8;
         DECLARE $owner AS Utf8;
         DECLARE $priority AS Utf8;
         DECLARE $decision AS Utf8;
-                SELECT a.application_id AS application_id,
-                       a.application_number AS application_number,
+        SELECT a.application_id AS application_id,
+               a.application_number AS application_number,
                a.participant_id AS participant_id,
                a.submitted_at AS submitted_at,
                a.full_name AS full_name,
                a.age AS age,
                a.city AS city,
                a.phone AS phone,
-               a.telegram AS telegram,
+               a.profile_or_messenger_url AS profile_or_messenger_url,
                a.preferred_contact AS preferred_contact,
-               p.lifecycle_status AS lifecycle_status,
-               p.owner AS owner,
-               p.priority AS priority,
-               p.next_action AS next_action,
-               p.next_contact_at AS next_contact_at,
-               p.decision AS decision
+               a.application_status AS application_status,
+               a.owner AS owner,
+               a.priority AS priority,
+               a.next_action AS next_action,
+               a.next_contact_at AS next_contact_at,
+               a.decision AS decision,
+               COALESCE(a.duplicate_attempt_count, 0) AS duplicate_attempt_count,
+               a.last_duplicate_at AS last_duplicate_at,
+               a.last_duplicate_match_basis AS last_duplicate_match_basis,
+               COALESCE(a.possible_duplicate_count, 0) AS possible_duplicate_count,
+               a.possible_duplicate_match_basis AS possible_duplicate_match_basis,
+               a.possible_duplicate_application_id AS possible_duplicate_application_id
         FROM applications AS a
-        INNER JOIN participants AS p
-        ON a.environment = p.environment AND a.participant_id = p.participant_id
+        INNER JOIN application_phone_keys AS k
+        ON k.environment = a.environment AND k.application_id = a.application_id
         WHERE a.environment = $environment
-          AND ($q = "" OR a.full_name LIKE "%" || $q || "%" OR a.phone LIKE "%" || $q || "%" OR a.telegram LIKE "%" || $q || "%" OR a.city LIKE "%" || $q || "%")
-          AND ($lifecycle_status = "" OR p.lifecycle_status = $lifecycle_status)
-          AND ($owner = "" OR p.owner = $owner)
-          AND ($priority = "" OR p.priority = $priority)
-          AND ($decision = "" OR p.decision = $decision)
-        ORDER BY """ + sort + " " + direction + ";"
+          AND (
+              $q = ""
+              OR Unicode::Find(Unicode::ToLower(COALESCE(a.full_name, "")), $q) IS NOT NULL
+              OR Unicode::Find(Unicode::ToLower(COALESCE(a.city, "")), $q) IS NOT NULL
+              OR Unicode::Find(Unicode::ToLower(COALESCE(a.phone, "")), $q) IS NOT NULL
+              OR Unicode::Find(Unicode::ToLower(COALESCE(a.email, "")), $q) IS NOT NULL
+              OR Unicode::Find(Unicode::ToLower(COALESCE(a.profile_or_messenger_url, "")), $q) IS NOT NULL
+              OR Unicode::Find(Unicode::ToLower(COALESCE(a.preferred_contact, "")), $q) IS NOT NULL
+              OR Unicode::Find(Unicode::ToLower(COALESCE(a.application_status, "")), $q) IS NOT NULL
+              OR Unicode::Find(Unicode::ToLower(COALESCE(a.owner, "")), $q) IS NOT NULL
+              OR Unicode::Find(Unicode::ToLower(COALESCE(a.priority, "")), $q) IS NOT NULL
+              OR Unicode::Find(Unicode::ToLower(COALESCE(a.next_action, "")), $q) IS NOT NULL
+              OR Unicode::Find(Unicode::ToLower(COALESCE(a.decision, "")), $q) IS NOT NULL
+              OR CAST(a.age AS Utf8) LIKE "%" || $q || "%"
+              OR CAST(a.application_number AS Utf8) LIKE "%" || $q || "%"
+          )
+          AND ($status = "" OR a.application_status = $status)
+          AND ($owner = "" OR a.owner = $owner)
+          AND ($priority = "" OR a.priority = $priority)
+          AND ($decision = "" OR a.decision = $decision)
+        ORDER BY """ + sort_columns[sort] + " " + direction + ";"
         result_sets = self.pool.execute_with_retries(query, {
             "$environment": ENVIRONMENT,
-            "$q": filters.get("q", ""), "$lifecycle_status": filters.get("lifecycle_status", ""),
+            "$q": str(filters.get("q", "")).lower(), "$status": filters.get("status", ""),
             "$owner": filters.get("owner", ""), "$priority": filters.get("priority", ""),
             "$decision": filters.get("decision", ""),
         }, retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True))
-        return [{name: self._row_value(row, name, "") for name in (
-            "application_id", "application_number", "participant_id", "submitted_at", "full_name", "age", "city", "phone",
-            "telegram", "preferred_contact", "lifecycle_status", "owner", "priority", "next_action",
-            "next_contact_at", "decision") } | {"environment": ENVIRONMENT} for row in self._rows(result_sets)]
+        rows = []
+        for row in self._rows(result_sets):
+            item = {name: self._row_value(row, name, "") for name in (
+                "application_id", "application_number", "participant_id", "submitted_at",
+                "full_name", "age", "city", "phone", "profile_or_messenger_url",
+                "preferred_contact", "owner", "priority", "next_action",
+                "next_contact_at", "decision", "duplicate_attempt_count",
+                "last_duplicate_at", "last_duplicate_match_basis",
+                "email", "possible_duplicate_count", "possible_duplicate_match_basis",
+                "possible_duplicate_application_id",
+            )}
+            item["status"] = self._row_value(row, "application_status", INITIAL_APPLICATION_STATUS)
+            item["environment"] = ENVIRONMENT
+            rows.append(item)
+        return rows
 
-    def get_admin_participant(self, participant_id):
+    def get_admin_application(self, application_id):
         query = """
-        DECLARE $environment AS Utf8; DECLARE $participant_id AS Utf8;
-        SELECT participant_id, phone, full_name, age, gender, city, visit_krasnodar, telegram, email,
-               preferred_contact, profile_or_messenger_url, public_profile_url, occupation,
-               participant_status, lifecycle_status, owner, priority, next_action,
-               next_contact_at, decision, internal_comment
-        FROM participants WHERE environment = $environment AND participant_id = $participant_id;
-        SELECT application_id, submitted_at, form_version, application_status, decision, request_id, full_name, age, gender, city,
+        DECLARE $environment AS Utf8; DECLARE $application_id AS Utf8;
+        SELECT application_id, application_number, participant_id, submitted_at,
+               form_version, application_status, owner, priority, next_action,
+               next_contact_at, decision, internal_comment,
+               COALESCE(duplicate_attempt_count, 0) AS duplicate_attempt_count,
+               last_duplicate_at, last_duplicate_match_basis,
+               COALESCE(possible_duplicate_count, 0) AS possible_duplicate_count,
+               possible_duplicate_match_basis, possible_duplicate_application_id,
+               request_id, full_name, age, gender, city,
                visit_krasnodar, phone, email, preferred_contact, profile_or_messenger_url,
                public_profile_url, occupation, life_outside_work, what_interested,
                what_participant_brings, what_friends_value, desired_connections,
-                desired_connections_other, values_in_people, barriers_to_meeting,
-                acquaintance_methods, acquaintance_methods_other, return_reason, source,
-                photo_object_id
-        FROM applications WHERE environment = $environment AND participant_id = $participant_id ORDER BY submitted_at DESC;
+               desired_connections_other, values_in_people, barriers_to_meeting,
+               acquaintance_methods, acquaintance_methods_other, return_reason, source,
+               photo_object_id
+        FROM applications WHERE environment = $environment AND application_id = $application_id;
         SELECT consent_id, application_id, consent_type, consent_version, policy_version, form_version,
                consent_text_hash, granted, granted_at, source, request_id
-        FROM consents WHERE environment = $environment AND participant_id = $participant_id;
+        FROM consents WHERE environment = $environment AND application_id = $application_id;
+        SELECT timestamp, request_id, application_id, participant_id, action
+        FROM audit_log
+        WHERE environment = $environment AND application_id = $application_id
+        ORDER BY timestamp DESC;
         """
-        result_sets = self.pool.execute_with_retries(query, {"$environment": ENVIRONMENT, "$participant_id": participant_id}, retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True))
-        participant_rows = self._rows(result_sets, 0)
-        if not participant_rows:
+        result_sets = self.pool.execute_with_retries(query, {"$environment": ENVIRONMENT, "$application_id": application_id}, retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True))
+        application_rows = self._rows(result_sets, 0)
+        if not application_rows:
             return None
-        participant_fields = ("participant_id", "phone", "full_name", "age", "gender", "city", "visit_krasnodar", "telegram", "email", "preferred_contact", "profile_or_messenger_url", "public_profile_url", "occupation", "participant_status", "lifecycle_status", "owner", "priority", "next_action", "next_contact_at", "decision", "internal_comment")
-        application_fields = ("application_id", "application_number", "submitted_at", "form_version", "application_status", "decision", "request_id", *FORM_FIELDS)
+        row = application_rows[0]
+        application = {name: self._row_value(row, name, "") for name in (
+            "application_id", "application_number", "participant_id", "submitted_at",
+            "owner", "priority", "next_action", "next_contact_at", "decision",
+            "internal_comment", "duplicate_attempt_count", "last_duplicate_at",
+            "last_duplicate_match_basis",
+        )}
+        application["status"] = self._row_value(row, "application_status", INITIAL_APPLICATION_STATUS)
+        application["form"] = {name: self._row_value(row, name, [] if name in MULTI_FIELDS else "") for name in FORM_FIELDS}
         consent_fields = ("consent_id", "application_id", "consent_type", "consent_version", "policy_version", "form_version", "consent_text_hash", "granted", "granted_at", "source", "request_id")
-        return {"environment": ENVIRONMENT, "participant": {name: self._row_value(participant_rows[0], name, "") for name in participant_fields}, "applications": [{"application_id": self._row_value(row, "application_id", ""), "application_number": self._row_value(row, "application_number", None), "submitted_at": self._row_value(row, "submitted_at", ""), "form_version": self._row_value(row, "form_version", ""), "application_status": self._row_value(row, "application_status", ""), "decision": self._row_value(row, "decision", ""), "request_id": self._row_value(row, "request_id", ""), "form": {name: self._row_value(row, name, [] if name in MULTI_FIELDS else "") for name in FORM_FIELDS}} for row in self._rows(result_sets, 1)], "consents": [{name: self._row_value(row, name, "") for name in consent_fields} for row in self._rows(result_sets, 2)]}
+        event_fields = ("timestamp", "request_id", "application_id", "participant_id", "action")
+        return {
+            "environment": ENVIRONMENT,
+            "application": application,
+            "consents": [{name: self._row_value(item, name, "") for name in consent_fields} for item in self._rows(result_sets, 1)],
+            "events": [{name: self._row_value(item, name, "") for name in event_fields} for item in self._rows(result_sets, 2)],
+        }
 
-    def update_admin_participant(self, participant_id, changes, actor, request_id):
+    def update_admin_application(self, application_id, changes, actor, request_id):
         """Atomic operational-only update plus minimal audit evidence."""
-        from .admin import OPERATIONAL_FIELDS
+        from .admin import OPERATIONAL_FIELDS, validate_workflow
         names = tuple(name for name in changes if name in OPERATIONAL_FIELDS)
         if not names:
             return None
-        audit_id = "AUD-" + hashlib.sha256((ENVIRONMENT + participant_id + request_id).encode("utf-8")).hexdigest()[:24]
+        card = self.get_admin_application(application_id)
+        if not card:
+            return None
+        current = card["application"]
+        participant_id = current["participant_id"]
+        validate_workflow(
+            changes.get("decision") or current.get("status", INITIAL_APPLICATION_STATUS),
+            changes.get("next_action", current.get("next_action", "")),
+            changes.get("next_contact_at", current.get("next_contact_at")),
+            strict=bool({"decision", "next_action", "next_contact_at"}.intersection(changes)),
+        )
+        audit_id = "AUD-" + hashlib.sha256((ENVIRONMENT + application_id + request_id).encode("utf-8")).hexdigest()[:24]
         assignments = ", ".join(name + " = $" + name for name in names)
-        action = "participant_operational_updated|actor={}|fields={}".format(actor, ",".join(sorted(names)))
+        if changes.get("decision"):
+            assignments += ", application_status = $application_status"
+        action = "application_operational_updated|actor={}|fields={}".format(actor, ",".join(sorted(names)))
         declarations = []
         for name in names:
             type_name = "Optional<Timestamp>" if name == "next_contact_at" else "Utf8"
             declarations.append("DECLARE $" + name + " AS " + type_name + ";")
         query = """
-        DECLARE $environment AS Utf8; DECLARE $participant_id AS Utf8; DECLARE $audit_id AS Utf8;
+        DECLARE $environment AS Utf8; DECLARE $application_id AS Utf8; DECLARE $participant_id AS Utf8; DECLARE $audit_id AS Utf8;
         DECLARE $request_id AS Utf8; DECLARE $action AS Utf8;
-        """ + "\n".join(declarations) + """
-        UPDATE participants SET """ + assignments + """, updated_at = CurrentUtcTimestamp()
-        WHERE environment = $environment AND participant_id = $participant_id;
+        """ + ("DECLARE $application_status AS Utf8;\n" if changes.get("decision") else "") + "\n".join(declarations) + """
+        UPDATE applications SET """ + assignments + """
+        WHERE environment = $environment AND application_id = $application_id;
         INSERT INTO audit_log (environment, audit_id, timestamp, request_id, application_id, participant_id, action)
-        VALUES ($environment, $audit_id, CurrentUtcTimestamp(), $request_id, NULL, $participant_id, $action);
+        VALUES ($environment, $audit_id, CurrentUtcTimestamp(), $request_id, $application_id, $participant_id, $action);
         """
-        params = {"$environment": ENVIRONMENT, "$participant_id": participant_id, "$audit_id": audit_id, "$request_id": request_id, "$action": action}
+        params = {"$environment": ENVIRONMENT, "$application_id": application_id, "$participant_id": participant_id, "$audit_id": audit_id, "$request_id": request_id, "$action": action}
+        if changes.get("decision"):
+            params["$application_status"] = changes["decision"]
         for name in names:
             value = changes[name]
             if name == "next_contact_at":
@@ -1204,8 +1485,24 @@ class YdbRepository:
                     pass
             return True
         self.pool.retry_operation_sync(operation, retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True))
+        card = self.get_admin_application(application_id)
+        return card["application"] if card else None
+
+    def get_admin_participant(self, participant_id):
+        """Deprecated internal adapter; protected Admin routes are application-scoped."""
+        query = """
+        DECLARE $environment AS Utf8; DECLARE $participant_id AS Utf8;
+        SELECT application_id FROM applications
+        WHERE environment = $environment AND participant_id = $participant_id
+        ORDER BY submitted_at ASC LIMIT 1;
+        """
+        result_sets = self.pool.execute_with_retries(query, {"$environment": ENVIRONMENT, "$participant_id": participant_id}, retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True))
+        rows = self._rows(result_sets)
+        return self.get_admin_application(self._row_value(rows[0], "application_id", "")) if rows else None
+
+    def update_admin_participant(self, participant_id, changes, actor, request_id):
         card = self.get_admin_participant(participant_id)
-        return card["participant"] if card else None
+        return self.update_admin_application(card["application"]["application_id"], changes, actor, request_id) if card else None
 
     def block_processing(self, participant_id, request_id="REQ-INTERNAL", reason="internal_lifecycle"):
         """Atomically persist an internal TEST processing block and minimal audit evidence."""

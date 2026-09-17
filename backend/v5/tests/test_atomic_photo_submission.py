@@ -39,7 +39,7 @@ class AtomicPhotoSubmissionTests(unittest.TestCase):
         self.assertEqual(participant["current_photo_object_id"], payload["photo_object_id"])
         self.assertFalse(participant["photo_required_blocked"])
 
-    def test_repeat_participant_keeps_current_and_both_application_snapshots(self):
+    def test_repeat_submission_keeps_original_application_and_photo(self):
         repo = FakeRepository()
         first_payload = payload_with_photo(repo, "atomic-first")
         first, _ = submit(first_payload, "atomic-first", repo, "request-first")
@@ -49,18 +49,18 @@ class AtomicPhotoSubmissionTests(unittest.TestCase):
         second, _ = submit(second_payload, "atomic-second", repo, "request-second")
 
         self.assertEqual(second["participant_id"], first["participant_id"])
-        self.assertEqual(repo.by_key["atomic-first"], first_snapshot)
+        self.assertEqual(repo.by_key["atomic-first"]["form"], first_snapshot["form"])
         self.assertEqual(repo.by_key["atomic-first"]["photo_object_id"], first_payload["photo_object_id"])
-        self.assertEqual(repo.by_key["atomic-second"]["photo_object_id"], second_payload["photo_object_id"])
+        self.assertNotIn("atomic-second", repo.by_key)
         self.assertEqual(
             repo.participants[first["participant_id"]]["current_photo_object_id"],
             first_payload["photo_object_id"],
         )
         second_photo = repo.photo_objects[second_payload["photo_object_id"]]
-        self.assertEqual(second_photo["lifecycle_state"], "ATTACHED")
-        self.assertEqual(second_photo["participant_id"], first["participant_id"])
+        self.assertEqual(second_photo["lifecycle_state"], "DELETE_SCHEDULED")
+        self.assertIsNone(second_photo["participant_id"])
 
-    def test_repeat_participant_without_current_photo_is_restored(self):
+    def test_repeat_submission_does_not_replace_deleted_current_photo(self):
         repo = FakeRepository()
         first_payload = payload_with_photo(repo, "atomic-delete-first")
         first, _ = submit(first_payload, "atomic-delete-first", repo, "request-first")
@@ -71,8 +71,9 @@ class AtomicPhotoSubmissionTests(unittest.TestCase):
         submit(second_payload, "atomic-restore", repo, "request-second")
 
         participant = repo.participants[first["participant_id"]]
-        self.assertEqual(participant["current_photo_object_id"], second_payload["photo_object_id"])
-        self.assertFalse(participant["photo_required_blocked"])
+        self.assertIsNone(participant["current_photo_object_id"])
+        self.assertTrue(participant["photo_required_blocked"])
+        self.assertEqual(repo.photo_objects[second_payload["photo_object_id"]]["lifecycle_state"], "DELETE_SCHEDULED")
         self.assertEqual(repo.by_key["atomic-delete-first"]["photo_object_id"], first_payload["photo_object_id"])
 
     def test_rejected_photo_variants_write_no_submission_state(self):
