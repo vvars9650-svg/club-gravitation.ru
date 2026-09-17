@@ -34,9 +34,17 @@ operators; no user list, role mapping, or credential is stored in this repo.
 `components` and `/admin/*` paths into the existing TEST gateway specification;
 keep the public application and photo paths unchanged. Before any reviewed
 TEST change, set only the non-secret variables `admin_function_id` and, if
-needed, `admin_origin`/`admin_audience` for the TEST environment. There is no
-client secret, access token, or PROD value in this repository. This step does
-not deploy or update Yandex Cloud.
+needed, `admin_origin`/`admin_audience` for the TEST environment. The checked-in
+`admin_origin` default is deliberately invalid; replace it with the exact HTTPS
+Selectel origin (scheme + host + optional port, without `/admin-test/`) only in
+the reviewed TEST gateway deployment. There is no client secret, access token,
+or PROD value in this repository. This step does not deploy or update Yandex
+Cloud.
+
+The standalone frontend is built with `scripts/build-admin-selectel.js` and is
+intended for `/admin-test/`. Its redirect URI must be registered exactly in the
+TEST Single-Page Application client. The public site artifact continues to serve
+a script-free placeholder at `/admin/` and never receives this Admin config.
 
 Expected checks:
 
@@ -46,3 +54,8 @@ Expected checks:
 - valid `admin:write`: PATCH only, with backend field allowlist and hashed audit actor;
 - direct function invocation or spoofed client identity: backend `401`;
 - public application, photo, legal, and TEST data flows: unchanged.
+
+The current Admin contract does not return photo bytes or a presigned download
+URL. It exposes the application `photo_object_id` only as stored form data, and
+the UI deliberately does not render it. Private photo viewing requires a
+separate authenticated backend endpoint and is outside this deployment step.

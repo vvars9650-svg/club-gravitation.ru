@@ -7,6 +7,9 @@
 
   const TRANSIENT_KEY = 'gravitation.v5.admin.pkce';
   const ADMIN_SCOPES = ['admin:read', 'admin:write'];
+  const TEST_ISSUER = 'https://auth.yandex.cloud';
+  const TEST_DISCOVERY_URL = `${TEST_ISSUER}/.well-known/openid-configuration`;
+  const TEST_CLIENT_ID = 'aje25t7tefbfr547phru';
   const base64url = (bytes) => {
     let binary = '';
     bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
@@ -67,10 +70,17 @@
     return result;
   };
   const normalizeConfig = (config) => {
-    if (!config || config.environment !== 'TEST' || !config.client_id || !config.redirect_uri) {
+    if (!config || config.environment !== 'TEST' || config.client_id !== TEST_CLIENT_ID || !config.redirect_uri) {
       throw new Error('oidc_configuration_required');
     }
-    if (!config.issuer && !config.openid_configuration_url && !config.authorization_endpoint) {
+    if (config.issuer !== TEST_ISSUER || config.openid_configuration_url !== TEST_DISCOVERY_URL) {
+      throw new Error('oidc_configuration_required');
+    }
+    let redirect;
+    try { redirect = new URL(config.redirect_uri); } catch { throw new Error('oidc_configuration_required'); }
+    const loopback = redirect.hostname === '127.0.0.1' || redirect.hostname === 'localhost';
+    if ((!loopback && redirect.protocol !== 'https:') || (loopback && !['http:', 'https:'].includes(redirect.protocol))
+      || redirect.username || redirect.password || redirect.search || redirect.hash || !redirect.pathname.endsWith('/')) {
       throw new Error('oidc_configuration_required');
     }
     const scopes = config.scopes || ['openid', 'email', 'profile'];
@@ -89,6 +99,13 @@
   }
   function createAuthClient({config, fetchImpl, cryptoImpl, storage, location}) {
     const initialConfig = normalizeConfig(config);
+    const page = new URL(location && location.href || '');
+    const redirect = new URL(initialConfig.redirect_uri);
+    if (page.origin !== redirect.origin || page.pathname !== redirect.pathname
+      || typeof fetchImpl !== 'function' || !cryptoImpl || typeof cryptoImpl.getRandomValues !== 'function'
+      || !cryptoImpl.subtle || typeof cryptoImpl.subtle.digest !== 'function' || !storage) {
+      throw new Error('oidc_configuration_required');
+    }
     let session = null;
     async function signIn() {
       const resolved = await resolveEndpoints(initialConfig, fetchImpl);
@@ -118,5 +135,5 @@
     }
     return {signIn, consumeCallback, getSession: () => session, getAccessToken: () => session && session.accessToken, getIdToken: () => session && session.idToken, signOut: () => { session = null; storage.removeItem(TRANSIENT_KEY); }};
   }
-  return {TRANSIENT_KEY, ADMIN_SCOPES, random, pkceChallenge, decodeJwt, normalizeOidcDisplayNameClaim, displayNameFromClaims, tokenDiagnostics, normalizeConfig, resolveEndpoints, createAuthClient};
+  return {TRANSIENT_KEY, ADMIN_SCOPES, TEST_ISSUER, TEST_DISCOVERY_URL, TEST_CLIENT_ID, random, pkceChallenge, decodeJwt, normalizeOidcDisplayNameClaim, displayNameFromClaims, tokenDiagnostics, normalizeConfig, resolveEndpoints, createAuthClient};
 });

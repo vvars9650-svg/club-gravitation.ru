@@ -8,14 +8,22 @@
   const OPERATIONAL = ['lifecycle_status', 'owner', 'priority', 'next_action', 'next_contact_at', 'decision', 'internal_comment'];
   const FIELDS = ['occupation', 'life_outside_work', 'what_interested', 'what_participant_brings', 'what_friends_value', 'desired_connections', 'desired_connections_other', 'values_in_people', 'barriers_to_meeting', 'acquaintance_methods', 'acquaintance_methods_other', 'return_reason', 'source'];
   const DISPLAY_VALUES = {application_pending:'Новая заявка', pending:'На рассмотрении', approved:'Одобрена', rejected:'Отказано'};
+  const TEST_ADMIN_API_URL = 'https://d5ds805l71s68liu6ge4.fovt0b64.apigw.yandexcloud.net';
   const labels = {full_name:'Имя', age:'Возраст', gender:'Пол', city:'Город', visit_krasnodar:'Посещение Краснодара', phone:'Телефон', telegram:'Профиль или мессенджер', email:'Email', preferred_contact:'Предпочтительный контакт', profile_or_messenger_url:'Профиль или мессенджер', occupation:'Сфера деятельности', public_profile_url:'Страница или сайт', participant_status:'Статус участника', lifecycle_status:'Статус заявки', owner:'Ответственный', priority:'Приоритет', next_action:'Следующее действие', next_contact_at:'Следующий контакт', decision:'Решение', internal_comment:'Внутренний комментарий', life_outside_work:'Чем наполнена ваша жизнь кроме работы?', what_interested:'Почему вам интересно попробовать «Гравитацию»?', what_participant_brings:'Что вы обычно привносите в компанию людей?', what_friends_value:'За что вас ценят друзья и знакомые?', desired_connections:'Какие знакомства вам сейчас интересны?', desired_connections_other:'Какие знакомства или формат общения вам интересны?', values_in_people:'Что вы особенно цените в людях?', barriers_to_meeting:'Что, возможно, мешает вам знакомиться с новыми людьми?', acquaintance_methods:'Какой способ знакомства для вас наиболее естественный?', acquaintance_methods_other:'Расскажите, как вам комфортнее знакомиться', return_reason:'Что должно произойти, чтобы захотелось прийти снова?', source:'Откуда узнали о нас?'};
   const text = (value) => value == null || value === '' ? '—' : String(value);
   const displayValue = (field, value) => field === 'decision' || field === 'lifecycle_status' ? DISPLAY_VALUES[value] || text(value) : text(value);
   const esc = (value) => text(value).replace(/[&<>'"]/gu, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
-  const endpoint = (root) => String(root.__V5_ADMIN_API_URL__ || '').replace(/\/$/u, '');
+  const endpoint = (root) => {
+    const config = root && root.__V5_ADMIN_CONFIG__;
+    if (!config || config.environment !== 'TEST' || config.api_url !== TEST_ADMIN_API_URL) {
+      throw new ApiError('admin_not_configured');
+    }
+    return TEST_ADMIN_API_URL;
+  };
   class ApiError extends Error { constructor(code, status) { super(code); this.code = code; this.status = status; } }
   function createClient(root, fetchImpl, getAccessToken, onAuthFailure) {
-    const base = endpoint(root);
+    let base;
+    try { base = endpoint(root); } catch { base = ''; }
     async function request(path, options = {}) {
       if (!base) throw new ApiError('admin_not_configured');
       const token = getAccessToken && getAccessToken();
@@ -40,7 +48,12 @@
     const showSignedOut = (message = 'Войдите с рабочей учётной записью.') => { ui.app.hidden = true; ui.auth.hidden = false; state(ui.auth.querySelector('[data-auth-state]'), message, 'signed-out'); };
     const authFailure = () => { auth.signOut(); showSignedOut('Сеанс завершён. Войдите снова.'); };
     if (!authApi) { showSignedOut('Не удалось подготовить вход. Обновите страницу или обратитесь к ответственному.'); return; }
-    try { auth = authApi.createAuthClient({config: root.__V5_ADMIN_AUTH_CONFIG__, fetchImpl: root.fetch.bind(root), cryptoImpl: root.crypto, storage: root.sessionStorage, location: root.location}); } catch { showSignedOut('Вход временно недоступен. Обратитесь к ответственному.'); return; }
+    let runtimeConfig;
+    try {
+      runtimeConfig = root.__V5_ADMIN_CONFIG__;
+      endpoint(root);
+      auth = authApi.createAuthClient({config: runtimeConfig.auth, fetchImpl: root.fetch.bind(root), cryptoImpl: root.crypto, storage: root.sessionStorage, location: root.location});
+    } catch { showSignedOut('Вход временно недоступен. Обратитесь к ответственному.'); return; }
     const client = createClient(root, root.fetch.bind(root), () => auth.getAccessToken(), authFailure);
     const query = () => { const [sort, order] = ui.sort.value.split(':'); return {q: ui.search.value.trim(), lifecycle_status: ui.status.value, owner: ui.owner.value.trim(), priority: ui.priority.value, sort, order}; };
     const load = async () => { state(ui.state, 'Загрузка заявок…', 'loading'); list.replaceChildren(); try { const body = await client.list(query()); if (body.environment !== 'TEST') throw new ApiError('environment'); const rows = body.applications || []; if (!rows.length) { state(ui.state, 'Заявок по выбранным условиям нет.', 'empty'); return; } state(ui.state, `Найдено: ${rows.length}`, 'ready'); rows.forEach((row) => { const tr = doc.createElement('tr'); ['submitted_at','full_name','age','city','phone','telegram','preferred_contact','lifecycle_status','owner','priority','next_action','next_contact_at','decision'].forEach((field, index) => { const td = doc.createElement('td'); if (index === 1) { const button = doc.createElement('button'); button.textContent = text(row[field]); button.onclick = () => openCard(row.participant_id); td.append(button); } else td.textContent = displayValue(field, row[field]); tr.append(td); }); list.append(tr); }); } catch (error) { state(ui.state, error.code === 'access_denied' ? 'У вас нет прав для просмотра заявок.' : error.code === 'session_expired' ? 'Сеанс завершён. Войдите снова.' : 'Сервис временно недоступен. Попробуйте позже.', 'error'); } };
@@ -49,7 +62,6 @@
     const showSignedIn = (session) => {
       ui.auth.hidden = true; ui.app.hidden = false;
       ui.identity.textContent = [session.user.name, session.user.email].filter(Boolean).join(' · ') || 'Сотрудник клуба';
-      if (!endpoint(root)) { state(ui.state, 'Вход выполнен. Сервис заявок пока недоступен.', 'ready'); list.replaceChildren(); return; }
       load();
     };
     ui.login.onclick = () => auth.signIn().catch(() => showSignedOut('Не удалось начать вход.'));
@@ -57,7 +69,12 @@
     doc.querySelector('#drawer-close').onclick = () => { ui.drawer.hidden = true; };
     [ui.search,ui.status,ui.owner,ui.priority,ui.sort].forEach((node) => node.addEventListener('change', load)); ui.search.addEventListener('search', load);
     state(ui.auth.querySelector('[data-auth-state]'), 'Проверяем доступ…', 'loading');
-    auth.consumeCallback().then((session) => { const active = session || auth.getSession(); if (active) showSignedIn(active); else showSignedOut(); }).catch(() => showSignedOut('Не удалось подтвердить вход.'));
+    auth.consumeCallback().then((session) => {
+      if (session && root.history && typeof root.history.replaceState === 'function') {
+        root.history.replaceState({}, doc.title, runtimeConfig.auth.redirect_uri);
+      }
+      const active = session || auth.getSession(); if (active) showSignedIn(active); else showSignedOut();
+    }).catch(() => showSignedOut('Не удалось подтвердить вход.'));
   }
-  return {STATUSES,OPERATIONAL,FIELDS,DISPLAY_VALUES,ApiError,createClient,mount};
+  return {STATUSES,OPERATIONAL,FIELDS,DISPLAY_VALUES,TEST_ADMIN_API_URL,ApiError,endpoint,createClient,mount};
 });

@@ -17,8 +17,8 @@ x-yc-apigateway:
       default: aje25t7tefbfr547phru
       description: TEST OIDC audience/client identifier; never a client secret.
     admin_origin:
-      default: http://127.0.0.1:8000
-      description: TEST origin serving admin/index.html.
+      default: SET_SELECTEL_HTTPS_ORIGIN
+      description: Exact HTTPS origin serving the standalone TEST Admin artifact.
 
 components:
   securitySchemes:

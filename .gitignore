@@ -3,5 +3,6 @@ __pycache__/
 backend/v5/dist/
 .codex/
 public-dist/
+admin-selectel-dist/
 test-results/
 playwright-report/

@@ -8,7 +8,8 @@ const adminHtml = fs.readFileSync(require.resolve('../admin/index.html'), 'utf8'
 const visibleAdminHtml = adminHtml.replace(/<script\b[^>]*>[\s\S]*?<\/script>/giu, ' ').replace(/<[^>]+>/gu, ' ').replace(/\s+/gu, ' ').trim();
 
 const storage = () => { const values = new Map(); return {getItem: (key) => values.get(key) || null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key), values}; };
-const config = {environment: 'TEST', issuer: 'https://issuer.test', client_id: 'v5-test-spa', redirect_uri: 'https://admin.test/admin/', scopes: ['openid', 'email', 'profile', 'admin:read', 'admin:write']};
+const config = {environment: 'TEST', issuer: auth.TEST_ISSUER, openid_configuration_url: auth.TEST_DISCOVERY_URL, client_id: auth.TEST_CLIENT_ID, redirect_uri: 'https://admin.test/admin/', scopes: ['openid', 'email', 'profile', 'admin:read', 'admin:write']};
+const runtime = {environment: 'TEST', api_url: admin.TEST_ADMIN_API_URL, auth: config};
 const cryptoImpl = {getRandomValues: (bytes) => { bytes.fill(7); return bytes; }, subtle: crypto.subtle};
 
 assert.equal(admin.STATUSES.length, 9);
@@ -40,7 +41,8 @@ assert.match(adminSource, /Сервис временно недоступен\. 
 assert.match(adminSource, /=> auth\.getAccessToken\(\)/);
 assert.doesNotMatch(adminSource, /=> auth\.getIdToken\(\)/);
 assert.ok(!fs.readFileSync(require.resolve('../assets/js/admin-auth.js'), 'utf8').includes('localStorage'));
-assert.match(configSource, /window\.__V5_ADMIN_API_URL__ = 'https:\/\/d5ds805l71s68liu6ge4\.fovt0b64\.apigw\.yandexcloud\.net';/);
+assert.match(configSource, /window\.__V5_ADMIN_CONFIG__ = Object\.freeze/);
+assert.match(configSource, /api_url: 'https:\/\/d5ds805l71s68liu6ge4\.fovt0b64\.apigw\.yandexcloud\.net'/);
 assert.doesNotMatch(configSource, /\b(?:client_secret|access_token|id_token|refresh_token)\b\s*:/iu);
 assert.match(configSource, /aje25t7tefbfr547phru/);
 assert.match(configSource, /https:\/\/auth\.yandex\.cloud\/\.well-known\/openid-configuration/);
@@ -51,12 +53,16 @@ assert.match(adminHtml, /admin-config\.test\.js[\s\S]*admin-auth\.js/);
 
 (async () => {
   assert.throws(() => auth.normalizeConfig({...config, scopes: ['openid', 'email', 'profile']}), /oidc_configuration_required/);
+  assert.throws(() => auth.normalizeConfig({...config, environment: 'PROD'}), /oidc_configuration_required/);
+  assert.throws(() => auth.normalizeConfig({...config, client_id: 'prod-client'}), /oidc_configuration_required/);
+  assert.throws(() => auth.normalizeConfig({...config, redirect_uri: 'http://admin.test/admin/'}), /oidc_configuration_required/);
+  assert.throws(() => auth.createAuthClient({config, cryptoImpl, storage: storage(), location: {href: 'https://other.test/admin/'}, fetchImpl: async () => ({ok: false})}), /oidc_configuration_required/);
   assert.equal(await auth.pkceChallenge('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk', crypto), 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM');
   const transient = storage(); let assigned = '';
   const payload = Buffer.from(JSON.stringify({iss:'https://issuer.test', aud:'v5-test-spa', sub:'private-subject', exp:12345, scope:'openid email profile', email:'private@example.test'})).toString('base64url');
   const idToken = `header.${payload}.signature`;
   const accessToken = `access.${payload}.signature`;
-  const oidc = auth.createAuthClient({config, cryptoImpl, storage: transient, location: {href: 'https://admin.test/admin/', assign: (url) => { assigned = url; }}, fetchImpl: async (url) => ({ok: true, json: async () => url.includes('openid') ? {authorization_endpoint: 'https://issuer.test/authorize', token_endpoint: 'https://issuer.test/token'} : {access_token: accessToken, id_token: idToken}})});
+  const oidc = auth.createAuthClient({config, cryptoImpl, storage: transient, location: {href: 'https://admin.test/admin/', assign: (url) => { assigned = url; }}, fetchImpl: async (url) => ({ok: true, json: async () => url.includes('openid') ? {authorization_endpoint: 'https://auth.yandex.cloud/authorize', token_endpoint: 'https://auth.yandex.cloud/token'} : {access_token: accessToken, id_token: idToken}})});
   await oidc.signIn();
   assert.match(assigned, /code_challenge_method=S256/);
   assert.ok(transient.values.has(auth.TRANSIENT_KEY));
@@ -82,7 +88,7 @@ assert.equal(auth.displayNameFromClaims({email:'user@example.test'}), '');
   assert.deepEqual(accessDiagnostic, {is_jwt:true, segment_count:3, iss:'https://issuer.test', aud:'v5-test-spa', sub_present:true, exp:12345, claim_names:['aud','email','exp','iss','scope','sub'], scope:'openid email profile'});
   assert.deepEqual(auth.tokenDiagnostics('opaque-access-token', true), {is_jwt:false, segment_count:1, iss:null, aud:null, sub_present:false, exp:null, claim_names:[], scope:null});
   const calls = []; let authFailure = '';
-  const client = admin.createClient({__V5_ADMIN_API_URL__: 'https://admin.test/'}, async (url, options = {}) => { calls.push({url, options}); return {status: 200, ok: true, json: async () => ({environment: 'TEST', applications: []})}; }, () => accessToken, (reason) => { authFailure = reason; });
+  const client = admin.createClient({__V5_ADMIN_CONFIG__: runtime}, async (url, options = {}) => { calls.push({url, options}); return {status: 200, ok: true, json: async () => ({environment: 'TEST', applications: []})}; }, () => accessToken, (reason) => { authFailure = reason; });
   await client.list({q: 'тест', sort: 'submitted_at', order: 'desc'});
   await client.save('PT-1', {owner: 'Влад'});
   assert.match(calls[0].url, /\/admin\/applications\?/);
@@ -90,15 +96,24 @@ assert.equal(auth.displayNameFromClaims({email:'user@example.test'}), '');
   assert.notEqual(calls[0].options.headers.Authorization, `Bearer ${idToken}`);
   assert.equal(calls[0].options.credentials, undefined);
   assert.equal(calls[1].options.headers['Content-Type'], 'application/json');
-  await assert.rejects(() => admin.createClient({__V5_ADMIN_API_URL__: 'https://admin.test'}, async () => ({ok: true}), () => null).list({}), /authentication_required/);
-  const expired = admin.createClient({__V5_ADMIN_API_URL__: 'https://admin.test'}, async () => ({status: 401, ok: false}), () => 'jwt', (reason) => { authFailure = reason; });
+  await assert.rejects(() => admin.createClient({__V5_ADMIN_CONFIG__: runtime}, async () => ({ok: true}), () => null).list({}), /authentication_required/);
+  const expired = admin.createClient({__V5_ADMIN_CONFIG__: runtime}, async () => ({status: 401, ok: false}), () => 'jwt', (reason) => { authFailure = reason; });
   await assert.rejects(() => expired.save('PT-1', {}), /session_expired/);
   assert.equal(authFailure, 'expired');
-  const denied = admin.createClient({__V5_ADMIN_API_URL__: 'https://admin.test'}, async () => ({status: 403, ok: false}), () => 'jwt');
+  const denied = admin.createClient({__V5_ADMIN_CONFIG__: runtime}, async () => ({status: 403, ok: false}), () => 'jwt');
   await assert.rejects(() => denied.list({}), /access_denied/);
   let requestsWithoutApi = 0;
   await assert.rejects(() => admin.createClient({}, async () => { requestsWithoutApi += 1; }, () => 'jwt').list({}), /admin_not_configured/);
   assert.equal(requestsWithoutApi, 0);
-  assert.match(adminSource, /Вход выполнен\. Сервис заявок пока недоступен\./);
+  for (const invalidConfig of [
+    {environment: 'PROD', api_url: admin.TEST_ADMIN_API_URL, auth: config},
+    {environment: 'TEST', api_url: 'https://prod.example.test', auth: config},
+    {environment: 'TEST', api_url: `${admin.TEST_ADMIN_API_URL}/`, auth: config},
+  ]) {
+    let invalidCalls = 0;
+    const invalid = admin.createClient({__V5_ADMIN_CONFIG__: invalidConfig}, async () => { invalidCalls += 1; }, () => 'jwt');
+    await assert.rejects(() => invalid.list({}), /admin_not_configured/);
+    assert.equal(invalidCalls, 0);
+  }
   console.log('admin auth/ui contract: ok');
 })();
