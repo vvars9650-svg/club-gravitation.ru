@@ -9,6 +9,7 @@ const ADMIN_PATH = '/admin-test/';
 const TEST_ADMIN_API_URL = 'https://d5ds805l71s68liu6ge4.fovt0b64.apigw.yandexcloud.net';
 const TEST_ISSUER = 'https://auth.yandex.cloud';
 const TEST_CLIENT_ID = 'aje25t7tefbfr547phru';
+const SELECTEL_TEST_ORIGIN = 'https://test.club-gravitation.ru';
 const FILES = [
   'assets/css/site.css',
   'assets/css/admin.css',
@@ -23,6 +24,9 @@ function normalizeOrigin(value) {
   if (origin.protocol !== 'https:' || origin.username || origin.password
     || origin.pathname !== '/' || origin.search || origin.hash || origin.origin !== value.replace(/\/$/u, '')) {
     throw new Error('ADMIN_SELECTEL_ORIGIN must be an exact HTTPS origin without path, query, or credentials');
+  }
+  if (origin.origin !== SELECTEL_TEST_ORIGIN) {
+    throw new Error(`ADMIN_SELECTEL_ORIGIN must equal ${SELECTEL_TEST_ORIGIN}`);
   }
   return origin.origin;
 }
@@ -57,7 +61,7 @@ window.__V5_ADMIN_CONFIG__ = Object.freeze({
     openid_configuration_url: '${TEST_ISSUER}/.well-known/openid-configuration',
     client_id: '${TEST_CLIENT_ID}',
     redirect_uri: '${redirectUri}',
-    scopes: Object.freeze(['openid', 'email', 'profile', 'admin:read', 'admin:write'])
+    scopes: Object.freeze(['openid', 'email', 'profile'])
   })
 });
 `;
@@ -72,6 +76,7 @@ module.exports = {
   ADMIN_PATH,
   FILES,
   OUTPUT,
+  SELECTEL_TEST_ORIGIN,
   TEST_ADMIN_API_URL,
   TEST_CLIENT_ID,
   TEST_ISSUER,

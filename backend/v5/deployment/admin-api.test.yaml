@@ -17,7 +17,7 @@ x-yc-apigateway:
       default: aje25t7tefbfr547phru
       description: TEST OIDC audience/client identifier; never a client secret.
     admin_origin:
-      default: SET_SELECTEL_HTTPS_ORIGIN
+      default: https://test.club-gravitation.ru
       description: Exact HTTPS origin serving the standalone TEST Admin artifact.
 
 components:
@@ -52,7 +52,7 @@ paths:
       summary: List TEST applications
       operationId: adminListApplications
       security:
-        - adminJwt: [admin:read]
+        - adminJwt: []
       x-yc-apigateway-integration:
         type: cloud_functions
         function_id: ${var.admin_function_id}
@@ -75,7 +75,7 @@ paths:
       summary: Read a TEST participant card
       operationId: adminGetParticipant
       security:
-        - adminJwt: [admin:read]
+        - adminJwt: []
       x-yc-apigateway-integration:
         type: cloud_functions
         function_id: ${var.admin_function_id}
@@ -85,7 +85,7 @@ paths:
       summary: Update TEST operational fields
       operationId: adminPatchParticipant
       security:
-        - adminJwt: [admin:write]
+        - adminJwt: []
       x-yc-apigateway-integration:
         type: cloud_functions
         function_id: ${var.admin_function_id}

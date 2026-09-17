@@ -7,6 +7,7 @@ const {OUTPUT: PUBLIC_OUTPUT, buildPublic} = require('../scripts/build-public');
 const {
   ADMIN_PATH,
   OUTPUT,
+  SELECTEL_TEST_ORIGIN,
   TEST_ADMIN_API_URL,
   buildAdminSelectel,
   normalizeOrigin,
@@ -37,8 +38,9 @@ for (const origin of [
   'https://user:password@selectel.example.test',
   'https://selectel.example.test?environment=TEST',
 ]) assert.throws(() => normalizeOrigin(origin), /exact HTTPS origin/u);
+assert.throws(() => normalizeOrigin('https://selectel.example.test'), /must equal/u);
 
-const origin = 'https://selectel-admin.example.test';
+const origin = SELECTEL_TEST_ORIGIN;
 const result = buildAdminSelectel({origin});
 assert.equal(result.redirectUri, `${origin}${ADMIN_PATH}`);
 assert.deepEqual(filesUnder(OUTPUT), [
@@ -58,7 +60,9 @@ assert.match(adminHtml, /src="assets\/js\/admin-config\.js"/u);
 assert.doesNotMatch(adminHtml, /admin-config\.test\.js|(?:href|src)="\/assets\//u);
 assert.match(adminConfig, new RegExp(TEST_ADMIN_API_URL.replaceAll('.', '\\.')));
 assert.match(adminConfig, /environment: 'TEST'/u);
-assert.match(adminConfig, /redirect_uri: 'https:\/\/selectel-admin\.example\.test\/admin-test\/'/u);
+assert.match(adminConfig, /redirect_uri: 'https:\/\/test\.club-gravitation\.ru\/admin-test\/'/u);
+assert.match(adminConfig, /scopes: Object\.freeze\(\['openid', 'email', 'profile'\]\)/u);
+assert.doesNotMatch(adminBundle, /admin:read|admin:write/u);
 assert.doesNotMatch(adminBundle, /\bPROD\b|client_secret|refresh_token|-----BEGIN (?:OPENSSH |RSA )?PRIVATE KEY-----/iu);
 assert.doesNotMatch(adminBundle, /\/photo-uploads\//u);
 assert.doesNotMatch(adminBundle, /apigw\.yandexcloud\.net\/applications/u);

@@ -8,12 +8,12 @@ const adminHtml = fs.readFileSync(require.resolve('../admin/index.html'), 'utf8'
 const visibleAdminHtml = adminHtml.replace(/<script\b[^>]*>[\s\S]*?<\/script>/giu, ' ').replace(/<[^>]+>/gu, ' ').replace(/\s+/gu, ' ').trim();
 
 const storage = () => { const values = new Map(); return {getItem: (key) => values.get(key) || null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key), values}; };
-const config = {environment: 'TEST', issuer: auth.TEST_ISSUER, openid_configuration_url: auth.TEST_DISCOVERY_URL, client_id: auth.TEST_CLIENT_ID, redirect_uri: 'https://admin.test/admin/', scopes: ['openid', 'email', 'profile', 'admin:read', 'admin:write']};
+const config = {environment: 'TEST', issuer: auth.TEST_ISSUER, openid_configuration_url: auth.TEST_DISCOVERY_URL, client_id: auth.TEST_CLIENT_ID, redirect_uri: 'https://admin.test/admin/', scopes: ['openid', 'email', 'profile']};
 const runtime = {environment: 'TEST', api_url: admin.TEST_ADMIN_API_URL, auth: config};
 const cryptoImpl = {getRandomValues: (bytes) => { bytes.fill(7); return bytes; }, subtle: crypto.subtle};
 
 assert.equal(admin.STATUSES.length, 9);
-assert.deepEqual(auth.ADMIN_SCOPES, ['admin:read', 'admin:write']);
+assert.deepEqual(auth.OIDC_SCOPES, ['openid', 'email', 'profile']);
 assert.deepEqual(admin.OPERATIONAL, ['lifecycle_status', 'owner', 'priority', 'next_action', 'next_contact_at', 'decision', 'internal_comment']);
 assert.deepEqual(admin.DISPLAY_VALUES, {application_pending:'Новая заявка', pending:'На рассмотрении', approved:'Одобрена', rejected:'Отказано'});
 assert.ok(admin.FIELDS.includes('occupation'));
@@ -47,12 +47,14 @@ assert.doesNotMatch(configSource, /\b(?:client_secret|access_token|id_token|refr
 assert.match(configSource, /aje25t7tefbfr547phru/);
 assert.match(configSource, /https:\/\/auth\.yandex\.cloud\/\.well-known\/openid-configuration/);
 assert.match(configSource, /http:\/\/127\.0\.0\.1:8000\/admin\//);
-assert.match(configSource, /'openid', 'email', 'profile'/);
-assert.match(configSource, /'admin:read', 'admin:write'/);
+assert.match(configSource, /scopes: Object\.freeze\(\['openid', 'email', 'profile'\]\)/);
+assert.doesNotMatch(configSource, /admin:read|admin:write/);
 assert.match(adminHtml, /admin-config\.test\.js[\s\S]*admin-auth\.js/);
 
 (async () => {
-  assert.throws(() => auth.normalizeConfig({...config, scopes: ['openid', 'email', 'profile']}), /oidc_configuration_required/);
+  assert.deepEqual(auth.normalizeConfig(config).scopes, ['openid', 'email', 'profile']);
+  assert.throws(() => auth.normalizeConfig({...config, scopes: ['openid', 'email']}), /oidc_configuration_required/);
+  assert.throws(() => auth.normalizeConfig({...config, scopes: [...config.scopes, 'admin:read']}), /oidc_configuration_required/);
   assert.throws(() => auth.normalizeConfig({...config, environment: 'PROD'}), /oidc_configuration_required/);
   assert.throws(() => auth.normalizeConfig({...config, client_id: 'prod-client'}), /oidc_configuration_required/);
   assert.throws(() => auth.normalizeConfig({...config, redirect_uri: 'http://admin.test/admin/'}), /oidc_configuration_required/);

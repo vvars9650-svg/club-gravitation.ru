@@ -8,6 +8,6 @@ window.__V5_ADMIN_CONFIG__ = Object.freeze({
     openid_configuration_url: 'https://auth.yandex.cloud/.well-known/openid-configuration',
     client_id: 'aje25t7tefbfr547phru',
     redirect_uri: 'http://127.0.0.1:8000/admin/',
-    scopes: Object.freeze(['openid', 'email', 'profile', 'admin:read', 'admin:write'])
+    scopes: Object.freeze(['openid', 'email', 'profile'])
   })
 });

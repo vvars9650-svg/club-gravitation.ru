@@ -3,7 +3,9 @@ import unittest
 from pathlib import Path
 
 
-CONFIG = Path(__file__).resolve().parents[1] / "deployment" / "admin-api.test.yaml"
+DEPLOYMENT = Path(__file__).resolve().parents[1] / "deployment"
+CONFIG = DEPLOYMENT / "admin-api.test.yaml"
+LIVE_PATCH = DEPLOYMENT / "admin-api.live-minimal.patch.yaml"
 
 
 class AdminAuthorizationConfigTests(unittest.TestCase):
@@ -15,7 +17,7 @@ class AdminAuthorizationConfigTests(unittest.TestCase):
         self.assertIn("https://auth.yandex.cloud/.well-known/openid-configuration", self.source)
         self.assertNotRegex(self.source, r"(?i)(client_secret|access_token|refresh_token|private_key)\s*:")
         self.assertNotIn("prod", self.source.lower())
-        self.assertIn("default: SET_SELECTEL_HTTPS_ORIGIN", self.source)
+        self.assertIn("default: https://test.club-gravitation.ru", self.source)
         self.assertNotIn("http://127.0.0.1", self.source)
 
     def test_gateway_requires_bearer_jwt_and_subject(self):
@@ -26,10 +28,12 @@ class AdminAuthorizationConfigTests(unittest.TestCase):
         self.assertIn("- sub", self.source)
         self.assertIn("audiences:", self.source)
 
-    def test_endpoint_scopes_match_backend_policy(self):
-        self.assertRegex(self.source, re.compile(r"/admin/applications:.*?security:.*?- adminJwt: \[admin:read\]", re.S))
-        self.assertRegex(self.source, re.compile(r"operationId: adminGetParticipant.*?- adminJwt: \[admin:read\]", re.S))
-        self.assertRegex(self.source, re.compile(r"operationId: adminPatchParticipant.*?- adminJwt: \[admin:write\]", re.S))
+    def test_every_admin_operation_requires_jwt_without_custom_scopes(self):
+        self.assertRegex(self.source, re.compile(r"/admin/applications:.*?security:.*?- adminJwt: \[\]", re.S))
+        self.assertRegex(self.source, re.compile(r"operationId: adminGetParticipant.*?- adminJwt: \[\]", re.S))
+        self.assertRegex(self.source, re.compile(r"operationId: adminPatchParticipant.*?- adminJwt: \[\]", re.S))
+        self.assertEqual(self.source.count("- adminJwt: []"), 3)
+        self.assertNotRegex(self.source, r"admin:(?:read|write)")
         self.assertEqual(self.source.count("function_id: ${var.admin_function_id}"), 3)
 
     def test_cors_is_exact_origin_and_bearer_header_only(self):
@@ -38,6 +42,15 @@ class AdminAuthorizationConfigTests(unittest.TestCase):
         self.assertNotIn("origin: true", self.source)
         self.assertNotIn("origin: '*'", self.source)
         self.assertNotIn("credentials: true", self.source)
+
+    def test_live_gateway_patch_changes_only_two_admin_cors_origins(self):
+        patch = LIVE_PATCH.read_text(encoding="utf-8")
+        self.assertEqual(patch.count("origin: https://test.club-gravitation.ru"), 2)
+        self.assertIn("/admin/applications:", patch)
+        self.assertIn("/admin/participants/{id}:", patch)
+        self.assertNotRegex(patch, r"(?m)^  /(?:health|applications|photo-uploads(?:/|:))")
+        self.assertNotIn("security:", patch)
+        self.assertNotIn("components:", patch)
 
 
 if __name__ == "__main__":

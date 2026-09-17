@@ -1,0 +1,10 @@
+# Review-only deep-merge patch for the existing TEST Gateway specification.
+# Do not replace the full specification. Keep /, /health, /applications and
+# /photo-uploads/* byte-for-byte unchanged.
+paths:
+  /admin/applications:
+    x-yc-apigateway-cors:
+      origin: https://test.club-gravitation.ru
+  /admin/participants/{id}:
+    x-yc-apigateway-cors:
+      origin: https://test.club-gravitation.ru

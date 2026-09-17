@@ -12,7 +12,7 @@ config, а `/apply/` остаётся в режиме `PUBLIC_BLOCKED`.
 Admin собирается отдельно:
 
 ```bash
-ADMIN_SELECTEL_ORIGIN=https://<selectel-https-origin> node scripts/build-admin-selectel.js
+ADMIN_SELECTEL_ORIGIN=https://test.club-gravitation.ru node scripts/build-admin-selectel.js
 ```
 
 Результат — `admin-selectel-dist` с шестью файлами: `index.html`, двумя CSS и
@@ -20,33 +20,32 @@ ADMIN_SELECTEL_ORIGIN=https://<selectel-https-origin> node scripts/build-admin-s
 credentials или секреты. Build завершается ошибкой без точного HTTPS origin.
 Admin жёстко принимает только TEST API
 `https://d5ds805l71s68liu6ge4.fovt0b64.apigw.yandexcloud.net` и не имеет PROD
-fallback.
+fallback. Любой другой build origin отклоняется.
 
-Рекомендуемый URL — `https://<selectel-https-origin>/admin-test/`. Отдельный path
+Зафиксированный URL — `https://test.club-gravitation.ru/admin-test/`. Отдельный path
 не смешивает operator acceptance с публичной заглушкой `/admin/` и позволяет
 переключать Admin независимо от public release. OIDC Redirect URI должен в точности
 совпадать с этим URL, включая завершающий `/`.
 
 ## Требования до ручного deployment
 
-1. На Selectel уже должен работать доверенный TLS-сертификат для выбранного origin.
+1. На Selectel уже должен работать доверенный TLS-сертификат для
+   `test.club-gravitation.ru`.
    HTTP допустим в Yandex Identity Hub только для `localhost`/`127.0.0.1` и для
    Selectel не подходит.
 2. OIDC client `aje25t7tefbfr547phru` должен иметь тип Single-Page Application,
-   PKCE и точный redirect URI `https://<selectel-https-origin>/admin-test/`.
-3. TEST API Gateway должен получить `admin_origin` с точным origin без path:
-   `https://<selectel-https-origin>`. В CORS должны остаться только методы
+   PKCE и точный redirect URI `https://test.club-gravitation.ru/admin-test/`.
+3. TEST API Gateway должен использовать точный CORS origin без path:
+   `https://test.club-gravitation.ru`. В CORS должны остаться только методы
    `GET, PATCH, OPTIONS` и headers `Authorization, Content-Type`; credentials не
    нужны, так как браузер отправляет bearer token, а не cookie.
-4. До acceptance нужно подтвердить реальным входом, что access token содержит
-   `aud=aje25t7tefbfr547phru`, `sub` и scopes `admin:read`/`admin:write`. Если
-   Identity Hub не выдаёт эти custom scopes для текущего client, Gateway вернёт
-   `403`; расширять CORS или ослаблять backend authorizer нельзя.
+4. В OIDC application `gravitation-v5-admin-test` должен быть назначен только
+   Влад. SPA запрашивает только `openid email profile`; custom Admin scopes не
+   используются. Gateway проверяет issuer, audience `aje25t7tefbfr547phru` и
+   обязательный `sub`. Валидный member token даёт полный TEST Admin read/write.
 
-Текущий SPA запрашивает оба Admin scope одновременно. Это подходит для одного
-полнофункционального TEST-оператора (Влада), но не создаёт отдельную read-only
-роль: для разных ролей потребуется отдельное решение по выдаче scopes/claims и
-повторная security review.
+Отдельной read-only роли на этом этапе нет. Её добавление потребует новой модели
+claims/groups и отдельной security review.
 
 Gateway/CORS и OIDC redirect изменяются в Yandex Cloud отдельной ручной операцией;
 Cloud Function, TEST YDB и private photo storage менять не требуется.
@@ -86,8 +85,8 @@ location ^~ /admin-test/ {
    Identity Hub и TEST API; запросов к PROD или public intake нет.
 3. Проверить login/callback, очистку `code` из address bar и logout.
 4. Проверить `GET /admin/applications`, открытие карточки и сохранение одного
-   синтетического operational-поля. Проверить ожидаемые `401` без token и `403`
-   без нужного scope.
+   синтетического operational-поля. Проверить `401` без token и отказ Gateway
+   для token с неверным issuer/audience или без `sub`.
 5. Проверить preflight для `Authorization` и для PATCH с `Content-Type`.
 6. Не использовать реальные персональные данные. Фото в текущем Admin не
    отображаются: backend не предоставляет Admin download endpoint/presigned URL.

@@ -5,7 +5,7 @@ from .factory import runtime_repository, runtime_photo_upload_service
 from .repository import RepositoryConflict, RepositoryUnavailable
 from .object_storage import ObjectStorageError
 from .admin import admin_handler
-from .authorizer import AdminAuthorizationError, authorize_admin, required_scope_for_request
+from .authorizer import AdminAuthorizationError, authorize_admin
 def response(status,body,request_id): return {'statusCode':status,'headers':{'Content-Type':'application/json'},'body':json.dumps({**body,'request_id':request_id},ensure_ascii=False)}
 
 def format_application_number(value):
@@ -23,7 +23,7 @@ def handler(event,context=None,repo=None,photo_service=None):
     path = event.get('path', '')
     if is_admin_path(path):
         try:
-            principal = authorize_admin(event, required_scope_for_request(event.get('httpMethod')))
+            principal = authorize_admin(event)
         except AdminAuthorizationError as error:
             return response(error.status, {'error': {'code': error.code}}, request_id)
         try:

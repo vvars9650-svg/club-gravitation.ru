@@ -6,7 +6,7 @@
   'use strict';
 
   const TRANSIENT_KEY = 'gravitation.v5.admin.pkce';
-  const ADMIN_SCOPES = ['admin:read', 'admin:write'];
+  const OIDC_SCOPES = Object.freeze(['openid', 'email', 'profile']);
   const TEST_ISSUER = 'https://auth.yandex.cloud';
   const TEST_DISCOVERY_URL = `${TEST_ISSUER}/.well-known/openid-configuration`;
   const TEST_CLIENT_ID = 'aje25t7tefbfr547phru';
@@ -83,9 +83,12 @@
       || redirect.username || redirect.password || redirect.search || redirect.hash || !redirect.pathname.endsWith('/')) {
       throw new Error('oidc_configuration_required');
     }
-    const scopes = config.scopes || ['openid', 'email', 'profile'];
-    if (!Array.isArray(scopes) || !ADMIN_SCOPES.every((scope) => scopes.includes(scope))) throw new Error('oidc_configuration_required');
-    return {...config, scopes};
+    const scopes = config.scopes;
+    if (!Array.isArray(scopes) || scopes.length !== OIDC_SCOPES.length
+      || !OIDC_SCOPES.every((scope, index) => scopes[index] === scope)) {
+      throw new Error('oidc_configuration_required');
+    }
+    return {...config, scopes: [...OIDC_SCOPES]};
   };
   async function resolveEndpoints(config, fetchImpl) {
     const known = config.authorization_endpoint && config.token_endpoint;
@@ -135,5 +138,5 @@
     }
     return {signIn, consumeCallback, getSession: () => session, getAccessToken: () => session && session.accessToken, getIdToken: () => session && session.idToken, signOut: () => { session = null; storage.removeItem(TRANSIENT_KEY); }};
   }
-  return {TRANSIENT_KEY, ADMIN_SCOPES, TEST_ISSUER, TEST_DISCOVERY_URL, TEST_CLIENT_ID, random, pkceChallenge, decodeJwt, normalizeOidcDisplayNameClaim, displayNameFromClaims, tokenDiagnostics, normalizeConfig, resolveEndpoints, createAuthClient};
+  return {TRANSIENT_KEY, OIDC_SCOPES, TEST_ISSUER, TEST_DISCOVERY_URL, TEST_CLIENT_ID, random, pkceChallenge, decodeJwt, normalizeOidcDisplayNameClaim, displayNameFromClaims, tokenDiagnostics, normalizeConfig, resolveEndpoints, createAuthClient};
 });

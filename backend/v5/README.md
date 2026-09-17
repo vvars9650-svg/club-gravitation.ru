@@ -48,22 +48,23 @@ The runtime repository is created lazily on the first POST and reused for the li
 `backend/v5/admin.py` provides the TEST-only Admin contract for list
 applications, participant card, and operational PATCH. `authorizer.py` is the
 backend authorization boundary for a Yandex API Gateway JWT authorizer:
-unauthenticated or insufficiently scoped `/admin/*` requests fail closed.
+unauthenticated `/admin/*` requests fail closed.
 There is no header, token, or development bypass in this code. The only mutable fields are
 `lifecycle_status`, `owner`, `priority`, `next_action`, `next_contact_at`,
 `decision`, and `internal_comment`. Each PATCH emits a minimal `audit_log` action
 containing a hashed actor token and changed field names, never a participant
-payload. The existing schema is unchanged. Role and gateway configuration are
+payload. The existing schema is unchanged. Authorization and gateway configuration are
 documented in `ADMIN-AUTH.md` and `deployment/admin-api.test.yaml`; they are
 TEST-only artifacts and are not deployed by this repository.
 
 ## STEP 7B OIDC/JWT client foundation (not deployed)
 
 The Admin SPA has an in-memory OIDC Authorization Code + PKCE client in
-`assets/js/admin-auth.js`. It accepts only a TEST `window.__V5_ADMIN_AUTH_CONFIG__`
-injected by the protected host. Required configuration is `environment: "TEST"`,
-`issuer` or `openid_configuration_url`, `client_id`, `redirect_uri`, and scopes
-(`openid email profile admin:read admin:write`; `groups` is not requested). Direct endpoint values may
+`assets/js/admin-auth.js`. It accepts only the TEST `auth` section of
+`window.__V5_ADMIN_CONFIG__` injected by the protected host. Required
+configuration is `environment: "TEST"`,
+`issuer`, `openid_configuration_url`, `client_id`, `redirect_uri`, and the exact
+supported scopes `openid email profile` (`groups` is not requested). Direct endpoint values may
 also be injected as `authorization_endpoint` and `token_endpoint`. No client
 secret, token, or production configuration belongs in the repository.
 
@@ -74,11 +75,12 @@ credentials. On 401 it signs out locally and does not retry PATCH; on 403 it
 shows access denied.
 
 For `/admin/*`, `handler.py` delegates to `authorizer.py`, which reads only
-`requestContext.authorizer.jwt.claims.sub` and the gateway-derived `scopes`
-list. Missing context, `sub`, or the required role fails closed. Client
-headers, cookies, query parameters, and body fields are ignored as actor or
-role sources. The raw `sub` is hashed by the existing Admin layer before audit
-storage.
+`requestContext.authorizer.jwt.claims.sub`. Missing context or `sub` fails
+closed. Scopes do not grant access in this single-operator TEST stage; Identity
+Hub application membership plus Gateway issuer/audience/subject validation is
+the access boundary. Client headers, cookies, query parameters, and body fields
+are ignored as identity or access sources. The raw `sub` is hashed by the
+existing Admin layer before audit storage.
 
 ## STEP 8A lifecycle foundation (internal only)
 
