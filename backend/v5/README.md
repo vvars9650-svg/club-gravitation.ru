@@ -79,7 +79,12 @@ warning count, records `duplicate_submission|basis=normalized_phone` in
 photo for deletion, and returns the original number. Secondary identifiers are
 not automatic merge keys.
 
-Migration 008 deliberately contains no data-changing backfill. Before deploying
+The SQL file deliberately contains no data-changing backfill. The executable
+TEST-only data-plane procedure is now implemented in
+[`migration_008_runner.py`](migration_008_runner.py); see
+[`MIGRATION-008-RUNBOOK.md`](MIGRATION-008-RUNBOOK.md) for exact phased commands,
+recovery, verification and STOP conditions. `migration_008.py` remains an offline
+test helper, not production readiness evidence. Before deploying
 the new TEST function, use only synthetic TEST data and perform this reviewed
 reconciliation:
 
@@ -95,7 +100,8 @@ reconciliation:
    photo, or answers from later rows into it.
 4. Insert only the preserved original into `application_phone_keys`. For every
    later synthetic row, add one audit duplicate event linked to the original and
-   increment its duplicate summary. The Admin list joins through this key table,
+   recompute its duplicate summary from stable reconciliation evidence plus
+   existing runtime hard-duplicate events. The Admin list joins through this key table,
    so those later rows cease to be canonical visible CRM records while remaining
    preserved in storage. Keep a reviewed ID mapping until acceptance is complete.
 5. Later synthetic Application/consent/photo rows must not be deleted by an
@@ -122,7 +128,9 @@ intentional rename/consolidation, not a skipped test.
 
 Because current TEST data may contain synthetic duplicate Application rows, the
 new function must not be deployed between the DDL and the reviewed key backfill.
-The repository does not apply, backfill, delete, deploy, or register this migration.
+Application startup, builders and tests do not apply or register migrations.
+Only the explicitly invoked operator runner with `--allow-write --writers-paused`
+can apply missing DDL, backfill or register 008; phases never chain automatically.
 
 ## STEP 7B OIDC/JWT client foundation (not deployed)
 

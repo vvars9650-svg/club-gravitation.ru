@@ -245,6 +245,47 @@ class YdbRepositoryTests(unittest.TestCase):
             self.assertTrue(stream.consumed)
             self.assertTrue(stream.exited)
 
+    def test_intake_union_has_no_premature_statement_terminator(self):
+        tx = submission_transaction("query-contract")
+        repo = self.make_repo(tx)
+        repo.save("query-contract", make_record())
+        query = tx.queries[0]
+        self.assertIn('"phone_key" AS record_type', query)
+        self.assertNotRegex(query, r";\s*UNION\s+ALL")
+        self.assertEqual(query.count(";"), 7)  # declarations + one final terminator
+
+    def test_canonical_phone_key_wins_over_application_number_sorting(self):
+        key = "canonical-key"
+        tx = FakeTransaction([
+            FakeResultSet([
+                {"record_type": "phone_key", "application_id": "APP-OLDER", "key_participant_id": "PT-CANONICAL", "participant_id": "PT-CANONICAL"},
+                {"record_type": "phone_application", "application_id": "APP-OLDER", "key_participant_id": "PT-CANONICAL", "participant_id": "PT-CANONICAL", "application_number": 2},
+                {"record_type": "legacy_phone_application", "application_id": "APP-HIGHER-NUMBER", "participant_id": "PT-SYNTHETIC", "application_number": 99},
+            ]),
+            FakeResultSet([ready_photo(key)]),
+        ])
+        repo = self.make_repo(tx)
+        record = make_record()
+        self.assertTrue(repo.save(key, record))
+        self.assertEqual(record["application_id"], "APP-OLDER")
+
+    def test_phone_key_application_or_participant_mismatch_fails_closed(self):
+        for rows, reason in (
+            ([{"record_type": "phone_key", "application_id": "APP-MISSING", "key_participant_id": "PT-1", "participant_id": ""}], "application_phone_key_inconsistent"),
+            ([{"record_type": "phone_key", "application_id": "APP-1", "key_participant_id": "PT-1", "participant_id": "PT-2"}], "application_phone_key_inconsistent"),
+        ):
+            with self.subTest(reason=reason):
+                tx = FakeTransaction([FakeResultSet(rows)])
+                repo = self.make_repo(tx)
+                with self.assertRaisesRegex(RepositoryConflict, reason):
+                    repo.save("mismatch-" + reason, make_record())
+
+    def test_legacy_phone_application_without_canonical_key_fails_closed(self):
+        tx = FakeTransaction([FakeResultSet([{"record_type": "legacy_phone_application", "application_id": "APP-LEGACY", "participant_id": "PT-LEGACY"}])])
+        repo = self.make_repo(tx)
+        with self.assertRaisesRegex(RepositoryConflict, "application_phone_key_missing"):
+            repo.save("missing-canonical-key", make_record())
+
     def test_server_owned_values_override_client(self):
         tx = submission_transaction("test-key-00000002")
 

@@ -26,6 +26,11 @@ def preflight_ddl(schema_objects):
     This deliberately performs detection only; it never issues DDL.
     """
     required = {
+        "applications.owner",
+        "applications.priority",
+        "applications.next_action",
+        "applications.next_contact_at",
+        "applications.internal_comment",
         "applications.duplicate_attempt_count",
         "applications.last_duplicate_at",
         "applications.last_duplicate_match_basis",

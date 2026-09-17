@@ -472,7 +472,59 @@ class YdbRepository:
           AND participant_id = $proposed_participant_id
         UNION ALL
         SELECT
+            "phone_key" AS record_type,
+            k.application_id,
+            k.participant_id AS key_participant_id,
+            a.participant_id,
+            a.payload_fingerprint,
+            p.processing_blocked,
+            COALESCE(p.current_photo_object_id, "") AS current_photo_object_id,
+            COALESCE(a.application_number, CAST(0 AS Uint64)) AS application_number
+        FROM application_phone_keys AS k
+        LEFT JOIN applications AS a
+          ON a.environment = k.environment AND a.application_id = k.application_id
+        LEFT JOIN participants AS p
+          ON p.environment = k.environment AND p.participant_id = k.participant_id
+        WHERE k.environment = $environment
+          AND k.normalized_phone = $phone
+        UNION ALL
+        SELECT
+            "phone_key_inconsistent" AS record_type,
+            k.application_id,
+            k.participant_id AS key_participant_id,
+            COALESCE(a.participant_id, p.participant_id, "") AS participant_id,
+            "" AS payload_fingerprint,
+            false AS processing_blocked,
+            "" AS current_photo_object_id,
+            CAST(0 AS Uint64) AS application_number
+        FROM application_phone_keys AS k
+        LEFT JOIN applications AS a
+          ON a.environment = k.environment AND a.application_id = k.application_id
+        LEFT JOIN participants AS p
+          ON p.environment = k.environment AND p.participant_id = k.participant_id
+        WHERE k.environment = $environment
+          AND k.normalized_phone = $phone
+          AND (a.application_id IS NULL OR p.participant_id IS NULL OR a.participant_id != k.participant_id)
+        UNION ALL
+        SELECT
             "phone_application" AS record_type,
+            k.application_id,
+            k.participant_id AS key_participant_id,
+            a.participant_id,
+            a.payload_fingerprint,
+            p.processing_blocked,
+            COALESCE(p.current_photo_object_id, "") AS current_photo_object_id,
+            COALESCE(a.application_number, CAST(0 AS Uint64)) AS application_number
+        FROM application_phone_keys AS k
+        INNER JOIN applications AS a
+          ON a.environment = k.environment AND a.application_id = k.application_id
+        INNER JOIN participants AS p
+          ON p.environment = k.environment AND p.participant_id = k.participant_id
+        WHERE k.environment = $environment
+          AND k.normalized_phone = $phone
+        UNION ALL
+        SELECT
+            "legacy_phone_application" AS record_type,
             application_id,
             "" AS key_participant_id,
             participant_id,
@@ -482,7 +534,7 @@ class YdbRepository:
             COALESCE(application_number, CAST(0 AS Uint64)) AS application_number
         FROM applications
         WHERE environment = $environment
-          AND phone = $phone;
+          AND phone = $phone
         UNION ALL
         SELECT "secondary_email" AS record_type, application_id, "" AS key_participant_id,
                participant_id, "" AS payload_fingerprint, false AS processing_blocked,
@@ -547,14 +599,22 @@ class YdbRepository:
                     and self._row_value(row, "application_id", "")
                 )
             ]
+            phone_key_rows = [
+                row for row in intake_rows
+                if self._row_value(row, "record_type", "") == "phone_key"
+            ]
+            inconsistent_phone_key_rows = [
+                row for row in intake_rows
+                if self._row_value(row, "record_type", "") == "phone_key_inconsistent"
+            ]
             existing_application_rows = [
                 row for row in intake_rows
                 if self._row_value(row, "record_type", "") == "phone_application"
             ]
-            existing_application_rows.sort(key=lambda row: (
-                self._row_value(row, "application_number", 0) or 0,
-                self._row_value(row, "application_id", ""),
-            ))
+            legacy_application_rows = [
+                row for row in intake_rows
+                if self._row_value(row, "record_type", "") == "legacy_phone_application"
+            ]
             secondary_rows = [row for row in intake_rows if self._row_value(row, "record_type", "") in ("secondary_email", "secondary_profile")]
             phone_rows = [
                 row for row in intake_rows
@@ -565,6 +625,24 @@ class YdbRepository:
                 row for row in intake_rows
                 if self._row_value(row, "record_type", "") == "candidate"
             ]
+
+            if phone_key_rows:
+                if inconsistent_phone_key_rows:
+                    tx.commit()
+                    raise RepositoryConflict("application_phone_key_inconsistent")
+                key_row = phone_key_rows[0]
+                if (not self._row_value(key_row, "application_id", "")
+                        or not self._row_value(key_row, "key_participant_id", "")
+                        or not self._row_value(key_row, "participant_id", "")
+                        or self._row_value(key_row, "participant_id", "") != self._row_value(key_row, "key_participant_id", "")):
+                    tx.commit()
+                    raise RepositoryConflict("application_phone_key_inconsistent")
+                if not existing_application_rows:
+                    tx.commit()
+                    raise RepositoryConflict("application_phone_key_inconsistent")
+            elif legacy_application_rows:
+                tx.commit()
+                raise RepositoryConflict("application_phone_key_missing")
 
             if application_rows:
                 tx.commit()
@@ -610,6 +688,10 @@ class YdbRepository:
                 if self._row_value(phone_rows[0], "processing_blocked", False):
                     tx.commit()
                     raise RepositoryUnavailable("processing_blocked")
+
+            if phone_key_rows and self._row_value(phone_key_rows[0], "processing_blocked", False):
+                tx.commit()
+                raise RepositoryUnavailable("processing_blocked")
 
             if not existing_participant_id and candidate_rows:
                 tx.commit()

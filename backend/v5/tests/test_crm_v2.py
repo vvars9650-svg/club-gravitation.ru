@@ -33,7 +33,7 @@ class CrmV2AcceptanceTests(unittest.TestCase):
         self.assertEqual(repo.get_admin_application(third["application_id"])["application"]["possible_duplicate_count"], 0)
 
     def test_migration_008_preflight_backfill_is_resumable_and_ready_guarded(self):
-        self.assertTrue(preflight_ddl({"applications.duplicate_attempt_count", "applications.last_duplicate_at", "applications.last_duplicate_match_basis", "applications.possible_duplicate_count", "applications.possible_duplicate_match_basis", "applications.possible_duplicate_application_id", "application_phone_keys", "application_submission_keys"}))
+        self.assertTrue(preflight_ddl({"applications.owner", "applications.priority", "applications.next_action", "applications.next_contact_at", "applications.internal_comment", "applications.duplicate_attempt_count", "applications.last_duplicate_at", "applications.last_duplicate_match_basis", "applications.possible_duplicate_count", "applications.possible_duplicate_match_basis", "applications.possible_duplicate_application_id", "application_phone_keys", "application_submission_keys"}))
         repo = FakeRepository()
         first, _ = submit(payload_with_photo(repo, "legacy-a"), "legacy-a", repo, "request-a")
         duplicate = dict(first); duplicate["application_id"] = "APP-LEGACY-2"; duplicate["application_number"] = 0; duplicate["submitted_at"] = "9999-01-01T00:00:00Z"; repo.by_key["legacy-b"] = duplicate
