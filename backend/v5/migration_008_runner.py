@@ -43,6 +43,7 @@ KEYS = {
 REQUIRED = {"applications." + c for c in COLUMNS} | set(KEY_TABLES)
 LIVE_ACTION = "duplicate_submission|basis=normalized_phone"
 EVENT_PREFIX = LIVE_ACTION + "|source=migration_008|reference="
+MAX_APPLICATION_NUMBER = 2**64 - 1
 
 
 class Stop(RuntimeError):
@@ -141,6 +142,30 @@ def expected_state(snapshot):
     return groups, expected
 
 
+def allocation_order(groups):
+    """Return canonical Application IDs in the stable migration order."""
+    return sorted(rows[0]["application_id"] for rows in groups.values())
+
+
+def next_application_number(snapshot):
+    """Return the next number without reusing a consumed counter value."""
+    counter = snapshot.get("counter")
+    if type(counter) is not int or counter < 0:
+        raise Stop("invalid_application_counter")
+    allocated = [
+        row["application_number"]
+        for row in snapshot["applications"]
+        if (row.get("application_number") or 0) > 0
+    ]
+    highest_allocated = max(allocated, default=0)
+    if counter < highest_allocated:
+        raise Stop("counter_below_allocated")
+    floor = max(counter, highest_allocated)
+    if floor >= MAX_APPLICATION_NUMBER:
+        raise Stop("application_number_exhausted")
+    return floor + 1
+
+
 def verify(snapshot, schema):
     report = schema_report(schema)
     errors = [] if report["result"] == "PASS" else ["schema_incomplete"]
@@ -183,8 +208,11 @@ def verify(snapshot, schema):
     if len(numbers) != len(set(numbers)):
         errors.append("duplicate_visible_number")
     allocated = max((a.get("application_number") or 0 for a in applications.values()), default=0)
-    if snapshot["counter"] is None or snapshot["counter"] < allocated:
+    counter = snapshot["counter"]
+    if counter is None or (type(counter) is int and counter < allocated):
         errors.append("counter_below_allocated")
+    elif type(counter) is not int or counter < 0:
+        errors.append("invalid_application_counter")
     if any("duplicate" in e["action"] and e["action"] != LIVE_ACTION
            and not e["action"].startswith((EVENT_PREFIX, "possible_duplicate|")) for e in snapshot["events"]):
         errors.append("unrecognized_duplicate_evidence")
@@ -286,6 +314,9 @@ class YdbTransaction:
 
     def reconcile(self, phone, rows, snapshot):
         canonical = rows[0]
+        assigned_number = None
+        if (canonical.get("application_number") or 0) <= 0:
+            assigned_number = next_application_number(snapshot)
         for later in rows[1:]:
             event = evidence(canonical, later)
             self.query('''DECLARE $id AS Utf8; DECLARE $app AS Utf8; DECLARE $participant AS Utf8;
@@ -298,21 +329,31 @@ class YdbTransaction:
         count = len(rows) - 1 + len(live)
         latest = max([timestamp(r["submitted_at"]) for r in rows[1:]] + [timestamp(e["timestamp"]) for e in live], default=None)
         created = next((k.get("created_at") for k in snapshot["phone_keys"] if k["normalized_phone"] == phone), None) or canonical["submitted_at"]
+        number_assignment = "application_number=$number,\n                " if assigned_number is not None else ""
+        params = {"$phone": phone, "$app": canonical["application_id"], "$participant": canonical["participant_id"],
+                  "$created": self.sdk.TypedValue(timestamp(created), self.sdk.PrimitiveType.Timestamp),
+                  "$count": self.sdk.TypedValue(count, self.sdk.PrimitiveType.Uint64),
+                  "$last": self.sdk.TypedValue(latest, self.sdk.OptionalType(self.sdk.PrimitiveType.Timestamp))}
+        if assigned_number is not None:
+            params["$number"] = self.sdk.TypedValue(assigned_number, self.sdk.PrimitiveType.Uint64)
         self.query('''DECLARE $phone AS Utf8; DECLARE $app AS Utf8; DECLARE $participant AS Utf8;
             DECLARE $created AS Timestamp; DECLARE $count AS Uint64; DECLARE $last AS Timestamp?;
+            {number_declaration}
             UPSERT INTO application_phone_keys (environment,normalized_phone,application_id,participant_id,created_at)
             VALUES ("TEST",$phone,$app,$participant,$created);
             UPDATE applications SET
-                application_status=IF(COALESCE(application_status,"")="","Новая заявка",application_status),
+                {number_assignment}application_status=IF(COALESCE(application_status,"")="","Новая заявка",application_status),
                 next_action=IF(COALESCE(next_action,"")="","Рассмотреть",next_action),
                 duplicate_attempt_count=$count,
                 last_duplicate_at=COALESCE($last,last_duplicate_at),
                 last_duplicate_match_basis=IF($count>0,"normalized_phone",last_duplicate_match_basis)
-            WHERE environment="TEST" AND application_id=$app;''',
-            {"$phone": phone, "$app": canonical["application_id"], "$participant": canonical["participant_id"],
-             "$created": self.sdk.TypedValue(timestamp(created), self.sdk.PrimitiveType.Timestamp),
-             "$count": self.sdk.TypedValue(count, self.sdk.PrimitiveType.Uint64),
-             "$last": self.sdk.TypedValue(latest, self.sdk.OptionalType(self.sdk.PrimitiveType.Timestamp))})
+            WHERE environment="TEST" AND application_id=$app;'''.format(
+                number_declaration="DECLARE $number AS Uint64;" if assigned_number is not None else "",
+                number_assignment=number_assignment), params)
+        if assigned_number is not None:
+            self.query('''DECLARE $number AS Uint64;
+                UPSERT INTO application_counters (environment,counter_name,last_value)
+                VALUES ("TEST","applications",$number);''', {"$number": params["$number"]})
 
     def register(self):
         self.query('''UPSERT INTO schema_migrations (environment,migration_id,applied_at)
@@ -354,11 +395,11 @@ def run(store, phase, allow_write=False, writers_paused=False):
     if phase == "backfill":
         # Existing ledger + bad data must never be silently repaired/re-blessed.
         fatal = {"prior_migrations_missing", "migration_incorrectly_registered", "counter_below_allocated",
-                 "visible_number_not_positive", "duplicate_visible_number", "missing_participant",
+                 "duplicate_visible_number", "missing_participant", "invalid_application_counter",
                  "unrecognized_duplicate_evidence", "reconciliation_evidence_corrupt"}
         if fatal.intersection(verification["errors"]):
             raise Stop("backfill_preconditions_failed")
-        for canonical_id in sorted(r[0]["application_id"] for r in groups.values()):
+        for canonical_id in allocation_order(groups):
             def reconcile(tx):
                 current, current_groups, checked = read(tx)
                 if fatal.intersection(checked["errors"]):

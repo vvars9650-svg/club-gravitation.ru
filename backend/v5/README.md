@@ -107,9 +107,14 @@ reconciliation:
 5. Later synthetic Application/consent/photo rows must not be deleted by an
    automated migration. Their final quarantine/deletion is a separate, explicitly
    approved TEST cleanup after the ID mapping and counts are verified.
-6. Verify that each normalized phone has exactly one phone-key row, each key
-   points to an existing Application/Participant pair, all visible applications
-   have positive unique numbers, and the counter is at least their maximum.
+6. For every canonical Application whose number is NULL or zero, allocate a
+   number in deterministic canonical Application-ID order. Start above both
+   the current `application_counters` value and every already-positive
+   Application number; preserve all existing positive numbers. Later retained
+   duplicate Applications are never assigned a number. Verify that each
+   normalized phone has exactly one phone-key row, each key points to an
+   existing Application/Participant pair, all visible applications have
+   positive unique numbers, and the counter is at least every allocated number.
 Register migration 008 only after DDL and this verification succeed.
 
 Recovery contract: preflight the additive objects before applying DDL; treat

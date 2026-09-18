@@ -63,10 +63,14 @@ class WireTransaction:
             key = {"normalized_phone": p["$phone"], "application_id": p["$app"], "participant_id": p["$participant"], "created_at": p["$created"]}
             self.data["phone_keys"] = [k for k in self.data["phone_keys"] if k["normalized_phone"] != p["$phone"]] + [key]
             row = next(r for r in self.data["applications"] if r["application_id"] == p["$app"])
+            if "$number" in p:
+                row["application_number"] = p["$number"]
             row.update(application_status=row.get("application_status") or "Новая заявка",
                        next_action=row.get("next_action") or "Рассмотреть", duplicate_attempt_count=p["$count"], last_duplicate_at=p["$last"] or row.get("last_duplicate_at"))
             if p["$count"]:
                 row["last_duplicate_match_basis"] = "normalized_phone"
+        elif "UPSERT INTO application_counters" in sql:
+            self.data["counter"] = p["$number"]
         elif "UPSERT INTO schema_migrations" in sql:
             self.data["ledger"].add(runner.MIGRATION)
         else:
@@ -97,6 +101,11 @@ class MemoryStore:
 class MigrationRunnerTests(unittest.TestCase):
     def backfill(self, store):
         return runner.run(store, "backfill", True, True)
+
+    def legacy_store(self, rows, counter=2):
+        store = MemoryStore(rows)
+        store.data["counter"] = counter
+        return store
 
     def test_test_only_guard(self):
         runner.guard("TEST", "grpcs://test.invalid:2135", "/test")
@@ -196,6 +205,129 @@ class MigrationRunnerTests(unittest.TestCase):
         self.assertEqual(self.backfill(store)["result"], "PASS")
         self.assertEqual(len(store.data["phone_keys"]), 1)
         self.assertEqual(store.data["applications"][0]["duplicate_attempt_count"], 0)
+
+    def test_all_legacy_canonical_numbers_are_backfilled_above_existing_counter(self):
+        store = self.legacy_store([
+            app("a", phone="+79990000001", number=None),
+            app("b", phone="+79990000002", number=None),
+        ], counter=2)
+        self.assertEqual(self.backfill(store)["result"], "PASS")
+        self.assertEqual(
+            {row["application_id"]: row["application_number"] for row in store.data["applications"]},
+            {"APP-a": 3, "APP-b": 4},
+        )
+        self.assertEqual(store.data["counter"], 4)
+        self.assertEqual(runner.run(store, "verify")["result"], "PASS")
+
+    def test_counter_above_zero_with_no_allocated_rows_is_never_reused(self):
+        store = self.legacy_store([app("a", number=None)], counter=7)
+        self.backfill(store)
+        self.assertEqual(store.data["applications"][0]["application_number"], 8)
+        self.assertEqual(store.data["counter"], 8)
+
+    def test_duplicate_group_numbers_only_canonical_and_keeps_later_rows(self):
+        rows = [
+            app("canonical", number=None, day=1),
+            app("later-a", number=None, day=2),
+            app("later-b", number=None, day=3),
+        ]
+        store = self.legacy_store(rows)
+        before_ids = {row["application_id"] for row in store.data["applications"]}
+        self.backfill(store)
+        by_id = {row["application_id"]: row for row in store.data["applications"]}
+        self.assertEqual(by_id["APP-canonical"]["application_number"], 3)
+        self.assertIsNone(by_id["APP-later-a"]["application_number"])
+        self.assertIsNone(by_id["APP-later-b"]["application_number"])
+        self.assertEqual({row["application_id"] for row in store.data["applications"]}, before_ids)
+        self.assertEqual(len(store.data["events"]), 2)
+        self.assertEqual(len(store.data["phone_keys"]), 1)
+        self.assertEqual(runner.run(store, "verify")["result"], "PASS")
+
+    def test_existing_positive_canonical_number_is_preserved(self):
+        store = self.legacy_store([app("a", number=42)], counter=42)
+        before = copy.deepcopy(store.data["applications"])
+        self.backfill(store)
+        self.assertEqual(store.data["applications"][0]["application_number"], 42)
+        self.assertEqual(store.data["counter"], 42)
+        self.assertEqual(store.data["applications"][0]["owner"], before[0]["owner"])
+
+    def test_mixed_numbered_and_unnumbered_canonicals_allocate_after_floor(self):
+        store = self.legacy_store([
+            app("numbered", phone="+79990000001", number=8),
+            app("missing", phone="+79990000002", number=None),
+        ], counter=8)
+        self.backfill(store)
+        by_id = {row["application_id"]: row for row in store.data["applications"]}
+        self.assertEqual(by_id["APP-numbered"]["application_number"], 8)
+        self.assertEqual(by_id["APP-missing"]["application_number"], 9)
+        self.assertEqual(store.data["counter"], 9)
+
+    def test_existing_allocated_number_reserves_value_even_when_counter_is_higher(self):
+        store = self.legacy_store([
+            app("canonical", number=None, day=1),
+            app("historical", number=5, day=2),
+        ], counter=7)
+        self.backfill(store)
+        by_id = {row["application_id"]: row for row in store.data["applications"]}
+        self.assertEqual(by_id["APP-canonical"]["application_number"], 8)
+        self.assertEqual(by_id["APP-historical"]["application_number"], 5)
+
+    def test_deterministic_allocation_order_is_canonical_application_id(self):
+        store = self.legacy_store([
+            app("z", phone="+79990000001", number=None),
+            app("a", phone="+79990000002", number=None),
+            app("m", phone="+79990000003", number=None),
+        ])
+        self.backfill(store)
+        by_id = {row["application_id"]: row for row in store.data["applications"]}
+        self.assertEqual([by_id["APP-" + suffix]["application_number"] for suffix in ("a", "m", "z")], [3, 4, 5])
+        self.assertEqual(runner.allocation_order(runner.plan(store.data["applications"])), ["APP-a", "APP-m", "APP-z"])
+
+    def test_counter_below_existing_allocated_number_fails_closed(self):
+        store = self.legacy_store([app("a", number=10)], counter=2)
+        report = runner.run(store, "verify")
+        self.assertIn("counter_below_allocated", report["errors"])
+        with self.assertRaisesRegex(runner.Stop, "backfill_preconditions_failed"):
+            self.backfill(store)
+
+    def test_partial_number_allocation_then_rerun_matches_single_run(self):
+        rows = [
+            app("a", phone="+79990000001", number=None),
+            app("b", phone="+79990000002", number=None),
+            app("c", phone="+79990000003", number=None),
+        ]
+        single = self.legacy_store(copy.deepcopy(rows))
+        partial = self.legacy_store(copy.deepcopy(rows))
+        self.backfill(single)
+        partial.fail_at = 3
+        with self.assertRaises(RuntimeError):
+            self.backfill(partial)
+        self.assertEqual(partial.data["counter"], 3)
+        self.assertEqual(sum(row["application_number"] is not None for row in partial.data["applications"]), 1)
+        partial.fail_at = None
+        self.backfill(partial)
+        self.assertEqual(partial.data, single.data)
+
+    def test_full_rerun_does_not_consume_or_renumber(self):
+        store = self.legacy_store([
+            app("a", phone="+79990000001", number=None),
+            app("b", phone="+79990000002", number=None),
+        ])
+        self.backfill(store)
+        before = copy.deepcopy(store.data)
+        self.backfill(store)
+        self.assertEqual(store.data, before)
+        self.assertEqual(store.data["counter"], 4)
+
+    def test_verify_fails_on_duplicate_canonical_numbers_and_impossible_counter(self):
+        store = self.legacy_store([
+            app("a", phone="+79990000001", number=3),
+            app("b", phone="+79990000002", number=3),
+        ], counter=3)
+        self.assertIn("duplicate_visible_number", runner.run(store, "verify")["errors"])
+        store.data["applications"][1]["application_number"] = 4
+        store.data["counter"] = 2
+        self.assertIn("counter_below_allocated", runner.run(store, "verify")["errors"])
 
     def test_deterministic_selection_and_ties(self):
         rows = [app("b", number=1, day=2), app("z", number=0), app("c", number=3), app("a", number=3)]

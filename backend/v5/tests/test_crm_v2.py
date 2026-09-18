@@ -47,6 +47,24 @@ class CrmV2AcceptanceTests(unittest.TestCase):
         self.assertTrue(verify_backfill(state, canonical_keys=1, duplicate_events=1))
         self.assertTrue(register_completed_migration(state, repo.register_migration))
         self.assertIn("008_admin_crm_v2", repo.applied_migrations())
+
+    def test_migration_008_fake_backfill_numbers_only_missing_canonicals(self):
+        repo = FakeRepository()
+        first, _ = submit(payload_with_photo(repo, "legacy-number-a"), "legacy-number-a", repo, "request-number-a")
+        second_payload = payload_with_photo(repo, "legacy-number-b", {**P, "phone": "+79990000002"})
+        second, _ = submit(second_payload, "legacy-number-b", repo, "request-number-b")
+        for record in repo.by_key.values():
+            record["application_number"] = None
+        repo.application_counters["TEST"] = 2
+        repo.application_phone_keys.clear()
+
+        backfill_fake_repository(repo)
+
+        self.assertEqual(repo.by_key["legacy-number-a"]["application_number"], 3)
+        self.assertEqual(repo.by_key["legacy-number-b"]["application_number"], 4)
+        self.assertEqual(repo.application_counters["TEST"], 4)
+        self.assertEqual(first["application_id"], repo.by_key["legacy-number-a"]["application_id"])
+        self.assertEqual(second["application_id"], repo.by_key["legacy-number-b"]["application_id"])
     def test_phone_format_variants_resolve_to_one_original_application(self):
         repo = FakeRepository()
         variants = (

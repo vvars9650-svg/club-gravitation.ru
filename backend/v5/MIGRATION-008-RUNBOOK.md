@@ -83,24 +83,34 @@ python -m backend.v5.migration_008_runner @crmArgs --phase backfill --allow-writ
 
 One serializable transaction per phone group rereads current TEST state and
 atomically upserts the canonical phone key, missing status/next-action defaults,
-stable audit events and the convergent duplicate summary. Audit ID is SHA-256
+stable audit events, the convergent duplicate summary, and (when needed) the
+canonical Application number plus its counter advancement. Missing canonical
+numbers are allocated in deterministic canonical Application-ID order, above
+both the current counter and every already-positive Application number. Existing
+positive numbers are authoritative; retained later duplicate Applications stay
+unnumbered unless they already had a positive number. The number update and
+counter UPSERT commit in the same transaction, so a retry cannot allocate a
+second number to an already-numbered canonical Application. Audit ID is SHA-256
 of migration ID + canonical Application ID + later Application ID. The action
 contains the normalized-phone basis, migration source and later technical ID.
-Counters are assigned as `later rows + existing runtime hard-duplicate events`,
-never blindly incremented. Existing meaningful status/action, owner, priority,
-comments and other operational fields remain untouched. Applications, consents,
-photos, participants and application-number counters are never deleted/merged
-or rewritten by this runner. Later application snapshots remain intact.
+Duplicate summaries are computed as `later rows + existing runtime hard-duplicate
+events`, never blindly incremented. Existing meaningful status/action, owner, priority,
+comments and other operational fields remain untouched. Application form/content,
+consents, photos and participants are never deleted, merged or rewritten by this
+runner; only the canonical operational defaults, duplicate summary and missing
+number are updated. Later application snapshots remain intact.
 
 A transaction failure rolls back that group's key/events/summary together.
 Previously committed groups remain valid; rerun the phase to converge to the
 same final state. Existing conflicting key targets or unexplained legacy
 duplicate events require manual review, not automatic reassignment/cleanup.
 
-STOP on `FAIL`, missing participant, nonpositive/duplicate visible numbers,
-counter below any existing allocation, unexpected audit evidence or conflicting
-key. Do not allocate replacement numbers to make verification pass. A failed
-run must be resumed and verified before registration.
+STOP on `FAIL`, missing participant, duplicate canonical numbers, an invalid or
+regressed counter, unexpected audit evidence or conflicting key. A failed run
+must be resumed and verified before registration. A nonpositive canonical
+number is an expected pre-backfill state; the backfill assigns it transactionally
+and verification must pass afterward. Do not allocate replacement numbers for
+Applications that already have positive numbers.
 
 ## 4. Independent read-only verification
 

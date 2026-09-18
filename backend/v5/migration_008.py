@@ -6,6 +6,7 @@ backfill job; no migration or cloud action is performed by the application.
 
 from dataclasses import dataclass
 
+from .domain import phone as normalize_phone
 from .migration_ledger import validate_migration_id
 
 
@@ -56,11 +57,28 @@ def backfill_fake_repository(repo):
     """Idempotently reconcile legacy FakeRepository application snapshots."""
     groups = {}
     for record in repo.by_key.values():
-        groups.setdefault(record["form"]["phone"], []).append(record)
+        groups.setdefault(normalize_phone(record["form"]["phone"]), []).append(record)
+    plans = []
     for phone, rows in groups.items():
         canonical = min(rows, key=lambda r: (r["submitted_at"],
-            r.get("application_number") if (r.get("application_number") or 0) > 0 else 2**63,
+            r.get("application_number") if (r.get("application_number") or 0) > 0 else 2**64,
             r["application_id"]))
+        plans.append((canonical["application_id"], phone, rows, canonical))
+    counter = repo.application_counters.get("TEST")
+    allocated = [
+        row["application_number"]
+        for row in repo.by_key.values()
+        if (row.get("application_number") or 0) > 0
+    ]
+    highest_allocated = max(allocated, default=0)
+    if counter is None or counter < highest_allocated:
+        raise ValueError("application_counter_inconsistent")
+    for _, phone, rows, canonical in sorted(plans):
+        if (canonical.get("application_number") or 0) <= 0:
+            counter = max(counter, highest_allocated) + 1
+            canonical["application_number"] = counter
+            repo.application_counters["TEST"] = counter
+            highest_allocated = counter
         repo.application_phone_keys[phone] = canonical["application_id"]
         canonical.setdefault("duplicate_attempt_count", 0)
         seen = {(e.get("application_id"), e.get("action")) for e in repo.audit}
