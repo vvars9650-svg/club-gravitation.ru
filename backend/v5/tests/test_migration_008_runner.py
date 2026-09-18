@@ -219,6 +219,18 @@ class MigrationRunnerTests(unittest.TestCase):
         self.assertEqual(store.data["counter"], 4)
         self.assertEqual(runner.run(store, "verify")["result"], "PASS")
 
+    def test_reconcile_write_uses_nullable_uint64_and_utf8_yql_types(self):
+        store = self.legacy_store([app("a", number=None)])
+        self.backfill(store)
+        reconcile_query = next(query for query in store.queries if "UPDATE applications SET" in query)
+
+        self.assertIn("application_number=Just($number)", reconcile_query)
+        self.assertIn("duplicate_attempt_count=Just($count)", reconcile_query)
+        self.assertIn('COALESCE(application_status,CAST(\"\" AS Utf8))', reconcile_query)
+        self.assertIn('CAST(\"Новая заявка\" AS Utf8)', reconcile_query)
+        self.assertIn('CAST(\"Рассмотреть\" AS Utf8)', reconcile_query)
+        self.assertIn('CAST(\"normalized_phone\" AS Utf8)', reconcile_query)
+
     def test_counter_above_zero_with_no_allocated_rows_is_never_reused(self):
         store = self.legacy_store([app("a", number=None)], counter=7)
         self.backfill(store)

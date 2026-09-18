@@ -329,7 +329,7 @@ class YdbTransaction:
         count = len(rows) - 1 + len(live)
         latest = max([timestamp(r["submitted_at"]) for r in rows[1:]] + [timestamp(e["timestamp"]) for e in live], default=None)
         created = next((k.get("created_at") for k in snapshot["phone_keys"] if k["normalized_phone"] == phone), None) or canonical["submitted_at"]
-        number_assignment = "application_number=$number,\n                " if assigned_number is not None else ""
+        number_assignment = "application_number=Just($number),\n                " if assigned_number is not None else ""
         params = {"$phone": phone, "$app": canonical["application_id"], "$participant": canonical["participant_id"],
                   "$created": self.sdk.TypedValue(timestamp(created), self.sdk.PrimitiveType.Timestamp),
                   "$count": self.sdk.TypedValue(count, self.sdk.PrimitiveType.Uint64),
@@ -342,11 +342,11 @@ class YdbTransaction:
             UPSERT INTO application_phone_keys (environment,normalized_phone,application_id,participant_id,created_at)
             VALUES ("TEST",$phone,$app,$participant,$created);
             UPDATE applications SET
-                {number_assignment}application_status=IF(COALESCE(application_status,"")="","Новая заявка",application_status),
-                next_action=IF(COALESCE(next_action,"")="","Рассмотреть",next_action),
-                duplicate_attempt_count=$count,
+                {number_assignment}application_status=IF(COALESCE(application_status,CAST("" AS Utf8))=CAST("" AS Utf8),CAST("Новая заявка" AS Utf8),application_status),
+                next_action=IF(COALESCE(next_action,CAST("" AS Utf8))=CAST("" AS Utf8),CAST("Рассмотреть" AS Utf8),next_action),
+                duplicate_attempt_count=Just($count),
                 last_duplicate_at=COALESCE($last,last_duplicate_at),
-                last_duplicate_match_basis=IF($count>0,"normalized_phone",last_duplicate_match_basis)
+                last_duplicate_match_basis=IF($count>0,CAST("normalized_phone" AS Utf8),last_duplicate_match_basis)
             WHERE environment="TEST" AND application_id=$app;'''.format(
                 number_declaration="DECLARE $number AS Uint64;" if assigned_number is not None else "",
                 number_assignment=number_assignment), params)
