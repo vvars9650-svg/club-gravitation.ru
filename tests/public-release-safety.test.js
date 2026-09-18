@@ -12,6 +12,7 @@ const {
   createMountedPhotoUploadAdapter,
   createPhotoUploadAdapter,
   createSubmitController,
+  isLocalTestPreview,
   mount,
   resolveFrontendMode,
 } = require('../assets/js/apply');
@@ -226,6 +227,8 @@ function testModeMatrix() {
     resolveFrontendMode({hostname: '127.0.0.1', search: '?test=true'}),
     FRONTEND_MODES.TEST_ENABLED,
   );
+  assert.equal(isLocalTestPreview({hostname: 'localhost', search: '?test=true'}), true);
+  assert.equal(isLocalTestPreview({hostname: 'club-gravitation.ru', search: '?test=true'}), false);
 }
 
 async function testSubmitGuard() {

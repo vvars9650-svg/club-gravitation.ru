@@ -79,7 +79,7 @@ async function main() {
   assert.equal(actual.some((file) => file.endsWith('.md') || file.endsWith('.yaml') || file.endsWith('.yml') || file.endsWith('.json')), false);
 
   for (const route of [
-    'index.html', '404.html', 'CNAME', 'about/index.html', 'events/index.html',
+    'index.html', '404.html', 'CNAME', 'about/index.html', 'events/index.html', 'first-contact/index.html',
     'founders/index.html', 'apply/index.html', 'privacy/index.html',
     'consent-pd/index.html', 'offer/index.html', 'terms/index.html', 'admin/index.html',
   ]) assert.equal(fs.existsSync(artifactPath(route)), true, route);

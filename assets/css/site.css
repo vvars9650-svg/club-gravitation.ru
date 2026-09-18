@@ -6,3 +6,8 @@
 .event-details{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;margin-top:55px;background:rgba(32,27,23,.15);border:1px solid rgba(32,27,23,.15)}.event-details article{background:#f7f4ee;padding:30px}.event-details small{display:block;font-size:.6rem;letter-spacing:.17em;color:#9b8c7e;margin-bottom:14px}.event-details strong{display:block;font-size:1.12rem;font-weight:500}.event-details p{color:#73675d;line-height:1.6;margin:12px 0 0}.event-payment .prose-grid{color:rgba(247,244,238,.68)}.event-payment .prose-grid p{margin:0}.seller-details{font-size:.72rem;line-height:1.6;color:rgba(247,244,238,.58)}.seller-details a{color:inherit}.legal__frozen{white-space:pre-wrap;font:inherit;line-height:1.75;overflow-wrap:anywhere}.legal__fallback{color:#9b332b}.legal+.site-footer{margin-top:0}
 @media(max-width:760px){.event-details{grid-template-columns:1fr;margin-top:36px}.event-details article{padding:24px}.seller-details{font-size:.72rem}}
 html,body{overflow-x:hidden}
+
+/* EVENT 01 display typography reference: hero / editorial lead. */
+:root{--display-hero-line-height:.94;--display-hero-letter-spacing:-.035em;--display-editorial-line-height:1.1;--display-editorial-letter-spacing:-.025em}
+.home-hero h1,.page-about .page-hero h1,.page-founders .founders-hero h1,.events-hub h1{font-weight:300;line-height:var(--display-hero-line-height)!important;letter-spacing:var(--display-hero-letter-spacing)!important}
+.page-about .section-heading h2,.page-about .section--cta h2,.page-founders .section-heading h2{font-weight:300;line-height:var(--display-editorial-line-height)!important;letter-spacing:var(--display-editorial-letter-spacing)!important}

@@ -110,6 +110,13 @@
     return FRONTEND_MODES.PUBLIC_BLOCKED;
   }
 
+  function isLocalTestPreview(locationLike = {}) {
+    const hostname = normalizeHostname(locationLike.hostname);
+    const search = typeof locationLike.search === 'string' ? locationLike.search : '';
+    return LOCAL_HOSTNAMES.has(hostname)
+      && new URLSearchParams(search).get('test') === 'true';
+  }
+
   function assertTestEnabled(mode) {
     if (mode !== FRONTEND_MODES.TEST_ENABLED) {
       throw new Error('public_submission_blocked');
@@ -360,6 +367,25 @@
       || createPhotoUploadAdapter({fetchImpl: root.fetch.bind(root), mode});
   }
 
+  function createLocalPreviewPhotoUploadAdapter() {
+    return async function uploadPhoto() {
+      return {photo_object_id: 'PHOTO-LOCAL-PREVIEW-000000000001'};
+    };
+  }
+
+  function createLocalPreviewFetch() {
+    return async function localPreviewFetch() {
+      return {
+        status: 201,
+        ok: true,
+        json: async () => ({
+          application_id: 'LOCAL-PREVIEW',
+          application_number: '000001',
+        }),
+      };
+    };
+  }
+
   function createSubmitController({
     fetchImpl,
     randomUUID,
@@ -459,6 +485,7 @@
 
     const mode = resolveFrontendMode(root.location);
     const isTestEnabled = mode === FRONTEND_MODES.TEST_ENABLED;
+    const isLocalPreview = isLocalTestPreview(root.location);
     const tabsBox = document.querySelector('.form-tabs');
     const progressBox = document.querySelector('.form-progress');
     const mobile = document.querySelector('#mobile-step');
@@ -484,7 +511,7 @@
     const tabs = [...document.querySelectorAll('.form-tab')];
     const progress = document.querySelector('#form-progress-bar');
     const controller = createSubmitController({
-      fetchImpl: root.fetch.bind(root),
+      fetchImpl: isLocalPreview ? createLocalPreviewFetch() : root.fetch.bind(root),
       randomUUID: typeof root.crypto?.randomUUID === 'function'
         ? root.crypto.randomUUID.bind(root.crypto)
         : undefined,
@@ -519,7 +546,9 @@
     const photoReference = form.elements.photo_object_id;
     const photoStatus = form.querySelector('[data-photo-status]');
     const retryPhoto = form.querySelector('[data-photo-retry]');
-    const uploadPhoto = createMountedPhotoUploadAdapter(root, mode);
+    const uploadPhoto = isLocalPreview
+      ? createLocalPreviewPhotoUploadAdapter()
+      : createMountedPhotoUploadAdapter(root, mode);
     const names = [
       'Согласие',
       'Контакты',
@@ -528,16 +557,20 @@
       'Проверка',
     ];
     const groups = [
-      ['Контакты', 1, FORM_FIELDS.slice(0, 10)],
+      ['Согласие', 0, ['policy_acknowledged', 'personal_data_consent']],
+      ['Контакты', 1, [...FORM_FIELDS.slice(0, 10), 'photo_object_id']],
       ['О вас', 2, FORM_FIELDS.slice(10, 15)],
       ['Знакомства', 3, FORM_FIELDS.slice(15)],
     ];
     const labels = {
+      policy_acknowledged: 'Политика обработки персональных данных',
+      personal_data_consent: 'Согласие на обработку персональных данных',
       full_name: 'Имя и фамилия', age: 'Возраст', gender: 'Пол', city: 'Город',
       visit_krasnodar: 'Посещение Краснодара', phone: 'Телефон', email: 'Email',
       preferred_contact: 'Как удобнее связаться',
       profile_or_messenger_url: 'Ссылка на профиль или мессенджер',
-      public_profile_url: 'Ссылка на страницу или сайт', occupation: 'Ваша сфера деятельности',
+      public_profile_url: 'Ссылка на страницу или сайт', photo_object_id: 'Фотография',
+      occupation: 'Ваша сфера деятельности',
       life_outside_work: 'Чем наполнена ваша жизнь кроме работы',
       what_interested: 'Почему вам интересна «Гравитация»',
       what_participant_brings: 'Что вы привносите в компанию людей',
@@ -710,9 +743,16 @@
           const term = document.createElement('dt');
           const description = document.createElement('dd');
           term.textContent = labels[field];
-          description.textContent = Array.isArray(data[field])
-            ? data[field].join(', ')
-            : (data[field] || '—');
+          if (field === 'photo_object_id') {
+            description.textContent = data[field] ? 'Загружена' : '—';
+          } else if (field === 'policy_acknowledged'
+            || field === 'personal_data_consent') {
+            description.textContent = data[field] ? 'Подтверждено' : '—';
+          } else {
+            description.textContent = Array.isArray(data[field])
+              ? data[field].join(', ')
+              : (data[field] || '—');
+          }
           list.append(term, description);
         });
         card.append(list);
@@ -810,7 +850,9 @@
           throw new Error('invalid_photo_reference');
         }
         photoReference.value = result.photo_object_id;
-        photoStatus.textContent = 'Фотография загружена.';
+        photoStatus.textContent = isLocalPreview
+          ? 'Фотография готова для local preview.'
+          : 'Фотография загружена.';
       } catch {
         photoStatus.textContent = 'Не удалось загрузить фотографию. Повторите попытку.';
         retryPhoto.hidden = false;
@@ -910,9 +952,12 @@
     buildPayload,
     createIdempotencyKey,
     createMountedPhotoUploadAdapter,
+    createLocalPreviewFetch,
+    createLocalPreviewPhotoUploadAdapter,
     createPhotoUploadAdapter,
     createSubmitController,
     resolveFrontendMode,
+    isLocalTestPreview,
     responseResult,
     validateFrontendPayload,
     normalizeRussianPhone,

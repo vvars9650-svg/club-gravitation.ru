@@ -39,6 +39,13 @@
 - Для проверки TEST использовать `https://test.club-gravitation.ru/` и нужные публичные маршруты.
 - Не закрывать рабочие вкладки/браузерную сессию без необходимости; сохранять состояние для продолжения работы и аннотаций.
 
+## Local frontend preview
+
+- Сначала собрать актуальный public artifact: `node scripts/build-public.js`.
+- Канонический preview: `npx --yes serve@14 public-dist --listen 4176 --no-clipboard`; он обслуживает только `public-dist` на `http://localhost:4176/`.
+- Не менять порт: перед visual QA проверять, что artifact собран из текущего worktree, а не только что порт открыт.
+- После checkpoint `PREVIEW READY` Влад вручную открывает нужную страницу; Codex продолжает работу с CURRENT PAGE. Если browser policy блокирует CURRENT PAGE, сообщить это ограничение, не искать другой host или port.
+
 ## 5. Стандарт visual QA
 
 Если задача касается responsive/public frontend и не задаёт другую матрицу, использовать как минимум:

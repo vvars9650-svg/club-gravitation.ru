@@ -1,0 +1,13 @@
+/* Founders-only presentation layer. Keep the shared public styles untouched. */
+.page-founders .founders-hero{background:radial-gradient(circle at 18% 18%,rgba(212,175,122,.15),transparent 28%),var(--cream);}
+.page-founders .founders-hero__copy>p{max-width:560px;color:#70645b;}
+.page-founders .section--founders-note{background:#151517;color:var(--cream);}
+.page-founders .founders-story{max-width:980px;margin:62px 0 0;padding:0 0 0 34px;border-left:1px solid var(--gold);}
+.page-founders .founders-story h3{max-width:760px;margin:0;font-size:clamp(1.8rem,3.3vw,3.3rem);font-weight:300;line-height:1.12;letter-spacing:-.045em;color:var(--gold-light);}
+.page-founders .founders-story__body{max-width:780px;margin-top:34px;}
+.page-founders .founders-story__body p{margin:0 0 26px;color:rgba(247,244,238,.72);font-size:clamp(1rem,1.18vw,1.13rem);line-height:1.78;}
+.page-founders .founders-story__body p:first-child,.page-founders .founders-story__body p:last-child{color:var(--cream);font-weight:500;}
+.page-founders .founders-note__actions{display:flex;align-items:center;gap:24px;margin-top:50px;}
+@media(max-width:980px){}
+@media(max-width:980px) and (orientation:portrait){.page-founders .founder-pair article:first-child{order:2}.page-founders .founder-pair article:last-child{order:1}}
+@media(max-width:760px){.page-founders .founders-hero{gap:50px;}.page-founders .founders-story{margin-top:44px;padding-left:20px;}.page-founders .founders-story__body{display:block;margin-top:28px;}.page-founders .founders-story__body p{font-size:1rem;line-height:1.72;margin-bottom:22px;}.page-founders .founders-note__actions{align-items:flex-start;flex-direction:column;gap:20px;margin-top:32px;}}

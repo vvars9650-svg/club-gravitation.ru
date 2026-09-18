@@ -9,6 +9,8 @@ const {
   PHOTO_COMPLETE_URL,
   FORM_FIELDS,
   buildPayload,
+  createLocalPreviewFetch,
+  createLocalPreviewPhotoUploadAdapter,
   createPhotoUploadAdapter,
   createSubmitController,
   responseResult,
@@ -120,6 +122,21 @@ async function testPhotoUploadFailureAndRetry() {
   assert.deepEqual(calls.filter(([url]) => url === PHOTO_INITIATE_URL)
     .map(([, options]) => options.headers['Idempotency-Key']), ['same-key', 'same-key']);
   assert.equal(calls.filter(([url]) => url === PHOTO_COMPLETE_URL).length, 1);
+}
+
+async function testLocalPreviewPhotoAndSubmitAreNetworkFree() {
+  const upload = createLocalPreviewPhotoUploadAdapter();
+  const result = await upload({type: 'image/png'}, 'local-preview-key');
+  assert.equal(result.photo_object_id, 'PHOTO-LOCAL-PREVIEW-000000000001');
+
+  const response = await createLocalPreviewFetch()(TEST_API_URL, {method: 'POST'});
+  assert.equal(response.status, 201);
+  assert.deepEqual(await response.json(), {
+    application_id: 'LOCAL-PREVIEW', application_number: '000001',
+  });
+
+  const submit = controller(createLocalPreviewFetch());
+  assert.equal((await submit.submit(validPayload())).state, 'success');
 }
 
 function controller(fetchImpl, randomUUID = uuidSequence(), options = {}) {
@@ -405,6 +422,7 @@ function testApplicationNumberResponseContract() {
 (async () => {
   await testPhotoUploadAdapterFlow();
   await testPhotoUploadFailureAndRetry();
+  await testLocalPreviewPhotoAndSubmitAreNetworkFree();
   await testRequestContractAndPayload();
   testFrontendValidation();
   await testIdempotencyLifecycleAndErrors();
