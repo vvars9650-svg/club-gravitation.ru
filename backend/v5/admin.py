@@ -157,7 +157,7 @@ def admin_handler(event, context=None, repo=None, actor_identity=None):
             raise RepositoryUnavailable("admin_repository_required")
         if path.endswith("/admin/applications") and method == "GET":
             filters, sort, order = list_arguments(event.get("queryStringParameters"))
-            return admin_response(200, {"environment": ENVIRONMENT, "applications": repo.list_admin_applications(filters, sort, order)}, request_id)
+            return admin_response(200, {"environment": getattr(repo, "environment", ENVIRONMENT), "applications": repo.list_admin_applications(filters, sort, order)}, request_id)
         match = re.fullmatch(r".*/admin/(applications|participants)/([^/]+)", path)
         if not match:
             raise AdminError("not_found", 404)
@@ -184,7 +184,7 @@ def admin_handler(event, context=None, repo=None, actor_identity=None):
             application = repo.update_admin_application(application_id, changes, _actor_token(actor_identity), request_id)
             if not application:
                 raise AdminError("application_not_found", 404)
-            return admin_response(200, {"environment": ENVIRONMENT, "application": application, "changed_fields": sorted(changes)}, request_id)
+            return admin_response(200, {"environment": getattr(repo, "environment", ENVIRONMENT), "application": application, "changed_fields": sorted(changes)}, request_id)
         raise AdminError("method_not_allowed", 405)
     except RepositoryUnavailable as error:
         return admin_response(503, {"error": {"code": str(error)}}, request_id)

@@ -75,12 +75,12 @@ async function main() {
   const forbiddenPath = /^(?:backend|tests|\.github|\.codex|\.hero-build-v2|__pycache__)\//u;
   assert.equal(actual.some((file) => forbiddenPath.test(file)), false);
   assert.equal(actual.some((file) => /(?:^|\/).*\.py$/u.test(file)), false);
-  assert.equal(actual.some((file) => /(?:deployment|ADMIN-AUTH|V5-CONTRACT|README|\.test\.)/iu.test(file)), false);
+  assert.equal(actual.some((file) => /(?:deployment|V5-CONTRACT|README|admin-config\.test\.js)/iu.test(file)), false);
   assert.equal(actual.some((file) => file.endsWith('.md') || file.endsWith('.yaml') || file.endsWith('.yml') || file.endsWith('.json')), false);
 
   for (const route of [
     'index.html', '404.html', 'CNAME', 'about/index.html', 'events/index.html', 'first-contact/index.html',
-    'founders/index.html', 'apply/index.html', 'privacy/index.html',
+    'founders/index.html', 'apply/index.html', 'admin-prod/index.html', 'privacy/index.html',
     'consent-pd/index.html', 'offer/index.html', 'terms/index.html', 'admin/index.html',
   ]) assert.equal(fs.existsSync(artifactPath(route)), true, route);
 

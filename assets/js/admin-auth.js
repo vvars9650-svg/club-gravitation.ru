@@ -70,7 +70,7 @@
     return result;
   };
   const normalizeConfig = (config) => {
-    if (!config || config.environment !== 'TEST' || config.client_id !== TEST_CLIENT_ID || !config.redirect_uri) {
+    if (!config || !['TEST', 'PROD'].includes(config.environment) || config.client_id !== TEST_CLIENT_ID || !config.redirect_uri) {
       throw new Error('oidc_configuration_required');
     }
     if (config.issuer !== TEST_ISSUER || config.openid_configuration_url !== TEST_DISCOVERY_URL) {

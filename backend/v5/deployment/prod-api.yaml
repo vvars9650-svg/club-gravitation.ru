@@ -1,0 +1,118 @@
+openapi: 3.0.0
+info:
+  title: Gravitation V5 PROD intake API
+  version: 1.0.0
+x-yc-apigateway:
+  variables:
+    admin_audience:
+      default: aje25t7tefbfr547phru
+components:
+  securitySchemes:
+    adminJwt:
+      type: openIdConnect
+      openIdConnectUrl: https://auth.yandex.cloud/.well-known/openid-configuration
+      x-yc-apigateway-authorizer:
+        type: jwt
+        identitySource:
+          in: header
+          name: Authorization
+          prefix: "Bearer "
+        issuers:
+          - https://auth.yandex.cloud
+        audiences:
+          - ${var.admin_audience}
+        requiredClaims:
+          - sub
+        jwkTtlInSeconds: 3600
+paths:
+  /health:
+    get:
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: d4e8kk0f5bqulombl18j
+        service_account_id: ajef8vdpg8prb15d6i0f
+        tag: $latest
+        payload_format_version: '0.1'
+  /admin/applications:
+    x-yc-apigateway-cors:
+      origin: https://club-gravitation.ru
+      methods: [GET, OPTIONS]
+      allowedHeaders: [Authorization, Content-Type]
+      maxAge: 300
+    get:
+      security:
+        - adminJwt: []
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: d4e8kk0f5bqulombl18j
+        service_account_id: ajef8vdpg8prb15d6i0f
+        tag: $latest
+        payload_format_version: '0.1'
+  /admin/participants/{id}:
+    x-yc-apigateway-cors:
+      origin: https://club-gravitation.ru
+      methods: [GET, PATCH, OPTIONS]
+      allowedHeaders: [Authorization, Content-Type]
+      maxAge: 300
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    get:
+      security:
+        - adminJwt: []
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: d4e8kk0f5bqulombl18j
+        service_account_id: ajef8vdpg8prb15d6i0f
+        tag: $latest
+        payload_format_version: '0.1'
+    patch:
+      security:
+        - adminJwt: []
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: d4e8kk0f5bqulombl18j
+        service_account_id: ajef8vdpg8prb15d6i0f
+        tag: $latest
+        payload_format_version: '0.1'
+  /applications:
+    x-yc-apigateway-cors:
+      origin:
+        - https://club-gravitation.ru
+        - https://www.club-gravitation.ru
+      methods: [POST, OPTIONS]
+      allowedHeaders: [Content-Type, Idempotency-Key]
+    post:
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: d4e8kk0f5bqulombl18j
+        service_account_id: ajef8vdpg8prb15d6i0f
+        tag: $latest
+        payload_format_version: '0.1'
+  /photo-uploads/initiate:
+    x-yc-apigateway-cors:
+      origin: [https://club-gravitation.ru, https://www.club-gravitation.ru]
+      methods: [POST, OPTIONS]
+      allowedHeaders: [Content-Type, Idempotency-Key]
+    post:
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: d4e8kk0f5bqulombl18j
+        service_account_id: ajef8vdpg8prb15d6i0f
+        tag: $latest
+        payload_format_version: '0.1'
+  /photo-uploads/complete:
+    x-yc-apigateway-cors:
+      origin: [https://club-gravitation.ru, https://www.club-gravitation.ru]
+      methods: [POST, OPTIONS]
+      allowedHeaders: [Content-Type, Idempotency-Key]
+    post:
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: d4e8kk0f5bqulombl18j
+        service_account_id: ajef8vdpg8prb15d6i0f
+        tag: $latest
+        payload_format_version: '0.1'

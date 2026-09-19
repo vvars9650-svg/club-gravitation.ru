@@ -17,6 +17,7 @@ const FILES = [
   'first-contact/index.html',
   'founders/index.html',
   'apply/index.html',
+  'admin-prod/index.html',
   'privacy/index.html',
   'consent-pd/index.html',
   'offer/index.html',
@@ -46,6 +47,7 @@ const FILES = [
   'assets/css/admin.css',
   'assets/js/site.js',
   'assets/js/apply.js',
+  'assets/js/admin-config.prod.js',
   'legal/frozen/PPD-2.2.txt',
   'legal/frozen/CONSENT-PD-2.2.txt',
   'legal/frozen/OFFER-1.0.txt',
@@ -101,6 +103,18 @@ function buildPublic() {
   fs.rmSync(OUTPUT, {recursive: true, force: true});
   fs.mkdirSync(OUTPUT, {recursive: true});
   FILES.forEach(copyFile);
+  const mode = process.env.V5_PUBLIC_MODE === 'PROD_ENABLED' ? 'PROD_ENABLED' : 'PUBLIC_BLOCKED';
+  const prodApiUrl = process.env.V5_PROD_API_URL || '';
+  if (mode === 'PROD_ENABLED' && !/^https:\/\/[^\s/]+(?:\/[^\s]*)?\/applications$/u.test(prodApiUrl)) {
+    throw new Error('V5_PROD_API_URL must be an HTTPS /applications endpoint when PROD_ENABLED');
+  }
+  fs.writeFileSync(path.join(OUTPUT, 'assets/js/public-config.js'),
+    `window.__V5_PUBLIC_CONFIG__=${JSON.stringify({mode, prod_api_url: mode === 'PROD_ENABLED' ? prodApiUrl : ''})};\n`);
+  for (const file of ['assets/css/site.css', 'assets/css/admin.css', 'assets/js/admin.js', 'assets/js/admin-auth.js', 'assets/js/admin-config.prod.js']) {
+    const destination = path.join(OUTPUT, 'admin-prod', file);
+    fs.mkdirSync(path.dirname(destination), {recursive: true});
+    fs.copyFileSync(path.join(ROOT, file), destination);
+  }
   copyFile('scripts/public-admin.html');
   fs.mkdirSync(path.join(OUTPUT, 'admin'), {recursive: true});
   fs.renameSync(

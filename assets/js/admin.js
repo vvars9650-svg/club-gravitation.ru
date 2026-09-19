@@ -25,6 +25,7 @@
   const OPERATIONAL = ['owner', 'priority', 'next_action', 'next_contact_at', 'decision', 'internal_comment'];
   const FIELDS = ['occupation', 'life_outside_work', 'what_interested', 'what_participant_brings', 'what_friends_value', 'desired_connections', 'desired_connections_other', 'values_in_people', 'barriers_to_meeting', 'acquaintance_methods', 'acquaintance_methods_other', 'return_reason', 'source'];
   const TEST_ADMIN_API_URL = 'https://d5ds805l71s68liu6ge4.fovt0b64.apigw.yandexcloud.net';
+  const PROD_ADMIN_API_URL = 'https://d5dsivdtqjog5vgvn111.7qsg961h.apigw.yandexcloud.net';
   const labels = {submitted_at:'Дата заявки', full_name:'Имя', age:'Возраст', gender:'Пол', city:'Город', visit_krasnodar:'Посещение Краснодара', phone:'Телефон', email:'Email', preferred_contact:'Предпочтительный контакт', profile_or_messenger_url:'Профиль или мессенджер', occupation:'Сфера деятельности', public_profile_url:'Страница или сайт', status:'Статус заявки', owner:'Ответственный', priority:'Приоритет', next_action:'Следующее действие', next_contact_at:'Следующий контакт', decision:'Решение', internal_comment:'Внутренний комментарий', life_outside_work:'Чем наполнена ваша жизнь кроме работы?', what_interested:'Почему вам интересно попробовать «Гравитацию»?', what_participant_brings:'Что вы обычно привносите в компанию людей?', what_friends_value:'За что вас ценят друзья и знакомые?', desired_connections:'Какие знакомства вам сейчас интересны?', desired_connections_other:'Какие знакомства или формат общения вам интересны?', values_in_people:'Что вы особенно цените в людях?', barriers_to_meeting:'Что, возможно, мешает вам знакомиться с новыми людьми?', acquaintance_methods:'Какой способ знакомства для вас наиболее естественный?', acquaintance_methods_other:'Расскажите, как вам комфортнее знакомиться', return_reason:'Что должно произойти, чтобы захотелось прийти снова?', source:'Откуда узнали о нас?'};
   const text = (value) => value == null || value === '' ? '—' : String(value);
   const esc = (value) => text(value).replace(/[&<>'"]/gu, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
@@ -34,8 +35,10 @@
   class ApiError extends Error { constructor(code, status) { super(code); this.code = code; this.status = status; } }
   const endpoint = (root) => {
     const config = root && root.__V5_ADMIN_CONFIG__;
-    if (!config || config.environment !== 'TEST' || config.api_url !== TEST_ADMIN_API_URL) throw new ApiError('admin_not_configured');
-    return TEST_ADMIN_API_URL;
+    if (!config || !['TEST', 'PROD'].includes(config.environment)) throw new ApiError('admin_not_configured');
+    const expected = config.environment === 'PROD' ? PROD_ADMIN_API_URL : TEST_ADMIN_API_URL;
+    if (config.api_url !== expected) throw new ApiError('admin_not_configured');
+    return expected;
   };
 
   function createClient(root, fetchImpl, getGatewayToken, onAuthFailure) {
@@ -108,7 +111,7 @@
       try {
         const body = await client.list(query(), request.signal);
         if (!listRequests.isLatest(request.generation)) return;
-        if (body.environment !== 'TEST') throw new ApiError('environment');
+        if (body.environment !== runtimeConfig.environment) throw new ApiError('environment');
         const rows = body.applications || [];
         list.replaceChildren();
         if (!rows.length) { state(ui.state, 'Заявок по выбранным условиям нет.', 'empty'); return; }
@@ -141,7 +144,7 @@
       try {
         const body = await client.card(id, request.signal);
         if (!cardRequests.isLatest(request.generation)) return;
-        if (body.environment !== 'TEST') throw new ApiError('environment');
+        if (body.environment !== runtimeConfig.environment) throw new ApiError('environment');
         const application = body.application || {form:{}};
         const formData = application.form || {};
         const consents = body.consents || [];
