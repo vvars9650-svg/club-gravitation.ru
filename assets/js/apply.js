@@ -15,10 +15,14 @@
 
   const TEST_API_URL =
     'https://d5ds805l71s68liu6ge4.fovt0b64.apigw.yandexcloud.net/applications';
+  const PROD_API_URL =
+    'https://d5dsivdtqjog5vgvn111.7qsg961h.apigw.yandexcloud.net/applications';
   const TEST_FRONTEND_HOST =
     'gravitation-v5-test-frontend-b1g4bdjb.storage.yandexcloud.net';
+  const PROD_FRONTEND_HOSTS = new Set(['club-gravitation.ru', 'www.club-gravitation.ru']);
   const FRONTEND_MODES = Object.freeze({
     TEST_ENABLED: 'TEST_ENABLED',
+    PROD_ENABLED: 'PROD_ENABLED',
     PUBLIC_BLOCKED: 'PUBLIC_BLOCKED',
   });
   const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1']);
@@ -93,7 +97,14 @@
     return typeof hostname === 'string' ? hostname.trim().toLowerCase() : '';
   }
 
-  function resolveFrontendMode(locationLike = {}) {
+  function isValidProdRuntimeConfig(config) {
+    return Boolean(config)
+      && typeof config === 'object'
+      && config.mode === FRONTEND_MODES.PROD_ENABLED
+      && config.prod_api_url === PROD_API_URL;
+  }
+
+  function resolveFrontendMode(locationLike = {}, runtimeConfig) {
     const hostname = normalizeHostname(locationLike.hostname);
 
     if (hostname === TEST_FRONTEND_HOST) {
@@ -107,6 +118,10 @@
       }
     }
 
+    if (PROD_FRONTEND_HOSTS.has(hostname) && isValidProdRuntimeConfig(runtimeConfig)) {
+      return FRONTEND_MODES.PROD_ENABLED;
+    }
+
     return FRONTEND_MODES.PUBLIC_BLOCKED;
   }
 
@@ -117,10 +132,26 @@
       && new URLSearchParams(search).get('test') === 'true';
   }
 
-  function assertTestEnabled(mode) {
-    if (mode !== FRONTEND_MODES.TEST_ENABLED) {
+  function isSubmissionEnabled(mode) {
+    return mode === FRONTEND_MODES.TEST_ENABLED || mode === FRONTEND_MODES.PROD_ENABLED;
+  }
+
+  function assertSubmissionEnabled(mode) {
+    if (!isSubmissionEnabled(mode)) {
       throw new Error('public_submission_blocked');
     }
+  }
+
+  function resolveApiUrl(mode, apiUrl) {
+    const expected = mode === FRONTEND_MODES.PROD_ENABLED ? PROD_API_URL : TEST_API_URL;
+    if (apiUrl !== undefined && apiUrl !== expected) {
+      throw new Error('invalid_runtime_api_url');
+    }
+    return expected;
+  }
+
+  function photoEndpoint(apiUrl, suffix) {
+    return `${apiUrl.replace(/\/applications$/u, '')}${suffix}`;
   }
 
   function createIdempotencyKey(randomUUID) {
@@ -331,20 +362,23 @@
     return body;
   }
 
-  function createPhotoUploadAdapter({fetchImpl, mode = FRONTEND_MODES.PUBLIC_BLOCKED}) {
+  function createPhotoUploadAdapter({fetchImpl, mode = FRONTEND_MODES.PUBLIC_BLOCKED, apiUrl}) {
     if (typeof fetchImpl !== 'function') throw new TypeError('fetchImpl_required');
+    const resolvedApiUrl = resolveApiUrl(mode, apiUrl);
+    const initiateUrl = photoEndpoint(resolvedApiUrl, '/photo-uploads/initiate');
+    const completeUrl = photoEndpoint(resolvedApiUrl, '/photo-uploads/complete');
 
     return async function uploadPhoto(file, idempotencyKey) {
-      assertTestEnabled(mode);
+      assertSubmissionEnabled(mode);
       const headers = {
         'Content-Type': 'application/json',
         Accept: 'application/json',
         'Idempotency-Key': idempotencyKey,
       };
-      const initiated = await parseJsonResponse(await fetchImpl(PHOTO_INITIATE_URL, {
+      const initiated = await parseJsonResponse(await fetchImpl(initiateUrl, {
         method: 'POST', headers, body: JSON.stringify({}),
       }));
-      assertTestEnabled(mode);
+      assertSubmissionEnabled(mode);
       if (!initiated.upload_url || !initiated.photo_object_id
         || initiated.upload_method !== 'PUT') throw new Error('invalid_upload_contract');
 
@@ -352,10 +386,10 @@
       const putResponse = await fetchImpl(initiated.upload_url, {
         method: 'PUT', headers: {'Content-Type': file.type}, body: file,
       });
-      assertTestEnabled(mode);
+      assertSubmissionEnabled(mode);
       if (!putResponse || !putResponse.ok) throw new Error('photo_put_failed');
 
-      return parseJsonResponse(await fetchImpl(PHOTO_COMPLETE_URL, {
+      return parseJsonResponse(await fetchImpl(completeUrl, {
         method: 'POST', headers,
         body: JSON.stringify({photo_object_id: initiated.photo_object_id}),
       }));
@@ -364,7 +398,13 @@
 
   function createMountedPhotoUploadAdapter(root, mode) {
     return root.__V5_PHOTO_UPLOAD_ADAPTER__
-      || createPhotoUploadAdapter({fetchImpl: root.fetch.bind(root), mode});
+      || createPhotoUploadAdapter({
+        fetchImpl: root.fetch.bind(root),
+        mode,
+        apiUrl: mode === FRONTEND_MODES.PROD_ENABLED
+          ? root.__V5_PUBLIC_CONFIG__?.prod_api_url
+          : TEST_API_URL,
+      });
   }
 
   function createLocalPreviewPhotoUploadAdapter() {
@@ -390,10 +430,12 @@
     fetchImpl,
     randomUUID,
     mode = FRONTEND_MODES.PUBLIC_BLOCKED,
+    apiUrl,
     timeoutMs = 15000,
     AbortControllerImpl,
   }) {
-    let idempotencyKey = mode === FRONTEND_MODES.TEST_ENABLED
+    const resolvedApiUrl = resolveApiUrl(mode, apiUrl);
+    let idempotencyKey = isSubmissionEnabled(mode)
       ? createIdempotencyKey(randomUUID)
       : null;
     let state = 'idle';
@@ -409,7 +451,7 @@
         : null;
 
       try {
-        const response = await fetchImpl(TEST_API_URL, {
+        const response = await fetchImpl(resolvedApiUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -439,7 +481,7 @@
     }
 
     function submit(payload) {
-      if (mode !== FRONTEND_MODES.TEST_ENABLED) {
+      if (!isSubmissionEnabled(mode)) {
         state = 'blocked';
         return Promise.resolve({
           state,
@@ -458,7 +500,7 @@
     }
 
     function startNewSession() {
-      if (mode !== FRONTEND_MODES.TEST_ENABLED || inFlight) {
+      if (!isSubmissionEnabled(mode) || inFlight) {
         return null;
       }
 
@@ -483,15 +525,15 @@
       return;
     }
 
-    const mode = resolveFrontendMode(root.location);
-    const isTestEnabled = mode === FRONTEND_MODES.TEST_ENABLED;
+    const mode = resolveFrontendMode(root.location, root.__V5_PUBLIC_CONFIG__);
+    const isSubmissionEnabledForMode = isSubmissionEnabled(mode);
     const isLocalPreview = isLocalTestPreview(root.location);
     const tabsBox = document.querySelector('.form-tabs');
     const progressBox = document.querySelector('.form-progress');
     const mobile = document.querySelector('#mobile-step');
     const availability = document.querySelector('#application-availability');
 
-    if (!isTestEnabled) {
+    if (!isSubmissionEnabledForMode) {
       form.dataset.mode = FRONTEND_MODES.PUBLIC_BLOCKED;
       form.hidden = true;
       progressBox.hidden = true;
@@ -516,6 +558,9 @@
         ? root.crypto.randomUUID.bind(root.crypto)
         : undefined,
       mode,
+      apiUrl: mode === FRONTEND_MODES.PROD_ENABLED
+        ? root.__V5_PUBLIC_CONFIG__?.prod_api_url
+        : TEST_API_URL,
       AbortControllerImpl: root.AbortController,
     });
     const steps = [...form.querySelectorAll('.form-step')];
@@ -606,7 +651,7 @@
       mobile.textContent = names[current];
       back.hidden = current === 0;
       next.hidden = current === steps.length - 1;
-      submit.disabled = submitting || !isTestEnabled;
+      submit.disabled = submitting || !isSubmissionEnabledForMode;
     }
 
     function syncVisit() {
@@ -820,7 +865,7 @@
 
     city.addEventListener('change', syncVisit);
     async function uploadSelectedPhoto() {
-      if (!isTestEnabled) {
+      if (!isSubmissionEnabledForMode) {
         photoReference.value = '';
         photoInput.value = '';
         retryPhoto.hidden = true;
@@ -884,7 +929,7 @@
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
-      if (!isTestEnabled) {
+      if (!isSubmissionEnabledForMode) {
         showResult({state: 'blocked'});
         return;
       }
@@ -933,13 +978,15 @@
       render();
     };
 
-    form.dataset.mode = FRONTEND_MODES.TEST_ENABLED;
+    form.dataset.mode = mode;
     render();
   }
 
   return {
     TEST_API_URL,
+    PROD_API_URL,
     TEST_FRONTEND_HOST,
+    PROD_FRONTEND_HOSTS,
     FRONTEND_MODES,
     PUBLIC_SUBMISSION_MESSAGE,
     PHOTO_UPLOAD_BASE_URL,
@@ -957,6 +1004,7 @@
     createPhotoUploadAdapter,
     createSubmitController,
     resolveFrontendMode,
+    isValidProdRuntimeConfig,
     isLocalTestPreview,
     responseResult,
     validateFrontendPayload,

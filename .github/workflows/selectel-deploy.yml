@@ -42,6 +42,9 @@ jobs:
 
       - name: Run public release checks
         if: inputs.operation == 'deploy'
+        env:
+          V5_PUBLIC_MODE: PROD_ENABLED
+          V5_PROD_API_URL: https://d5dsivdtqjog5vgvn111.7qsg961h.apigw.yandexcloud.net/applications
         run: |
           node --check scripts/build-public.js
           node --check assets/js/apply.js

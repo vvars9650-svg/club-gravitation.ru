@@ -95,6 +95,11 @@ async function main() {
   assert.equal(completeArtifact.includes('admin-config.test.js'), false);
   assert.equal(completeArtifact.includes('-----begin private key-----'), false);
   assert.equal(completeArtifact.includes('client_secret'), false);
+  if (process.env.V5_PUBLIC_MODE === 'PROD_ENABLED') {
+    const config = read('assets/js/public-config.js');
+    assert.match(config, /"mode":"PROD_ENABLED"/u);
+    assert.match(config, /"prod_api_url":"https:\/\/d5dsivdtqjog5vgvn111\.7qsg961h\.apigw\.yandexcloud\.net\/applications"/u);
+  }
   assertLocalReferences();
 
   const expectedHashes = {

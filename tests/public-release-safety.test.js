@@ -6,6 +6,7 @@ const {
   FRONTEND_MODES,
   PHOTO_COMPLETE_URL,
   PHOTO_INITIATE_URL,
+  PROD_API_URL,
   PUBLIC_SUBMISSION_MESSAGE,
   TEST_API_URL,
   TEST_FRONTEND_HOST,
@@ -18,6 +19,8 @@ const {
 } = require('../assets/js/apply');
 
 const TEST_LOCATION = {hostname: TEST_FRONTEND_HOST, search: ''};
+const PROD_LOCATION = {hostname: 'club-gravitation.ru', search: ''};
+const PROD_CONFIG = {mode: FRONTEND_MODES.PROD_ENABLED, prod_api_url: PROD_API_URL};
 
 function uuid() {
   return '00000000-0000-4000-8000-000000000001';
@@ -216,6 +219,12 @@ function testModeMatrix() {
   assert.equal(resolveFrontendMode(TEST_LOCATION), FRONTEND_MODES.TEST_ENABLED);
   assertBlocked({hostname: 'club-gravitation.ru', search: ''});
   assertBlocked({hostname: 'www.club-gravitation.ru', search: ''});
+  assert.equal(resolveFrontendMode(PROD_LOCATION, PROD_CONFIG), FRONTEND_MODES.PROD_ENABLED);
+  assert.equal(resolveFrontendMode({...PROD_LOCATION, search: '?test=true'}, PROD_CONFIG), FRONTEND_MODES.PROD_ENABLED);
+  for (const config of [undefined, {}, {mode: 'TEST_ENABLED'},
+    {mode: FRONTEND_MODES.PROD_ENABLED, prod_api_url: TEST_API_URL},
+    {mode: FRONTEND_MODES.PROD_ENABLED, prod_api_url: `${PROD_API_URL}/other`},
+  ]) assert.equal(resolveFrontendMode(PROD_LOCATION, config), FRONTEND_MODES.PUBLIC_BLOCKED);
   assertBlocked({hostname: 'example.com', search: ''});
   assertBlocked({hostname: 'example.com', search: '?test=true'});
   assertBlocked({hostname: 'localhost', search: ''});
@@ -260,6 +269,18 @@ async function testSubmitGuard() {
   assert.equal(testCalls.length, 1);
   assert.equal(testCalls[0][0], TEST_API_URL);
   assert.match(testSubmit.getIdempotencyKey(), /^v5-[0-9a-f-]{36}$/u);
+  const prodCalls = [];
+  const prodSubmit = createSubmitController({
+    fetchImpl: async (...args) => {
+      prodCalls.push(args);
+      return response(201, {application_id: 'APP-PROD', application_number: '000002'});
+    },
+    randomUUID: uuid,
+    mode: FRONTEND_MODES.PROD_ENABLED,
+    apiUrl: PROD_API_URL,
+  });
+  await prodSubmit.submit({full_name: 'synthetic'});
+  assert.equal(prodCalls[0][0], PROD_API_URL);
   assert.throws(
     () => createSubmitController({
       fetchImpl: async () => response(201),
@@ -318,6 +339,32 @@ function testEnabledMountKeepsFullForm() {
     harness.next.onclick();
     assert.equal(harness.steps[0].classList.contains('is-active'), false);
     assert.equal(harness.steps[1].classList.contains('is-active'), true);
+    assert.deepEqual(harness.networkCalls, []);
+  } finally {
+    if (previousOption === undefined) delete global.Option;
+    else global.Option = previousOption;
+  }
+}
+
+function testProductionMountKeepsFullForm() {
+  const previousOption = global.Option;
+  global.Option = class Option {
+    constructor(text, value) {
+      this.text = text;
+      this.value = value;
+    }
+  };
+
+  try {
+    const harness = createPublicMountHarness();
+    harness.root.location = PROD_LOCATION;
+    harness.root.__V5_PUBLIC_CONFIG__ = PROD_CONFIG;
+    harness.root.crypto = {randomUUID: uuid};
+    assert.doesNotThrow(() => mount(harness.root));
+    assert.equal(harness.form.dataset.mode, FRONTEND_MODES.PROD_ENABLED);
+    assert.equal(harness.form.hidden, false);
+    assert.equal(harness.availability.hidden, true);
+    assert.equal(harness.form.listeners.has('submit'), true);
     assert.deepEqual(harness.networkCalls, []);
   } finally {
     if (previousOption === undefined) delete global.Option;
@@ -405,6 +452,26 @@ async function testMountedDefaultPhotoAdapterUsesResolvedMode() {
     /public_submission_blocked/,
   );
   assert.deepEqual(publicCalls, []);
+
+  const prodCalls = [];
+  const prodUpload = createPhotoUploadAdapter({
+    fetchImpl: async (url) => {
+      prodCalls.push(url);
+      if (url.endsWith('/initiate')) return response(201, {
+        upload_url: 'https://storage.example.test/prod-presigned',
+        photo_object_id: 'PHOTO-0000000000000002', upload_method: 'PUT',
+      });
+      return response(200, {photo_object_id: 'PHOTO-0000000000000002', lifecycle_state: 'READY'});
+    },
+    mode: FRONTEND_MODES.PROD_ENABLED,
+    apiUrl: PROD_API_URL,
+  });
+  await prodUpload({type: 'image/jpeg'}, 'prod-key');
+  assert.deepEqual(prodCalls, [
+    `${PROD_API_URL.replace('/applications', '')}/photo-uploads/initiate`,
+    'https://storage.example.test/prod-presigned',
+    `${PROD_API_URL.replace('/applications', '')}/photo-uploads/complete`,
+  ]);
 }
 
 function testPublicCopyAndNoLegacyFallback() {
@@ -432,6 +499,7 @@ function testPublicCopyAndNoLegacyFallback() {
   await testSubmitGuard();
   testPublicMountShowsOnlyBlockedState();
   testEnabledMountKeepsFullForm();
+  testProductionMountKeepsFullForm();
   await testPhotoGuard();
   await testMountedDefaultPhotoAdapterUsesResolvedMode();
   testPublicCopyAndNoLegacyFallback();
