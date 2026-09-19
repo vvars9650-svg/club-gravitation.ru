@@ -114,6 +114,26 @@ async function main() {
   }
   assert.match(read('privacy/index.html'), /PPD','2\.2/u);
   assert.match(read('consent-pd/index.html'), /CONSENT','PD','2\.2/u);
+  const root = read('index.html');
+  const approvedTitle = 'ГРАВИТАЦИЯ — клуб живых встреч';
+  const approvedDescription = 'Краснодар. Пространство для новых людей, живого общения и настоящих встреч. Первый вечер — «ПЕРВЫЙ КОНТАКТ».';
+  const approvedImage = 'https://club-gravitation.ru/assets/images/share/event-01-first-contact-20260919.png';
+  assert.equal(root.includes(`<meta property="og:title" content="${approvedTitle}">`), true);
+  assert.equal(root.includes(`<meta property="og:description" content="${approvedDescription}">`), true);
+  assert.equal(root.includes('<meta property="og:url" content="https://club-gravitation.ru/">'), true);
+  assert.equal(root.includes(`<meta property="og:image" content="${approvedImage}">`), true);
+  assert.equal(root.includes('<meta property="og:image:width" content="941">'), true);
+  assert.equal(root.includes('<meta property="og:image:height" content="1672">'), true);
+  assert.equal(root.includes('<meta name="twitter:card" content="summary_large_image">'), true);
+  assert.equal(root.includes(`<meta name="twitter:title" content="${approvedTitle}">`), true);
+  assert.equal(root.includes(`<meta name="twitter:description" content="${approvedDescription}">`), true);
+  assert.equal(root.includes(`<meta name="twitter:image" content="${approvedImage}">`), true);
+  assert.equal(root.includes('first-contact/'), false);
+  assert.doesNotMatch(root, /(?:localhost|127\.0\.0\.1|test\.club-gravitation\.ru)/iu);
+  const shareImage = fs.readFileSync(artifactPath('assets/images/share/event-01-first-contact-20260919.png'));
+  assert.equal(shareImage.length > 0, true);
+  assert.equal(shareImage.readUInt32BE(16), 941);
+  assert.equal(shareImage.readUInt32BE(20), 1672);
   await assertNetworkGuards();
   console.log(`Public artifact safety: ${actual.length} files, all checks passed`);
 }

@@ -43,6 +43,7 @@ const FILES = [
   'assets/images/story/about-4-mobile.png',
   'assets/images/event-01-horizontal.png',
   'assets/images/event-01-vertical.png',
+  'assets/images/share/event-01-first-contact-20260919.png',
   'assets/css/apply.css',
   'assets/css/admin.css',
   'assets/js/site.js',
