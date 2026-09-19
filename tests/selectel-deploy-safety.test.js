@@ -44,6 +44,9 @@ assert.match(releaseScript, /Сайт временно недоступен/u);
 assert.match(releaseScript, /mv -T -- "\$temporary_link" "\$CURRENT"/u);
 assert.match(releaseScript, /PREVIOUS_FILE="\$SHARED\/previous-release"/u);
 assert.match(releaseScript, /another release operation is in progress/u);
+assert.doesNotMatch(workflow, /\bnginx\s+-[tT]\b/u);
+assert.match(workflow, /curl --fail --silent --show-error --resolve "\$host:443:127\.0\.0\.1" "https:\/\/\$host\//u);
+assert.doesNotMatch(workflow, /curl[^\n]*--insecure/u);
 
 assert.doesNotMatch(combined, /\bsudo\b/u);
 assert.doesNotMatch(combined, /135\.106\.219\.97/u);

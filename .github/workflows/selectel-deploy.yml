@@ -158,10 +158,8 @@ jobs:
           printf 'SELECTEL_HOSTNAME=%s\n' "$(hostname -f 2>/dev/null || hostname)"
           printf 'SELECTEL_IPV4='; hostname -I 2>/dev/null | tr '\n' ' '; printf '\n'
           printf 'ACTIVE_RELEASE=%s\n' "$(basename "$current")"
-          nginx -t
-          nginx -T 2>/dev/null | grep -E 'server_name .*club-gravitation\.ru|root /srv/gravitation/current|alias /srv/gravitation/current' || true
           for host in club-gravitation.ru www.club-gravitation.ru; do
-            curl --fail --silent --show-error --insecure --resolve "$host:443:127.0.0.1" "https://$host/" -o /dev/null
+            curl --fail --silent --show-error --resolve "$host:443:127.0.0.1" "https://$host/" -o /dev/null
             printf 'HTTPS_LOCALHOST_PASS=%s\n' "$host"
           done
           for host in club-gravitation.ru www.club-gravitation.ru; do
