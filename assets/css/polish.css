@@ -33,11 +33,11 @@
 .legal-brand-art img{display:block;width:min(100%,396px);height:auto;object-fit:contain}
 .legal h1{max-width:100%;overflow-wrap:normal;word-break:normal;hyphens:auto}
 
-@media(max-width:980px){
+@media(max-width:900px){
   .home-hero__image{object-position:38% center!important}
 }
 
-@media(max-width:760px){
+@media(max-width:599px){
   .site-nav{gap:14px;padding:90px 24px 50px}
   .site-nav a:not(.site-nav__cta),.site-nav__cta{width:min(100%,320px);min-height:48px;padding:12px 18px;font-size:1rem}
   .site-nav a:not(.site-nav__cta){justify-content:flex-start;padding-left:20px}
@@ -63,18 +63,18 @@
 }
 
 /* Responsive hero copy: layout follows the supplied landscape/portrait/mobile crops. */
-@media(max-width:1199px){
+@media(max-width:900px){
   .home-hero .hero-kicker{display:none!important}
 }
 
-@media(min-width:768px) and (max-width:1199px) and (orientation:landscape){
+@media(min-width:600px) and (max-width:900px) and (orientation:landscape){
   .home-hero__content{width:min(48vw,560px);padding-top:clamp(118px,15vh,145px);padding-right:4vw}
   .home-hero .hero-title-block{position:relative;transform:translateY(-26px)}
   .home-hero .hero-body-block{position:relative;transform:translateY(-34px);max-width:520px}
   .home-hero .hero-actions{margin-top:2px}
 }
 
-@media(min-width:768px) and (max-width:1199px) and (orientation:portrait){
+@media(min-width:600px) and (max-width:900px) and (orientation:portrait){
   .home-hero__content{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;margin:0!important;padding:0!important;color:#2b211b!important;pointer-events:none}
   .home-hero .hero-title-block{position:absolute;top:14svh;right:5vw;width:min(54vw,500px)}
   .home-hero h1{font-size:clamp(2.8rem,6vw,4.4rem);line-height:1.02;color:#2b211b}
@@ -87,7 +87,7 @@
   .home-hero__wash{background:linear-gradient(90deg,rgba(15,12,10,.015) 0%,rgba(15,12,10,0) 36%,rgba(247,244,238,.06) 52%,rgba(247,244,238,.2) 100%)!important}
 }
 
-@media(max-width:767px) and (orientation:portrait){
+@media(max-width:599px) and (orientation:portrait){
   .home-hero__content{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;margin:0!important;padding:0!important;color:#2b211b!important;pointer-events:none}
   .home-hero .hero-title-block{position:absolute;top:16svh;right:5vw;width:72vw;max-width:300px}
   .home-hero h1{font-size:clamp(2rem,8.7vw,2.9rem);line-height:1.02;color:#2b211b}
@@ -100,7 +100,7 @@
   .home-hero__wash{background:linear-gradient(90deg,rgba(15,12,10,.01) 0%,rgba(15,12,10,0) 34%,rgba(247,244,238,.06) 58%,rgba(247,244,238,.18) 100%)!important}
 }
 
-@media(max-width:1199px) and (orientation:portrait){
+@media(max-width:900px) and (orientation:portrait){
   .home-hero .hero-intro,.home-hero .hero-steps,.home-hero .hero-final{color:#2b211b!important}
 }
 

@@ -31,46 +31,15 @@
   const PHOTO_UPLOAD_BASE_URL = TEST_API_URL.replace(/\/applications$/u, '');
   const PHOTO_INITIATE_URL = `${PHOTO_UPLOAD_BASE_URL}/photo-uploads/initiate`;
   const PHOTO_COMPLETE_URL = `${PHOTO_UPLOAD_BASE_URL}/photo-uploads/complete`;
-  const FORM_VERSION = 'FORM-2.2';
+  const FORM_VERSION = 'FORM-2.3';
   const CONSENT_VERSION = 'CONSENT-PD-2.2';
   const POLICY_VERSION = 'PPD-2.2';
-  const MULTI_FIELDS = new Set([
-    'desired_connections',
-    'acquaintance_methods',
-  ]);
-  const FORM_FIELDS = [
-    'full_name',
-    'age',
-    'gender',
-    'city',
-    'visit_krasnodar',
-    'phone',
-    'email',
-    'preferred_contact',
-    'profile_or_messenger_url',
-    'public_profile_url',
-    'occupation',
-    'life_outside_work',
-    'what_interested',
-    'what_participant_brings',
-    'what_friends_value',
-    'desired_connections',
-    'desired_connections_other',
-    'values_in_people',
-    'barriers_to_meeting',
-    'acquaintance_methods',
-    'acquaintance_methods_other',
-    'return_reason',
-    'source',
-    'photo_object_id',
-  ];
+  const MULTI_FIELDS = new Set();
+  const FORM_FIELDS = ['full_name', 'age', 'gender', 'city', 'visit_krasnodar',
+    'phone', 'email', 'profile_or_messenger_url', 'photo_object_id'];
   const FIELD_SET = new Set(FORM_FIELDS);
   const GENDERS = new Set(['Мужчина', 'Женщина']);
   const VISIT_OPTIONS = new Set(['Да, регулярно', 'Да, время от времени', 'Пока не уверен(а)']);
-  const CONTACT_OPTIONS = new Set(['', 'по телефону', 'по email', 'через профиль или мессенджер по указанной ссылке']);
-  const DESIRED_CONNECTION_OPTIONS = new Set(['Романтические отношения', 'Новые друзья', 'Близкие по духу люди', 'Партнёрство / бизнес', 'Творческие и совместные проекты', 'Новый круг общения и впечатления', 'Интересные люди без заданной цели', 'Весело провести время', 'Другое']);
-  const ACQUAINTANCE_METHOD_OPTIONS = new Set(['Через общее дело или занятие', 'Через живой разговор', 'Через игру или активность', 'Когда знакомят друзья', 'Когда первый шаг делает другой человек', 'Зависит от человека и ситуации', 'Другое']);
-  const SOURCE_OPTIONS = new Set(['Сайт / поиск', 'От знакомого / рекомендация', 'Мессенджер', 'Социальные сети', 'Сайт знакомств', 'Другое']);
   const CITIES = [
     'Абинск', 'Адыгейск', 'Азов', 'Аксай', 'Алупка', 'Алушта', 'Анапа',
     'Апшеронск', 'Армавир', 'Армянск', 'Астрахань', 'Ахтубинск', 'Батайск',
@@ -101,7 +70,9 @@
     return Boolean(config)
       && typeof config === 'object'
       && config.mode === FRONTEND_MODES.PROD_ENABLED
-      && config.prod_api_url === PROD_API_URL;
+      && config.prod_api_url === PROD_API_URL
+      && config.form_version === FORM_VERSION
+      && config.short_form_legal_approved === true;
   }
 
   function resolveFrontendMode(locationLike = {}, runtimeConfig) {
@@ -201,80 +172,22 @@
   }
 
   function validateFrontendPayload(payload) {
-    if (payload.policy_acknowledged !== true) {
-      return 'policy_acknowledged';
+    if (payload.policy_acknowledged !== true) return 'policy_acknowledged';
+    if (payload.personal_data_consent !== true) return 'personal_data_consent';
+    for (const name of ['full_name', 'age', 'gender', 'city', 'phone', 'email', 'profile_or_messenger_url']) {
+      if (!String(payload[name] || '').trim()) return name;
     }
-    if (payload.personal_data_consent !== true) {
-      return 'personal_data_consent';
-    }
-    if (!/^PHOTO-[A-Za-z0-9_-]{16,120}$/u.test(payload.photo_object_id || '')) {
-      return 'photo_object_id';
-    }
-
-    for (const name of ['full_name', 'age', 'gender', 'city', 'phone', 'email',
-      'occupation', 'life_outside_work', 'source']) {
-      if (!String(payload[name] || '').trim()) {
-        return name;
-      }
-    }
-
     const age = Number(payload.age);
-    if (!Number.isInteger(age) || age < 25 || age > 52) {
-      return 'age';
-    }
-
-    if (!normalizeRussianPhone(payload.phone)) {
-      return 'phone';
-    }
-
-    if (!GENDERS.has(payload.gender)) {
-      return 'gender';
-    }
-
-    if (!CONTACT_OPTIONS.has(payload.preferred_contact || '')) return 'preferred_contact';
-    if (payload.city !== 'Краснодар' && !VISIT_OPTIONS.has(payload.visit_krasnodar)) {
-      return 'visit_krasnodar';
-    }
+    if (!Number.isInteger(age) || age < 25 || age > 52) return 'age';
+    if (!GENDERS.has(payload.gender)) return 'gender';
+    if (!CITIES.includes(payload.city)) return 'city';
+    if (payload.city !== 'Краснодар' && !VISIT_OPTIONS.has(payload.visit_krasnodar)) return 'visit_krasnodar';
     if (payload.city === 'Краснодар' && payload.visit_krasnodar) return 'visit_krasnodar';
-
-    const email = String(payload.email || '').trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)) {
-      return 'email';
-    }
-
-    if (payload.city !== 'Краснодар' && !payload.visit_krasnodar) {
-      return 'visit_krasnodar';
-    }
-
-    for (const field of ['profile_or_messenger_url', 'public_profile_url']) {
-      const profileUrl = String(payload[field] || '').trim();
-      if (!profileUrl) continue;
-      try {
-        const parsed = new URL(profileUrl);
-        if (!/^https?:$/u.test(parsed.protocol)) {
-          return field;
-        }
-      } catch {
-        return field;
-      }
-    }
-
-    const allowedMulti = {desired_connections: DESIRED_CONNECTION_OPTIONS, acquaintance_methods: ACQUAINTANCE_METHOD_OPTIONS};
-    for (const field of MULTI_FIELDS) {
-      if (!Array.isArray(payload[field]) || payload[field].length === 0
-        || new Set(payload[field]).size !== payload[field].length
-        || payload[field].some((value) => !allowedMulti[field].has(value))) return field;
-    }
-    if (payload.desired_connections.includes('Другое')
-      && !payload.desired_connections_other) return 'desired_connections_other';
-    if (!payload.desired_connections.includes('Другое')
-      && payload.desired_connections_other) return 'desired_connections_other';
-    if (payload.acquaintance_methods.includes('Другое')
-      && !payload.acquaintance_methods_other) return 'acquaintance_methods_other';
-    if (!payload.acquaintance_methods.includes('Другое')
-      && payload.acquaintance_methods_other) return 'acquaintance_methods_other';
-    if (!SOURCE_OPTIONS.has(payload.source)) return 'source';
-
+    if (!normalizeRussianPhone(payload.phone)) return 'phone';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(payload.email || '')) return 'email';
+    if (payload.full_name.length > 120) return 'full_name';
+    if (payload.profile_or_messenger_url.length > 500) return 'profile_or_messenger_url';
+    if (!/^PHOTO-[A-Za-z0-9_-]{16,120}$/u.test(payload.photo_object_id || '')) return 'photo_object_id';
     return null;
   }
 
@@ -518,468 +431,222 @@
     };
   }
 
+  function mountCityAutocomplete(root, input, cities) {
+    const document = root.document;
+    const wrapper = input.closest('.city-autocomplete');
+    const list = wrapper.querySelector('[role="listbox"]');
+    const results = wrapper.querySelector('[role="status"]');
+    let matches = [];
+    let active = -1;
+    function close() {
+      list.hidden = true;
+      input.setAttribute('aria-expanded', 'false');
+      input.removeAttribute('aria-activedescendant');
+      active = -1;
+    }
+    function highlight(index) {
+      active = index;
+      [...list.children].forEach((option, i) => option.setAttribute('aria-selected', String(i === active)));
+      const option = list.children[active];
+      if (option) {
+        input.setAttribute('aria-activedescendant', option.id);
+        option.scrollIntoView({block: 'nearest'});
+      }
+    }
+    function choose(index) {
+      if (!matches[index]) return;
+      input.value = matches[index];
+      input.classList.remove('is-invalid');
+      input.setCustomValidity('');
+      close();
+      input.dispatchEvent(new root.Event('change', {bubbles: true}));
+    }
+    function open() {
+      const query = input.value.trim().toLocaleLowerCase('ru');
+      matches = cities.filter(city => city.toLocaleLowerCase('ru').includes(query));
+      list.replaceChildren();
+      active = -1;
+      input.removeAttribute('aria-activedescendant');
+      matches.forEach((city, i) => {
+        const option = document.createElement('li');
+        option.id = 'city-option-' + i;
+        option.setAttribute('role', 'option');
+        option.setAttribute('aria-selected', 'false');
+        option.textContent = city;
+        option.addEventListener('pointerdown', event => event.preventDefault());
+        option.addEventListener('click', () => choose(i));
+        list.append(option);
+      });
+      results.textContent = matches.length ? '' : 'Город не найден. Выберите город из списка.';
+      list.hidden = matches.length === 0;
+      input.setAttribute('aria-expanded', String(matches.length > 0));
+    }
+    input.addEventListener('focus', open);
+    input.addEventListener('input', () => {
+      input.setCustomValidity(cities.includes(input.value) ? '' : 'Выберите город из списка.');
+      input.dispatchEvent(new root.Event('change', {bubbles: true}));
+      open();
+    });
+    input.addEventListener('keydown', event => {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        if (list.hidden) open();
+        if (matches.length) highlight(event.key === 'ArrowDown'
+          ? (active + 1) % matches.length : (active <= 0 ? matches.length : active) - 1);
+      } else if (event.key === 'Enter' && !list.hidden) {
+        event.preventDefault();
+        choose(active < 0 ? 0 : active);
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        close();
+      } else if (event.key === 'Tab') close();
+    });
+    input.addEventListener('blur', close);
+    document.addEventListener('pointerdown', event => { if (!wrapper.contains(event.target)) close(); });
+    input.form.addEventListener('reset', close);
+  }
+
   function mount(root) {
     const document = root.document;
     const form = document.querySelector('#application-v5');
-    if (!form) {
-      return;
-    }
-
+    if (!form) return;
+    // FORM-2.3 must never reach FORM-2.2 intake, including photo initiation.
     const mode = resolveFrontendMode(root.location, root.__V5_PUBLIC_CONFIG__);
-    const isSubmissionEnabledForMode = isSubmissionEnabled(mode);
-    const isLocalPreview = isLocalTestPreview(root.location);
-    const tabsBox = document.querySelector('.form-tabs');
-    const progressBox = document.querySelector('.form-progress');
-    const mobile = document.querySelector('#mobile-step');
+    const enabled = isSubmissionEnabled(mode);
     const availability = document.querySelector('#application-availability');
-
-    if (!isSubmissionEnabledForMode) {
-      form.dataset.mode = FRONTEND_MODES.PUBLIC_BLOCKED;
-      form.hidden = true;
-      progressBox.hidden = true;
-      tabsBox.hidden = true;
-      mobile.hidden = true;
-      availability.hidden = false;
-      availability.textContent = PUBLIC_SUBMISSION_MESSAGE;
-      return;
-    }
-
-    availability.hidden = true;
+    availability.textContent = enabled ? 'Заполните заявку для ручного рассмотрения.' : PUBLIC_SUBMISSION_MESSAGE;
+    form.dataset.mode = mode;
+    if (!enabled) { form.hidden = true; return; }
     form.hidden = false;
-    progressBox.hidden = false;
-    tabsBox.hidden = false;
-    mobile.hidden = false;
-
-    const tabs = [...document.querySelectorAll('.form-tab')];
-    const progress = document.querySelector('#form-progress-bar');
-    const controller = createSubmitController({
-      fetchImpl: isLocalPreview ? createLocalPreviewFetch() : root.fetch.bind(root),
-      randomUUID: typeof root.crypto?.randomUUID === 'function'
-        ? root.crypto.randomUUID.bind(root.crypto)
-        : undefined,
-      mode,
-      apiUrl: mode === FRONTEND_MODES.PROD_ENABLED
-        ? root.__V5_PUBLIC_CONFIG__?.prod_api_url
-        : TEST_API_URL,
-      AbortControllerImpl: root.AbortController,
-    });
-    const steps = [...form.querySelectorAll('.form-step')];
-    const back = document.querySelector('#form-back');
-    const next = document.querySelector('#form-next');
-    const status = document.querySelector('#form-status');
-    const review = document.querySelector('#review');
-    const submit = document.querySelector('#form-submit');
-    let success = document.querySelector('#form-success');
-    if (!success) {
-      success = document.createElement('section');
-      success.id = 'form-success';
-      success.className = 'form-success';
-      success.hidden = true;
-      success.innerHTML = [
-        '<div class="success-icon" aria-hidden="true">✓</div>',
-        '<h2 data-application-number></h2>',
-        '<p>Спасибо. Мы получили вашу заявку.</p>',
-        '<button class="form-next" id="form-new-session" type="button">',
-        'НОВАЯ АНКЕТА</button>',
-      ].join('');
-      form.after(success);
-    }
-    const newForm = success.querySelector('#form-new-session');
+    const controller = createSubmitController({mode, fetchImpl: root.fetch.bind(root), randomUUID: root.crypto.randomUUID.bind(root.crypto), AbortControllerImpl: root.AbortController});
+    const uploadPhoto = createMountedPhotoUploadAdapter(root, mode);
     const city = form.elements.city;
     const visit = form.elements.visit_krasnodar;
     const photoInput = form.elements.photo_upload;
     const photoReference = form.elements.photo_object_id;
     const photoStatus = form.querySelector('[data-photo-status]');
-    const retryPhoto = form.querySelector('[data-photo-retry]');
-    const uploadPhoto = isLocalPreview
-      ? createLocalPreviewPhotoUploadAdapter()
-      : createMountedPhotoUploadAdapter(root, mode);
-    const names = [
-      'Согласие',
-      'Контакты',
-      'О вас',
-      'Знакомства',
-      'Проверка',
-    ];
-    const groups = [
-      ['Согласие', 0, ['policy_acknowledged', 'personal_data_consent']],
-      ['Контакты', 1, [...FORM_FIELDS.slice(0, 10), 'photo_object_id']],
-      ['О вас', 2, FORM_FIELDS.slice(10, 15)],
-      ['Знакомства', 3, FORM_FIELDS.slice(15)],
-    ];
-    const labels = {
-      policy_acknowledged: 'Политика обработки персональных данных',
-      personal_data_consent: 'Согласие на обработку персональных данных',
-      full_name: 'Имя и фамилия', age: 'Возраст', gender: 'Пол', city: 'Город',
-      visit_krasnodar: 'Посещение Краснодара', phone: 'Телефон', email: 'Email',
-      preferred_contact: 'Как удобнее связаться',
-      profile_or_messenger_url: 'Ссылка на профиль или мессенджер',
-      public_profile_url: 'Ссылка на страницу или сайт', photo_object_id: 'Фотография',
-      occupation: 'Ваша сфера деятельности',
-      life_outside_work: 'Чем наполнена ваша жизнь кроме работы',
-      what_interested: 'Почему вам интересна «Гравитация»',
-      what_participant_brings: 'Что вы привносите в компанию людей',
-      what_friends_value: 'За что вас ценят друзья и знакомые',
-      desired_connections: 'Какие знакомства вам интересны',
-      desired_connections_other: 'Другие знакомства или формат общения',
-      values_in_people: 'Что вы цените в людях',
-      barriers_to_meeting: 'Что, возможно, мешает знакомиться',
-      acquaintance_methods: 'Естественные способы знакомства',
-      acquaintance_methods_other: 'Как ещё вам комфортнее знакомиться',
-      return_reason: 'Что должно произойти, чтобы прийти снова', source: 'Откуда узнали о нас',
-    };
-    let current = 0;
-    let maxReached = 0;
-
-    status.setAttribute('aria-live', 'polite');
-
+    const image = form.querySelector('[data-photo-preview]');
+    const placeholder = form.querySelector('[data-photo-placeholder]');
+    const remove = form.querySelector('[data-photo-remove]');
+    const photoLabel = form.querySelector('.photo-select span');
+    const submit = form.querySelector('#form-submit');
+    const status = form.querySelector('#form-status');
+    let photoUrl = null;
+    let photoRevision = 0;
+    submit.disabled = false;
     for (let age = 25; age <= 52; age += 1) {
-      form.elements.age.add(new Option(String(age), String(age)));
+      form.elements.age.add(new root.Option(String(age), String(age)));
     }
-    CITIES.forEach((name) => city.add(new Option(name, name)));
-
-    function render() {
-      const submitting = controller.isSubmitting();
-      steps.forEach((step, index) => {
-        step.classList.toggle('is-active', index === current);
-      });
-      tabs.forEach((tab, index) => {
-        tab.classList.toggle('is-active', index === current);
-        tab.disabled = index > maxReached || submitting;
-      });
-      progress.style.width = `${(100 * (current + 1)) / steps.length}%`;
-      mobile.textContent = names[current];
-      back.hidden = current === 0;
-      next.hidden = current === steps.length - 1;
-      submit.disabled = submitting || !isSubmissionEnabledForMode;
-    }
-
+    mountCityAutocomplete(root, city, CITIES);
     function syncVisit() {
-      const required = city.value && city.value !== 'Краснодар';
+      const required = CITIES.includes(city.value) && city.value !== 'Краснодар';
       visit.closest('.city-visit').hidden = !required;
       visit.required = required;
-      if (!required) {
-        visit.value = '';
-      }
+      if (!required) visit.value = '';
     }
-
-    function syncConditional(field) {
-      const checked = [...form.querySelectorAll(`[name="${field}"]:checked`)]
-        .some((control) => control.value === 'Другое');
-      const wrapper = form.querySelector(`[data-conditional="${field}"]`);
-      const control = form.elements[`${field}_other`];
-      wrapper.hidden = !checked;
-      control.required = checked;
-      if (!checked) control.value = '';
-    }
-
-    function clearValidation() {
-      form.querySelectorAll('.is-invalid').forEach((element) => {
-        element.classList.remove('is-invalid');
-      });
-      status.textContent = '';
-      status.dataset.state = 'idle';
-    }
-
-    function validateStep(index) {
-      clearValidation();
-      let firstInvalid;
-
-      if (index === 0) {
-        for (const name of ['policy_acknowledged', 'personal_data_consent']) {
-          if (!form.elements[name].checked) firstInvalid ??= form.elements[name];
-        }
-      }
-
-      if (index === 1) {
-        for (const name of ['full_name', 'age', 'gender', 'city', 'phone', 'email']) {
-          if (!String(form.elements[name].value).trim()) {
-            firstInvalid ??= form.elements[name];
-          }
-        }
-
-        const age = Number(form.elements.age.value);
-        if (age < 25 || age > 52) {
-          firstInvalid ??= form.elements.age;
-        }
-
-        if (!normalizeRussianPhone(form.elements.phone.value)) {
-          firstInvalid ??= form.elements.phone;
-        }
-
-        const email = form.elements.email.value.trim();
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)) {
-          firstInvalid ??= form.elements.email;
-        }
-
-        if (city.value && city.value !== 'Краснодар' && !visit.value) {
-          firstInvalid ??= visit;
-        }
-
-        for (const field of ['profile_or_messenger_url', 'public_profile_url']) {
-          const profileUrl = form.elements[field].value.trim();
-          if (!profileUrl) continue;
-          try {
-            const parsed = new URL(profileUrl);
-            if (!/^https?:$/u.test(parsed.protocol)) {
-              throw new Error('invalid_protocol');
-            }
-          } catch {
-            firstInvalid ??= form.elements[field];
-          }
-        }
-        if (!photoReference.value) firstInvalid ??= photoInput;
-      }
-
-      if (index === 2) {
-        for (const name of ['occupation', 'life_outside_work']) {
-          if (!form.elements[name].value.trim()) firstInvalid ??= form.elements[name];
-        }
-      }
-
-      if (index === 3) {
-        for (const name of ['desired_connections', 'acquaintance_methods']) {
-          if (!form.querySelector(`[name="${name}"]:checked`)) {
-            firstInvalid ??= form.elements[name][0];
-          }
-          if ([...form.querySelectorAll(`[name="${name}"]:checked`)]
-            .some((control) => control.value === 'Другое')
-            && !form.elements[`${name}_other`].value.trim()) {
-            firstInvalid ??= form.elements[`${name}_other`];
-          }
-        }
-        if (!form.elements.source.value) firstInvalid ??= form.elements.source;
-      }
-
-      if (firstInvalid) {
-        firstInvalid.classList.add('is-invalid');
-        status.dataset.state = 'validation_error';
-        status.textContent = 'Проверьте обязательные поля и формат данных.';
-        firstInvalid.focus();
-        return false;
-      }
-
-      return true;
-    }
-
-    function collect() {
-      return buildPayload(new FormData(form));
-    }
-
-    function reviewAll() {
-      const data = collect();
-      review.replaceChildren();
-      groups.forEach(([title, stepIndex, fields]) => {
-        const card = document.createElement('article');
-        card.className = 'review-card';
-        const head = document.createElement('div');
-        head.className = 'review-head';
-        const strong = document.createElement('strong');
-        strong.textContent = title;
-        const edit = document.createElement('button');
-        edit.type = 'button';
-        edit.textContent = 'Изменить';
-        edit.onclick = () => go(stepIndex);
-        head.append(strong, edit);
-        card.append(head);
-        const list = document.createElement('dl');
-        list.className = 'review-grid';
-        fields.forEach((field) => {
-          const term = document.createElement('dt');
-          const description = document.createElement('dd');
-          term.textContent = labels[field];
-          if (field === 'photo_object_id') {
-            description.textContent = data[field] ? 'Загружена' : '—';
-          } else if (field === 'policy_acknowledged'
-            || field === 'personal_data_consent') {
-            description.textContent = data[field] ? 'Подтверждено' : '—';
-          } else {
-            description.textContent = Array.isArray(data[field])
-              ? data[field].join(', ')
-              : (data[field] || '—');
-          }
-          list.append(term, description);
-        });
-        card.append(list);
-        review.append(card);
-      });
-    }
-
-    function go(index) {
-      current = index;
-      maxReached = Math.max(maxReached, index);
-      if (index === 4) {
-        reviewAll();
-      }
-      render();
-    }
-
-    function showForm() {
-      form.hidden = false;
-      progressBox.hidden = false;
-      mobile.hidden = false;
-      tabsBox.hidden = false;
-      success.hidden = true;
-    }
-
-    function showSuccess(applicationNumber, alreadyRegistered = false) {
-      form.hidden = true;
-      progressBox.hidden = true;
-      mobile.hidden = true;
-      tabsBox.hidden = true;
-      success.hidden = false;
-      success.querySelector('[data-application-number]').textContent =
-        alreadyRegistered
-          ? `Ваша заявка уже зарегистрирована. №${applicationNumber}`
-          : `Ваша заявка принята. №${applicationNumber}`;
-    }
-
-    function showResult(result) {
-      status.dataset.state = result.state;
-
-      if (result.state === 'blocked') {
-        status.textContent = PUBLIC_SUBMISSION_MESSAGE;
-      } else if (result.state === 'success') {
-        status.textContent = '';
-        showSuccess(result.applicationNumber, result.alreadyRegistered);
-      } else if (result.state === 'validation_error') {
-        status.textContent =
-          'Не удалось принять данные. Проверьте анкету и повторите отправку.';
-      } else if (result.code === 'processing_blocked') {
-        status.textContent =
-          'Отправка заявки сейчас недоступна. Свяжитесь с клубом удобным способом.';
-      } else if (result.code === 'idempotency_conflict') {
-        status.textContent =
-          'Не удалось подтвердить эту отправку. Проверьте данные и повторите попытку.';
-      } else if (result.code === 'unsupported_media_type') {
-        status.textContent =
-          'Не удалось обработать заявку. Повторите попытку позднее.';
-      } else if (result.uncertain) {
-        status.textContent =
-          'Не удалось получить подтверждение. Повторите попытку позднее.';
-      } else {
-        status.textContent =
-          'Приём заявок временно недоступен. Повторите попытку позднее.';
-      }
-    }
-
     city.addEventListener('change', syncVisit);
-    async function uploadSelectedPhoto() {
-      if (!isSubmissionEnabledForMode) {
-        photoReference.value = '';
-        photoInput.value = '';
-        retryPhoto.hidden = true;
-        photoStatus.textContent = PUBLIC_SUBMISSION_MESSAGE;
-        return;
-      }
-
+    syncVisit();
+    function clearPhoto() {
+      photoRevision += 1;
+      submit.disabled = false;
+      if (photoUrl) root.URL.revokeObjectURL(photoUrl);
+      photoUrl = null;
+      image.removeAttribute('src');
+      image.hidden = true;
+      placeholder.hidden = false;
+      remove.hidden = true;
       photoReference.value = '';
+      photoStatus.textContent = '';
+      photoLabel.textContent = 'Выбрать фотографию';
+      photoInput.value = '';
+      photoInput.classList.remove('is-invalid');
+      photoInput.removeAttribute('aria-invalid');
+    }
+    photoInput.addEventListener('change', () => {
       const file = photoInput.files?.[0];
-      if (!file) {
-        photoStatus.textContent = '';
-        retryPhoto.hidden = true;
+      clearPhoto();
+      if (!file) return;
+      if (!enabled) {
+        photoStatus.textContent = 'Приём фотографий пока недоступен.';
         return;
       }
       if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)
-        || file.size > 10 * 1024 * 1024) {
-        photoStatus.textContent = 'Допустимы JPEG, PNG или WebP до 10 МБ.';
-        retryPhoto.hidden = false;
+        || file.size === 0 || file.size > 10 * 1024 * 1024) {
+        photoStatus.textContent = 'Выберите JPEG, PNG или WebP до 10 МБ.';
         return;
       }
-      retryPhoto.hidden = true;
-      photoInput.disabled = true;
-      photoStatus.textContent = 'Загрузка фотографии…';
-      try {
-        const result = await uploadPhoto(file, controller.getIdempotencyKey());
-        if (!/^PHOTO-[A-Za-z0-9_-]{16,120}$/u.test(result?.photo_object_id || '')) {
-          throw new Error('invalid_photo_reference');
-        }
-        photoReference.value = result.photo_object_id;
-        photoStatus.textContent = isLocalPreview
-          ? 'Фотография готова для local preview.'
-          : 'Фотография загружена.';
-      } catch {
-        photoStatus.textContent = 'Не удалось загрузить фотографию. Повторите попытку.';
-        retryPhoto.hidden = false;
-      } finally {
-        photoInput.disabled = false;
-      }
-    }
-    photoInput.addEventListener('change', uploadSelectedPhoto);
-    retryPhoto.addEventListener('click', uploadSelectedPhoto);
-    for (const field of ['desired_connections', 'acquaintance_methods']) {
-      form.querySelector(`[data-conditional-group="${field}"]`)
-        .addEventListener('change', () => syncConditional(field));
-      syncConditional(field);
-    }
-    syncVisit();
-    next.onclick = () => {
-      if (validateStep(current)) {
-        go(current + 1);
-      }
-    };
-    back.onclick = () => go(Math.max(0, current - 1));
-    tabs.forEach((tab, index) => {
-      tab.onclick = () => {
-        if (index <= maxReached && !controller.isSubmitting()) {
-          go(index);
-        }
+      const revision = photoRevision;
+      photoUrl = root.URL.createObjectURL(file);
+      image.onload = async () => {
+        if (revision !== photoRevision) return;
+        submit.disabled = true;
+        photoStatus.textContent = 'Загружаем фотографию…';
+        try {
+          const result = await uploadPhoto(file, controller.getIdempotencyKey());
+          if (revision !== photoRevision) return;
+          photoReference.value = result.photo_object_id;
+        } catch {
+          if (revision !== photoRevision) return;
+          clearPhoto();
+          photoStatus.textContent = 'Не удалось загрузить фотографию. Выберите файл ещё раз.';
+          return;
+        } finally { if (revision === photoRevision) submit.disabled = false; }
+        image.hidden = false;
+        placeholder.hidden = true;
+        remove.hidden = false;
+        photoLabel.textContent = 'Заменить фотографию';
+        photoStatus.textContent = 'Фотография загружена в закрытое хранилище.';
       };
+      image.onerror = () => {
+        if (revision !== photoRevision) return;
+        clearPhoto();
+        photoStatus.textContent = 'Не удалось открыть изображение. Выберите другую фотографию.';
+      };
+      image.src = photoUrl;
     });
-
-    form.addEventListener('submit', async (event) => {
+    remove.addEventListener('click', () => { clearPhoto(); photoInput.focus(); });
+    root.addEventListener('pagehide', () => { if (photoUrl) root.URL.revokeObjectURL(photoUrl); });
+    form.addEventListener('input', event => {
+      event.target.classList.remove('is-invalid');
+      event.target.removeAttribute('aria-invalid');
+      status.textContent = '';
+    });
+    form.addEventListener('submit', async event => {
       event.preventDefault();
-      if (!isSubmissionEnabledForMode) {
-        showResult({state: 'blocked'});
+      if (!enabled) {
+        status.dataset.state = 'blocked';
+        status.textContent = 'Отправка недоступна до обновления приёма заявок.';
         return;
       }
-      if (current !== steps.length - 1 || controller.isSubmitting()
-        || !validateStep(0) || !validateStep(1) || !validateStep(2) || !validateStep(3)) {
-        return;
-      }
-
-      const payload = collect();
+      form.querySelectorAll('.is-invalid').forEach(control => {
+        control.classList.remove('is-invalid'); control.removeAttribute('aria-invalid');
+      });
+      const payload = buildPayload(new root.FormData(form));
       const invalidField = validateFrontendPayload(payload);
       if (invalidField) {
-        const control = form.elements[invalidField];
-        control?.classList.add('is-invalid');
-        control?.focus();
+        const control = form.elements[invalidField === 'photo_object_id' ? 'photo_upload' : invalidField];
+        control.classList.add('is-invalid');
+        control.setAttribute('aria-invalid', 'true');
+        control.focus();
         status.dataset.state = 'validation_error';
-        status.textContent = 'Проверьте обязательные поля и формат данных.';
+        status.textContent = invalidField === 'city' ? 'Выберите город из списка.'
+          : invalidField === 'photo_object_id' ? 'Добавьте фотографию перед отправкой.'
+          : 'Проверьте обязательные поля и формат данных.';
         return;
       }
-
-      status.dataset.state = 'submitting';
+      if (controller.isSubmitting()) return;
+      submit.disabled = true;
       status.textContent = 'Отправляем заявку…';
-      const request = controller.submit(payload);
-      render();
-      const result = await request;
-      showResult(result);
-      render();
-    });
-
-    form.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' && current !== steps.length - 1) event.preventDefault();
-    });
-
-    newForm.onclick = () => {
-      if (!controller.startNewSession()) {
-        return;
+      const result = await controller.submit(payload);
+      status.dataset.state = result.state;
+      if (result.state === 'success') {
+        status.textContent = (result.alreadyRegistered ? 'Ваша заявка уже зарегистрирована. №' : 'Ваша заявка принята. №') + result.applicationNumber + '. Далее — личное интервью, решение, приглашение и отдельная ссылка на оплату.';
+        for (const control of form.elements) control.disabled = true;
+      } else {
+        submit.disabled = false;
+        status.textContent = 'Не удалось отправить заявку. Повторите отправку. Фотографию загружать заново не нужно.';
       }
-      form.reset();
-      photoStatus.textContent = '';
-      current = 0;
-      maxReached = 0;
-      syncVisit();
-      syncConditional('desired_connections');
-      syncConditional('acquaintance_methods');
-      clearValidation();
-      showForm();
-      render();
-    };
-
-    form.dataset.mode = mode;
-    render();
+    });
   }
 
   return {
@@ -1012,4 +679,3 @@
     mount,
   };
 });
-

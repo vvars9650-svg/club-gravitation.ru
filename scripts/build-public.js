@@ -8,6 +8,11 @@ const ROOT = path.resolve(__dirname, '..');
 const OUTPUT = path.join(ROOT, 'public-dist');
 
 const FILES = [
+  'assets/images/event-01-collage-desktop.png',
+  'assets/images/event-01-collage-mobile.png',
+  'assets/images/founders/founders-Lara.jpg',
+  'assets/images/founders/founders_Vlad.jpg',
+
   'index.html',
   '404.html',
   'CNAME',
@@ -101,6 +106,9 @@ function buildHero(name, config) {
 }
 
 function buildPublic() {
+  if (process.env.V5_PUBLIC_MODE === 'PROD_ENABLED') {
+    throw new Error('FORM-2.3 production release requires approved legal documents and explicit release gate');
+  }
   fs.rmSync(OUTPUT, {recursive: true, force: true});
   fs.mkdirSync(OUTPUT, {recursive: true});
   FILES.forEach(copyFile);

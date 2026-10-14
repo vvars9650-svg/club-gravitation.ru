@@ -11,3 +11,6 @@
 @media(max-width:980px){}
 @media(max-width:980px) and (orientation:portrait){.page-founders .founder-pair article:first-child{order:2}.page-founders .founder-pair article:last-child{order:1}}
 @media(max-width:760px){.page-founders .founders-hero{gap:50px;}.page-founders .founders-story{margin-top:44px;padding-left:20px;}.page-founders .founders-story__body{display:block;margin-top:28px;}.page-founders .founders-story__body p{font-size:1rem;line-height:1.72;margin-bottom:22px;}.page-founders .founders-note__actions{align-items:flex-start;flex-direction:column;gap:20px;margin-top:32px;}}
+
+.page-founders .founder-portrait{aspect-ratio:4/5;border-radius:2px;overflow:hidden;background:var(--cream);}
+.page-founders .founder-portrait img{display:block;width:100%;height:100%;object-fit:cover;object-position:center;}
