@@ -10,6 +10,10 @@ Baseline исходников: `410c39392f5be49d56a87dadd7103bde1d2768e3` (со�
 
 `node scripts/build-public.js` по умолчанию строит PUBLIC_BLOCKED. `V5_PUBLIC_MODE=PROD_ENABLED` в кандидате намеренно останавливает сборку до записи артефакта. Существующий Selectel workflow задаёт PROD_ENABLED, поэтому его deploy-step также остановится. Кандидат нельзя случайно опубликовать как работающий новый intake. После юридического утверждения потребуется отдельный малый gate commit с точными версиями/хэшами и проверкой фактического PROD runtime.
 
+Фактический PROD metadata прочитан без изменения: Gateway `d5dsivdtqjog5vgvn111` → Function `d4e8kk0f5bqulombl18j`, active version `d4ej2creip5g0iloi3vh`. Имена runtime-параметров: `V5_ENVIRONMENT`, `V5_PROD_CONSENT_TEXT_HASH`, `V5_PROD_PHOTO_BUCKET`, `V5_PROD_YDB_DATABASE`, `V5_PROD_YDB_ENDPOINT`. Значения секретов/подключения не выводились. API metadata не возвращает исходный пакет или его checksum. Найдены локальные PROD ZIP от 19.09, но их равенство текущей active version не подтверждено; поэтому они не приняты автоматически за источник истины. До PROD требуется связать точный deployed source с Git и применить изменения короткой формы к этому runtime с сохранением PROD isolation.
+
+TEST ZIP кандидата: SHA-256 `a4e24d3967418d28a8e9d9077586bbe0b4fd21014da0638ac23bf353fc07e8ed`. Активная TEST version `d4ev92fcfmgoj0sfr64f` построена из этого ZIP.
+
 ## Контролируемый deployment после приёмки
 
 1. Утвердить юридический комплект и сверить RKN-03/реестр; подготовить публикацию версий, links и canonical hash. Сохранить старые frozen/evidence.
