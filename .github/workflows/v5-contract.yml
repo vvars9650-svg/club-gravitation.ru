@@ -1,7 +1,8 @@
 name: V5 contract
 on:
   push:
-    branches: [v5]
+    branches: [v5, 'codex/production-rc-*']
+  pull_request:
   workflow_dispatch:
 jobs:
   contract:
@@ -31,6 +32,9 @@ jobs:
       - run: node tests/frontend-submit.test.js
       - run: node tests/admin-ui.test.js
       - run: node tests/admin-selectel-safety.test.js
+      - run: node tests/public-release-safety.test.js
+      - run: node tests/public-artifact-safety.test.js
+      - run: node tests/selectel-deploy-safety.test.js
       - run: python -m compileall backend/v5
       - run: python -m unittest discover -s backend/v5/tests -v
       - run: git diff --check
