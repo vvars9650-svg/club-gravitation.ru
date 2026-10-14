@@ -4,6 +4,7 @@ import re
 from datetime import datetime, timezone
 
 FORM_VERSION = "FORM-2.2"
+SHORT_FORM_VERSION = "FORM-2.3"
 CONSENT_VERSION = "CONSENT-PD-2.2"
 POLICY_VERSION = "PPD-2.2"
 
@@ -99,7 +100,7 @@ def _multi(data, field, allowed):
     return value
 
 
-def validate(data):
+def _validate_legacy(data):
     if not isinstance(data, dict):
         raise DomainError("invalid_json", 400)
     if data.get("policy_acknowledged") is not True:
@@ -173,3 +174,44 @@ def ids(key):
 
 def now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def validate(data):
+    if not isinstance(data, dict) or data.get("form_version") != SHORT_FORM_VERSION:
+        return _validate_legacy(data)
+    if data.get("policy_acknowledged") is not True:
+        raise DomainError("policy_acknowledgement_required")
+    if data.get("personal_data_consent") is not True:
+        raise DomainError("consent_required")
+    if data.get("consent_version") != CONSENT_VERSION or data.get("policy_version") != POLICY_VERSION:
+        raise DomainError("invalid_legal_version")
+    short_fields = {"full_name", "age", "gender", "city", "visit_krasnodar", "phone", "email", "profile_or_messenger_url", "photo_object_id"}
+    if (set(FORM_FIELDS) - short_fields).intersection(data) or REMOVED_FORM_FIELDS.intersection(data):
+        raise DomainError("legacy_form_fields_not_allowed")
+    for field in ("full_name", "gender", "city", "email", "profile_or_messenger_url"):
+        value = data.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise DomainError("missing_" + field)
+    if len(data["full_name"].strip()) > 120 or len(data["profile_or_messenger_url"].strip()) > 500:
+        raise DomainError("text_too_long")
+    age = data.get("age")
+    if isinstance(age, bool) or not re.fullmatch(r"\d{2}", str(age)) or not 25 <= int(age) <= 52:
+        raise DomainError("invalid_age")
+    if data["gender"] not in GENDERS:
+        raise DomainError("invalid_gender")
+    visit = data.get("visit_krasnodar", "")
+    if data["city"] != "Краснодар" and visit not in VISIT_OPTIONS:
+        raise DomainError("missing_visit_krasnodar" if not visit else "invalid_visit_krasnodar")
+    if data["city"] == "Краснодар" and visit:
+        raise DomainError("invalid_visit_krasnodar")
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", data["email"].strip()):
+        raise DomainError("invalid_email")
+    from .photo_contract import validate_photo_object_id
+    out = {field: [] if field in MULTI_FIELDS else "" for field in FORM_FIELDS}
+    out.update({field: data.get(field, "") for field in short_fields})
+    for field in ("full_name", "gender", "city", "email", "profile_or_messenger_url"):
+        out[field] = out[field].strip()
+    out["age"] = int(age)
+    out["phone"] = phone(data.get("phone"))
+    out["photo_object_id"] = validate_photo_object_id(data.get("photo_object_id"))
+    return out

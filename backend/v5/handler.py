@@ -1,7 +1,7 @@
 import json,re,uuid
 from .domain import DomainError
 from .service import submit
-from .factory import runtime_repository, runtime_photo_upload_service
+from .factory import runtime_repository, runtime_photo_upload_service, runtime_photo_reader
 from .repository import RepositoryConflict, RepositoryUnavailable
 from .object_storage import ObjectStorageError
 from .admin import admin_handler
@@ -30,7 +30,13 @@ def handler(event,context=None,repo=None,photo_service=None):
             admin_repo=repo if repo is not None else runtime_repository()
         except RepositoryUnavailable as e:
             return response(503,{'error':{'code':str(e)}},request_id)
-        return admin_handler(event,context,repo=admin_repo,actor_identity=principal.subject)
+        photo_reader = None
+        if event.get('httpMethod') == 'GET' and (event.get('queryStringParameters') or {}).get('include_photo') == 'true':
+            try:
+                photo_reader = runtime_photo_reader(context, admin_repo)
+            except RepositoryUnavailable as error:
+                return response(503, {'error': {'code': str(error)}}, request_id)
+        return admin_handler(event,context,repo=admin_repo,actor_identity=principal.subject,photo_reader=photo_reader)
     if event.get('httpMethod')=='GET' and event.get('path','').endswith('/health'): return response(200,{'status':'synthetic-test-only','environment':'TEST'},request_id)
     if event.get('httpMethod')!='POST': return response(405,{'error':{'code':'method_not_allowed'}},request_id)
     if not str(event.get('headers',{}).get('Content-Type',event.get('headers',{}).get('content-type',''))).startswith('application/json'): return response(415,{'error':{'code':'unsupported_media_type'}},request_id)

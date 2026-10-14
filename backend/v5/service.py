@@ -7,7 +7,8 @@ def submit(data,key,repo,request_id,consent_hash=CONSENT_TEXT_SHA256,max_attempt
         if old['payload_fingerprint']!=fp: raise DomainError('idempotency_conflict',409)
         return old,True
     application_id,consent_id=ids(key);participant_id='PT-'+application_id[4:]
-    record={'environment':'TEST','application_id':application_id,'participant_id':participant_id,'consent_id':consent_id,'photo_object_id':form['photo_object_id'],'form':form,'payload_fingerprint':fp,'submitted_at':now(),'request_id':request_id,'consent':{'participant_id':participant_id,'application_id':application_id,'consent_id':consent_id,'consent_type':'personal_data_application','consent_version':CONSENT_VERSION,'policy_version':POLICY_VERSION,'form_version':FORM_VERSION,'consent_text_hash':consent_hash,'granted':True,'granted_at':now(),'source':'website','request_id':request_id}}
+    record={'environment':'TEST','application_id':application_id,'participant_id':participant_id,'consent_id':consent_id,'photo_object_id':form['photo_object_id'],'form':form,'payload_fingerprint':fp,'submitted_at':now(),'request_id':request_id,'consent':{'participant_id':participant_id,'application_id':application_id,'consent_id':consent_id,'consent_type':'personal_data_application','consent_version':CONSENT_VERSION,'policy_version':POLICY_VERSION,'form_version':data['form_version'],'consent_text_hash':consent_hash,'granted':True,'granted_at':now(),'source':'website','request_id':request_id}}
+    record['form_version'] = data['form_version']
     for _ in range(max_attempts):
         if repo.save(key,record):
             return record,False

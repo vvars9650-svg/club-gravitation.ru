@@ -55,3 +55,21 @@ def runtime_photo_upload_service(context, repository):
         codec=PillowPhotoCodec(),
         bucket=bucket,
     )
+
+
+def runtime_photo_reader(context, repository):
+    from .object_storage import YandexPresignClient, runtime_iam_token
+    bucket = os.getenv('V5_TEST_PHOTO_BUCKET')
+    if not bucket:
+        raise RepositoryUnavailable('missing_photo_bucket_configuration')
+    presigner = YandexPresignClient(runtime_iam_token(context))
+    def read(application):
+        photo_id = application.get('form', {}).get('photo_object_id')
+        if not photo_id:
+            return None
+        photo = repository.get_photo_upload(photo_id)
+        if (not photo or photo.get('lifecycle_state') != 'ATTACHED'
+                or photo.get('application_id') != application.get('application_id')):
+            return None
+        return {'url': presigner.presign_get(bucket, photo['storage_key'], 180), 'expires_in': 180}
+    return read
