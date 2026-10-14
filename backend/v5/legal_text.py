@@ -32,8 +32,16 @@ def legal_text_sha256(source):
 
 
 def frozen_consent_path():
-    return (
+    source_path = (
         Path(__file__).resolve().parents[2]
+        / "legal" / "frozen" / "CONSENT-PD-2.2.txt"
+    )
+    if source_path.is_file():
+        return source_path
+    # The deployment ZIP deliberately contains only the frozen source needed
+    # for this integrity check, adjacent to the packaged v5 module.
+    return (
+        Path(__file__).resolve().parents[1]
         / "legal" / "frozen" / "CONSENT-PD-2.2.txt"
     )
 

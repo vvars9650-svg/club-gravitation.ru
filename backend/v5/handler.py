@@ -1,6 +1,7 @@
 import json,re,uuid
-from .domain import DomainError
+from .domain import DomainError, SHORT_FORM_VERSION
 from .service import submit
+from .runtime_config import runtime_environment, runtime_settings
 from .factory import runtime_repository, runtime_photo_upload_service, runtime_photo_reader
 from .repository import RepositoryConflict, RepositoryUnavailable
 from .object_storage import ObjectStorageError
@@ -15,6 +16,19 @@ def format_application_number(value):
 
 def is_admin_path(path):
     return bool(re.search(r'(?:^|/)admin(?:/|$)', str(path or '').split('?', 1)[0]))
+
+def health(context, repo=None):
+    environment = runtime_environment()
+    if environment == 'TEST':
+        return {'status': 'synthetic-test-only', 'environment': getattr(repo, 'environment', runtime_environment()), 'ready': True}
+    # Constructing the repository validates the separate YDB data-plane and
+    # opens its driver.  Settings validate the distinct private photo bucket.
+    runtime_settings()
+    runtime_repository() if repo is None else repo
+    return {
+        'status': 'ready', 'environment': 'PROD', 'ready': True,
+        'database': 'available', 'storage': 'configured',
+    }
 
 def handler(event,context=None,repo=None,photo_service=None):
     request_id=getattr(context,'request_id',None) or str(uuid.uuid4())
@@ -37,7 +51,11 @@ def handler(event,context=None,repo=None,photo_service=None):
             except RepositoryUnavailable as error:
                 return response(503, {'error': {'code': str(error)}}, request_id)
         return admin_handler(event,context,repo=admin_repo,actor_identity=principal.subject,photo_reader=photo_reader)
-    if event.get('httpMethod')=='GET' and event.get('path','').endswith('/health'): return response(200,{'status':'synthetic-test-only','environment':'TEST'},request_id)
+    if event.get('httpMethod')=='GET' and event.get('path','').endswith('/health'):
+        try:
+            return response(200, health(context, repo), request_id)
+        except RepositoryUnavailable as error:
+            return response(503, {'status':'not_ready', 'ready':False, 'error':{'code':str(error)}}, request_id)
     if event.get('httpMethod')!='POST': return response(405,{'error':{'code':'method_not_allowed'}},request_id)
     if not str(event.get('headers',{}).get('Content-Type',event.get('headers',{}).get('content-type',''))).startswith('application/json'): return response(415,{'error':{'code':'unsupported_media_type'}},request_id)
     try:
@@ -50,6 +68,8 @@ def handler(event,context=None,repo=None,photo_service=None):
         data=json.loads(raw_body)
         if not isinstance(data,dict):
             raise DomainError('invalid_json',400)
+        if data.get('form_version') == SHORT_FORM_VERSION and runtime_environment() == 'PROD':
+            raise DomainError('short_form_prod_legal_gate_closed', 503)
         key=event.get('headers',{}).get('Idempotency-Key') or event.get('headers',{}).get('idempotency-key')
         if path.endswith('/photo-uploads/initiate'):
             if {'photo_data','base64','binary','content'}.intersection(data):
@@ -80,7 +100,7 @@ def handler(event,context=None,repo=None,photo_service=None):
                     if duplicate
                     else 'Ваша заявка принята. №' + application_number
                 ),
-                'environment': 'TEST',
+                'environment': getattr(repo, 'environment', runtime_environment()),
             },
             request_id,
         )

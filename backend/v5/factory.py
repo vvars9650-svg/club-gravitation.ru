@@ -2,6 +2,7 @@ import os
 import threading
 
 from .repository import RepositoryUnavailable
+from .runtime_config import runtime_settings
 
 
 _runtime_repository_instance = None
@@ -31,22 +32,22 @@ def runtime_repository():
 def _create_runtime_repository():
     from .ydb_repository import YdbRepository
 
-    return YdbRepository()
+    settings = runtime_settings()
+    return YdbRepository(
+        endpoint=settings["endpoint"],
+        database=settings["database"],
+        consent_hash=settings["consent_hash"],
+        environment=settings["environment"],
+    )
 
 
 def runtime_photo_upload_service(context, repository):
     """Build invocation-scoped clients so the IAM token is never cached."""
     from .image_codec import PillowPhotoCodec
-    from .object_storage import (
-        YandexObjectStorageClient,
-        YandexPresignClient,
-        runtime_iam_token,
-    )
+    from .object_storage import YandexObjectStorageClient, YandexPresignClient, runtime_iam_token
     from .photo_upload_service import PhotoUploadService
 
-    bucket = os.getenv("V5_TEST_PHOTO_BUCKET")
-    if not bucket:
-        raise RepositoryUnavailable("missing_photo_bucket_configuration")
+    bucket = runtime_settings()["bucket"]
     token = runtime_iam_token(context)
     return PhotoUploadService(
         repository=repository,
@@ -56,10 +57,9 @@ def runtime_photo_upload_service(context, repository):
         bucket=bucket,
     )
 
-
 def runtime_photo_reader(context, repository):
     from .object_storage import YandexPresignClient, runtime_iam_token
-    bucket = os.getenv('V5_TEST_PHOTO_BUCKET')
+    bucket = runtime_settings()['bucket']
     if not bucket:
         raise RepositoryUnavailable('missing_photo_bucket_configuration')
     presigner = YandexPresignClient(runtime_iam_token(context))

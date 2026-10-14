@@ -13,7 +13,7 @@ class AdminPhotoTests(unittest.TestCase):
         repo=FakeRepository()
         payload=payload_with_photo(repo,'photo-card',SHORT)
         record,_=submit(payload,'photo-card',repo,'synthetic')
-        with patch.dict('os.environ',{'V5_TEST_PHOTO_BUCKET':'synthetic-private'}), patch('backend.v5.object_storage.runtime_iam_token',return_value='synthetic-token'), patch('backend.v5.object_storage.YandexPresignClient') as client:
+        with patch('backend.v5.factory.runtime_settings',return_value={'bucket':'synthetic-private'}), patch('backend.v5.object_storage.runtime_iam_token',return_value='synthetic-token'), patch('backend.v5.object_storage.YandexPresignClient') as client:
             client.return_value.presign_get.return_value='https://storage.yandexcloud.net/synthetic-private/opaque?signed'
             reader=runtime_photo_reader(None,repo)
             application={'application_id':record['application_id'],'form':record['form']}

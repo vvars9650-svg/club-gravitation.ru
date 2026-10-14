@@ -33,19 +33,23 @@ class YdbRepository:
         database=None,
         consent_hash=None,
         driver=None,
+        environment="TEST",
     ):
-        self.endpoint = endpoint or os.getenv("YDB_ENDPOINT")
-        self.database = database or os.getenv("YDB_DATABASE")
+        self._environment = environment
+        self.endpoint = endpoint or (os.getenv("YDB_ENDPOINT") if environment == "TEST" else None)
+        self.database = database or (os.getenv("YDB_DATABASE") if environment == "TEST" else None)
         self.consent_hash = (
-            consent_hash or os.getenv("V5_TEST_CONSENT_TEXT_HASH")
+            consent_hash or (os.getenv("V5_TEST_CONSENT_TEXT_HASH") if environment == "TEST" else None)
         )
 
+        if self.environment not in ("TEST", "PROD"):
+            raise RepositoryUnavailable("invalid_runtime_environment")
         if not self.endpoint or not self.database or not self.consent_hash:
             raise RepositoryUnavailable(
-                "missing_ydb_test_configuration"
+                f"missing_ydb_{self.environment.lower()}_configuration"
             )
 
-        if not self.consent_hash.startswith("TEST-"):
+        if self.environment == "TEST" and not self.consent_hash.startswith("TEST-"):
             raise RepositoryUnavailable(
                 "consent_hash_must_be_test_marked"
             )
@@ -79,6 +83,10 @@ class YdbRepository:
 
         self._close_lock = threading.Lock()
         self._closed = False
+
+    @property
+    def environment(self):
+        return getattr(self, "_environment", "TEST")
 
     def close(self):
         """Explicitly release SDK resources for local/tests lifecycle use."""
@@ -149,7 +157,7 @@ class YdbRepository:
         result_sets = self.pool.execute_with_retries(
             query,
             {
-                "$environment": ENVIRONMENT,
+                "$environment": self.environment,
                 "$application_id": application_id,
             },
             retry_settings=ydb.RetrySettings(
@@ -165,7 +173,7 @@ class YdbRepository:
         row = rows[0]
 
         return {
-            "environment": ENVIRONMENT,
+            "environment": self.environment,
             "application_id": self._row_value(
                 row, "application_id", application_id
             ),
@@ -206,7 +214,7 @@ class YdbRepository:
         );
         """
         params = {
-            "$environment": ENVIRONMENT,
+            "$environment": self.environment,
             "$photo_object_id": photo_object_id,
             "$storage_key": storage_key,
             "$owner_context_hash": owner_context_hash,
@@ -239,7 +247,7 @@ class YdbRepository:
         LIMIT 1;
         """
         result_sets = self.pool.execute_with_retries(
-            query, {"$environment": ENVIRONMENT, "$photo_object_id": photo_object_id},
+            query, {"$environment": self.environment, "$photo_object_id": photo_object_id},
             retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True),
         )
         rows = self._rows(result_sets)
@@ -278,7 +286,7 @@ class YdbRepository:
         WHERE environment = $environment AND photo_object_id = $photo_object_id;
         """
         params = {
-            "$environment": ENVIRONMENT,
+            "$environment": self.environment,
             "$photo_object_id": photo_object_id,
             "$detected_format": metadata["detected_format"],
             "$mime_type": metadata["mime_type"],
@@ -325,7 +333,7 @@ class YdbRepository:
         """
         self.pool.execute_with_retries(
             query,
-            {"$environment": ENVIRONMENT, "$photo_object_id": photo_object_id,
+            {"$environment": self.environment, "$photo_object_id": photo_object_id,
              "$lifecycle_state": lifecycle_state[:120]},
             retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True),
         )
@@ -350,7 +358,7 @@ class YdbRepository:
         result_sets = self.pool.execute_with_retries(
             query,
             {
-                "$environment": ENVIRONMENT,
+                "$environment": self.environment,
                 "$phone": phone,
             },
             retry_settings=ydb.RetrySettings(
@@ -391,7 +399,7 @@ class YdbRepository:
         application_id, _ = ids(key)
 
         # Server-owned values override anything supplied upstream.
-        record["environment"] = ENVIRONMENT
+        record["environment"] = self.environment
         record["application_id"] = application_id
         record["consent"]["application_id"] = application_id
         record["consent"]["consent_text_hash"] = self.consent_hash
@@ -405,11 +413,11 @@ class YdbRepository:
         owner_context_hash = hashlib.sha256(str(key).encode("utf-8")).hexdigest()
 
         log_id = "LOG-" + hashlib.sha256(
-            f"{ENVIRONMENT}:{application_id}:created".encode("utf-8")
+            f"{self.environment}:{application_id}:created".encode("utf-8")
         ).hexdigest()[:24]
 
         audit_id = "AUD-" + hashlib.sha256(
-            f"{ENVIRONMENT}:{application_id}:created".encode("utf-8")
+            f"{self.environment}:{application_id}:created".encode("utf-8")
         ).hexdigest()[:24]
 
         intake_read_query = """
@@ -583,7 +591,7 @@ class YdbRepository:
             with tx.execute(
                 intake_read_query,
                 {
-                    "$environment": ENVIRONMENT,
+                    "$environment": self.environment,
                     "$application_id": application_id,
                     "$proposed_participant_id": record["participant_id"],
                     "$phone": phone,
@@ -657,7 +665,7 @@ class YdbRepository:
             with tx.execute(
                 photo_read_query,
                 {
-                    "$environment": ENVIRONMENT,
+                    "$environment": self.environment,
                     "$photo_object_id": photo_object_id,
                 },
             ) as result_stream:
@@ -711,10 +719,10 @@ class YdbRepository:
                     tx.commit()
                     raise RepositoryConflict("application_phone_key_inconsistent")
                 duplicate_audit_id = "AUD-" + hashlib.sha256(
-                    f"{ENVIRONMENT}:{application_id}:duplicate".encode("utf-8")
+                    f"{self.environment}:{application_id}:duplicate".encode("utf-8")
                 ).hexdigest()[:24]
                 duplicate_log_id = "LOG-" + hashlib.sha256(
-                    f"{ENVIRONMENT}:{application_id}:duplicate".encode("utf-8")
+                    f"{self.environment}:{application_id}:duplicate".encode("utf-8")
                 ).hexdigest()[:24]
                 duplicate_write_query = """
                 DECLARE $environment AS Utf8;
@@ -769,7 +777,7 @@ class YdbRepository:
                 );
                 """
                 duplicate_params = {
-                    "$environment": ENVIRONMENT,
+                    "$environment": self.environment,
                     "$submission_id": application_id,
                     "$application_id": original_application_id,
                     "$participant_id": original_participant_id,
@@ -798,7 +806,7 @@ class YdbRepository:
 
             with tx.execute(
                 counter_read_query,
-                {"$environment": ENVIRONMENT},
+                {"$environment": self.environment},
             ) as result_stream:
                 counter_result_sets = list(result_stream)
             counter_rows = self._rows(counter_result_sets, 0)
@@ -1139,7 +1147,7 @@ class YdbRepository:
             )
 
             params = {
-                "$environment": ENVIRONMENT,
+                "$environment": self.environment,
                 "$participant_id": participant_id,
                 "$application_id": application_id,
                 "$application_number": ydb.TypedValue(
@@ -1255,7 +1263,7 @@ class YdbRepository:
         result_sets = self.pool.execute_with_retries(
             query,
             {
-                "$environment": ENVIRONMENT,
+                "$environment": self.environment,
                 "$participant_id": participant_id,
             },
             retry_settings=ydb.RetrySettings(
@@ -1306,7 +1314,7 @@ class YdbRepository:
         """
         result_sets = self.pool.execute_with_retries(
             query,
-            {"$environment": ENVIRONMENT},
+            {"$environment": self.environment},
             retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True),
         )
         return tuple(
@@ -1330,7 +1338,7 @@ class YdbRepository:
         INSERT INTO schema_migrations (environment, migration_id, applied_at)
         VALUES ($environment, $migration_id, CurrentUtcTimestamp());
         """
-        params = {"$environment": ENVIRONMENT, "$migration_id": migration_id}
+        params = {"$environment": self.environment, "$migration_id": migration_id}
 
         def operation(session):
             tx = session.transaction(ydb.QuerySerializableReadWrite())
@@ -1364,7 +1372,7 @@ class YdbRepository:
         WHERE environment = $environment AND application_id = $application_id
         LIMIT 1;
         """
-        result_sets = self.pool.execute_with_retries(query, {"$environment": ENVIRONMENT, "$application_id": application_id}, retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True))
+        result_sets = self.pool.execute_with_retries(query, {"$environment": self.environment, "$application_id": application_id}, retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True))
         rows = self._rows(result_sets)
         if not rows:
             return None
@@ -1442,7 +1450,7 @@ class YdbRepository:
           AND ($decision = "" OR a.decision = $decision)
         ORDER BY """ + sort_columns[sort] + " " + direction + ";"
         result_sets = self.pool.execute_with_retries(query, {
-            "$environment": ENVIRONMENT,
+            "$environment": self.environment,
             "$q": str(filters.get("q", "")).lower(), "$status": filters.get("status", ""),
             "$owner": filters.get("owner", ""), "$priority": filters.get("priority", ""),
             "$decision": filters.get("decision", ""),
@@ -1459,7 +1467,7 @@ class YdbRepository:
                 "possible_duplicate_application_id",
             )}
             item["status"] = self._row_value(row, "application_status", INITIAL_APPLICATION_STATUS)
-            item["environment"] = ENVIRONMENT
+            item["environment"] = self.environment
             rows.append(item)
         return rows
 
@@ -1489,7 +1497,7 @@ class YdbRepository:
         WHERE environment = $environment AND application_id = $application_id
         ORDER BY timestamp DESC;
         """
-        result_sets = self.pool.execute_with_retries(query, {"$environment": ENVIRONMENT, "$application_id": application_id}, retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True))
+        result_sets = self.pool.execute_with_retries(query, {"$environment": self.environment, "$application_id": application_id}, retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True))
         application_rows = self._rows(result_sets, 0)
         if not application_rows:
             return None
@@ -1505,7 +1513,7 @@ class YdbRepository:
         consent_fields = ("consent_id", "application_id", "consent_type", "consent_version", "policy_version", "form_version", "consent_text_hash", "granted", "granted_at", "source", "request_id")
         event_fields = ("timestamp", "request_id", "application_id", "participant_id", "action")
         return {
-            "environment": ENVIRONMENT,
+            "environment": self.environment,
             "application": application,
             "consents": [{name: self._row_value(item, name, "") for name in consent_fields} for item in self._rows(result_sets, 1)],
             "events": [{name: self._row_value(item, name, "") for name in event_fields} for item in self._rows(result_sets, 2)],
@@ -1528,7 +1536,7 @@ class YdbRepository:
             changes.get("next_contact_at", current.get("next_contact_at")),
             strict=bool({"decision", "next_action", "next_contact_at"}.intersection(changes)),
         )
-        audit_id = "AUD-" + hashlib.sha256((ENVIRONMENT + application_id + request_id).encode("utf-8")).hexdigest()[:24]
+        audit_id = "AUD-" + hashlib.sha256((self.environment + application_id + request_id).encode("utf-8")).hexdigest()[:24]
         assignments = ", ".join(name + " = $" + name for name in names)
         if changes.get("decision"):
             assignments += ", application_status = $application_status"
@@ -1546,7 +1554,7 @@ class YdbRepository:
         INSERT INTO audit_log (environment, audit_id, timestamp, request_id, application_id, participant_id, action)
         VALUES ($environment, $audit_id, CurrentUtcTimestamp(), $request_id, $application_id, $participant_id, $action);
         """
-        params = {"$environment": ENVIRONMENT, "$application_id": application_id, "$participant_id": participant_id, "$audit_id": audit_id, "$request_id": request_id, "$action": action}
+        params = {"$environment": self.environment, "$application_id": application_id, "$participant_id": participant_id, "$audit_id": audit_id, "$request_id": request_id, "$action": action}
         if changes.get("decision"):
             params["$application_status"] = changes["decision"]
         for name in names:
@@ -1584,7 +1592,7 @@ class YdbRepository:
         WHERE environment = $environment AND participant_id = $participant_id
         ORDER BY submitted_at ASC LIMIT 1;
         """
-        result_sets = self.pool.execute_with_retries(query, {"$environment": ENVIRONMENT, "$participant_id": participant_id}, retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True))
+        result_sets = self.pool.execute_with_retries(query, {"$environment": self.environment, "$participant_id": participant_id}, retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True))
         rows = self._rows(result_sets)
         return self.get_admin_application(self._row_value(rows[0], "application_id", "")) if rows else None
 
@@ -1596,7 +1604,7 @@ class YdbRepository:
         """Atomically persist an internal TEST processing block and minimal audit evidence."""
         if not isinstance(reason, str) or not reason or len(reason) > 64 or not all(char.isalnum() or char in "_-" for char in reason):
             raise RepositoryUnavailable("invalid_processing_block_reason")
-        audit_id = "AUD-" + hashlib.sha256((ENVIRONMENT + participant_id + request_id + "processing_blocked").encode("utf-8")).hexdigest()[:24]
+        audit_id = "AUD-" + hashlib.sha256((self.environment + participant_id + request_id + "processing_blocked").encode("utf-8")).hexdigest()[:24]
         read_query = """
         DECLARE $environment AS Utf8; DECLARE $participant_id AS Utf8;
         SELECT processing_blocked FROM participants
@@ -1611,10 +1619,10 @@ class YdbRepository:
         INSERT INTO audit_log (environment, audit_id, timestamp, request_id, application_id, participant_id, action)
         VALUES ($environment, $audit_id, CurrentUtcTimestamp(), $request_id, NULL, $participant_id, "processing_blocked");
         """
-        params = {"$environment": ENVIRONMENT, "$participant_id": participant_id, "$request_id": request_id, "$reason": reason, "$audit_id": audit_id}
+        params = {"$environment": self.environment, "$participant_id": participant_id, "$request_id": request_id, "$reason": reason, "$audit_id": audit_id}
         def operation(session):
             tx = session.transaction(ydb.QuerySerializableReadWrite())
-            with tx.execute(read_query, {"$environment": ENVIRONMENT, "$participant_id": participant_id}) as stream:
+            with tx.execute(read_query, {"$environment": self.environment, "$participant_id": participant_id}) as stream:
                 rows = self._rows(list(stream))
             if not rows or self._row_value(rows[0], "processing_blocked", False):
                 tx.commit()
@@ -1640,7 +1648,7 @@ class YdbRepository:
         LEFT JOIN applications AS a ON u.environment = a.environment AND u.application_id = a.application_id
         WHERE u.environment = $environment AND (u.participant_id = $participant_id OR a.participant_id = $participant_id);
         """
-        result_sets = self.pool.execute_with_retries(query, {"$environment": ENVIRONMENT, "$participant_id": participant_id}, retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True))
+        result_sets = self.pool.execute_with_retries(query, {"$environment": self.environment, "$participant_id": participant_id}, retry_settings=ydb.RetrySettings(max_retries=5, idempotent=True))
         if not self._rows(result_sets, 0):
             return None
         application_ids = [self._row_value(row, "application_id", "") for row in self._rows(result_sets, 2)]

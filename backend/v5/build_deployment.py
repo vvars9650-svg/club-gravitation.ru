@@ -20,6 +20,7 @@ PACKAGE_FILES = (
     "migration_ledger.py",
     "service.py",
     "repository.py",
+    "runtime_config.py",
     "ydb_repository.py",
     "factory.py",
     "authorizer.py",
@@ -29,6 +30,7 @@ PACKAGE_FILES = (
 EXPECTED_FILES = (
     "index.py",
     "requirements.txt",
+    "legal/frozen/CONSENT-PD-2.2.txt",
     *(f"v5/{name}" for name in PACKAGE_FILES),
 )
 
@@ -45,6 +47,12 @@ def build_deployment_zip(output_path):
 
         shutil.copy2(SOURCE_DIR / "deployment" / "index.py", staging)
         shutil.copy2(SOURCE_DIR / "requirements.txt", staging)
+        frozen_dir = staging / "legal" / "frozen"
+        frozen_dir.mkdir(parents=True)
+        shutil.copy2(
+            SOURCE_DIR.parents[1] / "legal" / "frozen" / "CONSENT-PD-2.2.txt",
+            frozen_dir / "CONSENT-PD-2.2.txt",
+        )
 
         for name in PACKAGE_FILES:
             shutil.copy2(SOURCE_DIR / name, package_dir / name)

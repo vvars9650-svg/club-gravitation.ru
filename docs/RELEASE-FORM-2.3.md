@@ -2,6 +2,8 @@
 
 Среда подготовки: LOCAL / TEST. PROD не изменён. Merge в v5/main не выполняется.
 
+Актуализация FINAL RELEASE GATES: production runtime восстановлен из архивного Git snapshot и подготовлен отдельный PROD builder; первоначальный ZIP active version не найден. Подробности и независимый backend rollback — [PROD-BACKEND-PROVENANCE](PROD-BACKEND-PROVENANCE.md). Текущие gates и операторский результат — [FINAL-RELEASE-GATES](FINAL-RELEASE-GATES.md); ниже сохранён отчёт исходного принятого этапа.
+
 Baseline исходников: `410c39392f5be49d56a87dadd7103bde1d2768e3` (сохранённый origin/v5). Принятый preview: `1257123a9ee5b8e5d8da7427747a86236b50115a`. Указанный в HANDOFF dirty worktree на этом компьютере отсутствует; визуал восстановлен из source preview, настоящий transport — из Git baseline. Исходная рабочая копия v5 `d400052` с тремя изменёнными файлами Admin оставлена отдельно. Их копии сохранены в каталоге артефактов чата. Других активных Codex-задач с этим checkout в доступном списке не обнаружено; сторонние редакторы этим не исключаются.
 
 Изменения: утверждённые главная/about/founders/EVENT01/privacy и CSS; четыре новых изображения коллажей/основателей; одностраничная apply с точным текстом фото, city autocomplete и free contact; защищённый transport initiate/PUT/complete и submit; versioned backend validation, service и YDB evidence; подпись контакта Admin; контрактные, transport, YDB и browser тесты; проекты юридических документов. Четыре WebP hero в preview являются производными тех же hash-verified chunks: сборка воспроизводит их, повторное хранение в Git не требуется. events и остальные frozen/legal страницы совпадают с baseline и сохранены.
