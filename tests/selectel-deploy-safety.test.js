@@ -12,6 +12,8 @@ assert.doesNotMatch(workflow, /^\s*(?:push|pull_request|schedule):/mu);
 assert.match(workflow, /^permissions:\s*\n\s+contents: read$/mu);
 assert.match(workflow, /cancel-in-progress: false/u);
 assert.match(workflow, /environment: selectel-production/u);
+assert.match(workflow, /public_mode:[\s\S]*default: PUBLIC_BLOCKED/u);
+assert.match(workflow, /V5_PUBLIC_MODE: \$\{\{ inputs\.public_mode \}\}/u);
 const externalActions = [...workflow.matchAll(/^\s*uses:\s*([^\s#]+)/gmu)]
   .map((match) => match[1]);
 assert.equal(externalActions.length, 2);

@@ -6,3 +6,6 @@ public-dist/
 admin-selectel-dist/
 test-results/
 playwright-report/
+.test-deps/
+.test-tmp/
+assets/images/hero/

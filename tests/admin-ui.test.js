@@ -34,7 +34,7 @@ assert.match(adminSource, /За что вас ценят друзья и зна�
 assert.match(adminSource, /Какие знакомства вам сейчас интересны\?/);
 assert.match(adminSource, /Откуда узнали о нас\?/);
 assert.doesNotMatch(adminSource, /Статус заявки \(legacy\)/);
-assert.match(adminSource, /profile_or_messenger_url:'Профиль или мессенджер'/);
+assert.match(adminSource, /profile_or_messenger_url:'Контакт для связи'/);
 assert.match(adminHtml, /Профиль или мессенджер/);
 assert.doesNotMatch(adminHtml, />Telegram</);
 assert.match(visibleAdminHtml, /ГРАВИТАЦИЯ ЗАЯВКИ/);
@@ -77,7 +77,8 @@ assert.match(adminHtml, /admin-config\.test\.js[\s\S]*admin-auth\.js/);
   assert.deepEqual(auth.normalizeConfig(config).scopes, ['openid', 'email', 'profile']);
   assert.throws(() => auth.normalizeConfig({...config, scopes: ['openid', 'email']}), /oidc_configuration_required/);
   assert.throws(() => auth.normalizeConfig({...config, scopes: [...config.scopes, 'admin:read']}), /oidc_configuration_required/);
-  assert.throws(() => auth.normalizeConfig({...config, environment: 'PROD'}), /oidc_configuration_required/);
+  assert.equal(auth.normalizeConfig({...config, environment: 'PROD'}).environment, 'PROD');
+  assert.throws(() => auth.normalizeConfig({...config, environment: 'UNKNOWN'}), /oidc_configuration_required/);
   assert.throws(() => auth.normalizeConfig({...config, client_id: 'prod-client'}), /oidc_configuration_required/);
   assert.throws(() => auth.normalizeConfig({...config, redirect_uri: 'http://admin.test/admin/'}), /oidc_configuration_required/);
   assert.throws(() => auth.createAuthClient({config, cryptoImpl, storage: storage(), location: {href: 'https://other.test/admin/'}, fetchImpl: async () => ({ok: false})}), /oidc_configuration_required/);

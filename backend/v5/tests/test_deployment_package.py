@@ -12,6 +12,13 @@ from backend.v5.build_deployment import build_deployment_zip
 EXPECTED_DEPLOYMENT_FILES = {
     "index.py",
     "requirements.txt",
+    "legal/frozen/CONSENT-PD-2.2.txt",
+    "legal/frozen/PPD-2.2.txt",
+    "legal/frozen/FORM-2.2.txt",
+    "legal/frozen/CONSENT-PD-2.3.txt",
+    "legal/frozen/PPD-2.3.txt",
+    "legal/frozen/FORM-2.3.txt",
+    "v5/runtime_config.py",
     "v5/__init__.py",
     "v5/domain.py",
     "v5/legal_text.py",

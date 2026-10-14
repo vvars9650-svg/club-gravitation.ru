@@ -42,6 +42,10 @@ class AdminCrmV2Tests(unittest.TestCase):
         )
         self.first_id = first["application_id"]
         self.second_id = second["application_id"]
+        # Search includes timestamps; keep the numeric-age case independent of
+        # the wall-clock minute/second accidentally containing "31".
+        self.repo.by_key['admin-key-1']['submitted_at'] = '2026-10-14T00:00:00+00:00'
+        self.repo.by_key['admin-key-2']['submitted_at'] = '2026-10-14T00:00:01+00:00'
 
     def call(self, method, path, body=None, query=None):
         return admin_handler(

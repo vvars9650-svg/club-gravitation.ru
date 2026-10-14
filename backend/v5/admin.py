@@ -12,6 +12,7 @@ import uuid
 from datetime import datetime
 
 from .repository import RepositoryUnavailable
+from .object_storage import ObjectStorageError
 from .participant_model import (
     APPLICATION_DECISIONS,
     APPLICATION_NEXT_ACTIONS,
@@ -145,7 +146,7 @@ def admin_response(status, body, request_id):
     }
 
 
-def admin_handler(event, context=None, repo=None, actor_identity=None):
+def admin_handler(event, context=None, repo=None, actor_identity=None, photo_reader=None):
     """Dispatch a request after external auth has established ``actor_identity``."""
     request_id = getattr(context, "request_id", None) or str(uuid.uuid4())
     path = event.get("path", "")
@@ -172,6 +173,8 @@ def admin_handler(event, context=None, repo=None, actor_identity=None):
                 card = repo.get_admin_participant(application_id)
             if not card:
                 raise AdminError("application_not_found", 404)
+            if photo_reader:
+                card['photo'] = photo_reader(card['application'])
             return admin_response(200, card, request_id)
         if method == "PATCH":
             if not str(_headers(event).get("content-type", "")).startswith("application/json"):
@@ -186,7 +189,7 @@ def admin_handler(event, context=None, repo=None, actor_identity=None):
                 raise AdminError("application_not_found", 404)
             return admin_response(200, {"environment": getattr(repo, "environment", ENVIRONMENT), "application": application, "changed_fields": sorted(changes)}, request_id)
         raise AdminError("method_not_allowed", 405)
-    except RepositoryUnavailable as error:
+    except (RepositoryUnavailable, ObjectStorageError) as error:
         return admin_response(503, {"error": {"code": str(error)}}, request_id)
     except (ValueError, AdminError) as error:
         code = error.code if isinstance(error, AdminError) else "invalid_json"

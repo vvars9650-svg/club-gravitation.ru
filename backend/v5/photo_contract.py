@@ -6,7 +6,7 @@ from .domain import DomainError
 
 
 PHOTO_REQUIRED_LEGAL_APPROVED = True
-PROD_PHOTO_RKN_GATE_PENDING = True
+PROD_PHOTO_RKN_GATE_PENDING = False  # Owner excluded RKN PDF/registry from release gates on 14.10.2026.
 MAX_PHOTO_BYTES = 10 * 1024 * 1024
 ALLOWED_IMAGE_FORMATS = {
     "jpeg": "image/jpeg",

@@ -7,7 +7,55 @@
 @media(max-width:760px){.event-details{grid-template-columns:1fr;margin-top:36px}.event-details article{padding:24px}.seller-details{font-size:.72rem}}
 html,body{overflow-x:hidden}
 
-/* EVENT 01 display typography reference: hero / editorial lead. */
-:root{--display-hero-line-height:.94;--display-hero-letter-spacing:-.035em;--display-editorial-line-height:1.1;--display-editorial-letter-spacing:-.025em}
-.home-hero h1,.page-about .page-hero h1,.page-founders .founders-hero h1,.events-hub h1{font-weight:300;line-height:var(--display-hero-line-height)!important;letter-spacing:var(--display-hero-letter-spacing)!important}
-.page-about .section-heading h2,.page-about .section--cta h2,.page-founders .section-heading h2{font-weight:300;line-height:var(--display-editorial-line-height)!important;letter-spacing:var(--display-editorial-letter-spacing)!important}
+/* Public-page typography rhythm. */
+:root{--display-hero-line-height:1.08;--display-hero-letter-spacing:.018em;--display-editorial-line-height:1.13;--display-editorial-letter-spacing:.008em;--body-letter-spacing:.008em;--eyebrow-letter-spacing:.22em}
+:is(.home-page,.page-about,.page-events,.page-first-contact,.page-founders){letter-spacing:var(--body-letter-spacing);line-height:1.65}
+.home-page .hero-kicker,:is(.page-about,.page-events,.page-first-contact,.page-founders) .eyebrow{font-size:.75rem;font-weight:700;letter-spacing:var(--eyebrow-letter-spacing);line-height:1.4}
+.home-page .home-hero h1,.page-about .page-hero h1,.page-founders .founders-hero h1,.page-events .events-hub h1,.page-first-contact .first-contact-hero h1{font-weight:300;line-height:var(--display-hero-line-height)!important;letter-spacing:var(--display-hero-letter-spacing)!important}
+.page-about .section-heading h2,.page-about .section--cta h2,.page-founders .section-heading h2,.page-founders .founders-story h3,.page-first-contact .first-contact-story h2,.page-first-contact .first-contact-section h2,.page-first-contact .first-contact-final h2{font-weight:300;line-height:var(--display-editorial-line-height)!important;letter-spacing:var(--display-editorial-letter-spacing)!important}
+.page-about .page-hero .eyebrow,.page-founders .founders-hero .eyebrow{margin-bottom:20px}
+.page-about .section-heading h2,.page-founders .section-heading h2,.page-first-contact .first-contact-story h2,.page-first-contact .first-contact-section h2,.page-first-contact .first-contact-final h2,.page-events .events-hub h1,.page-first-contact .first-contact-hero h1{margin-top:20px}
+.page-about .story-figure__caption strong{font-size:.75rem;font-weight:700;letter-spacing:var(--eyebrow-letter-spacing)}
+.home-hero h1 .hero-title-group{display:block}
+.home-hero h1 .hero-title-group-break{display:none}
+.home-hero h1 .hero-title-group-break + .hero-title-group{margin-top:.45em}
+.page-about .about-hero-phrase{display:inline}
+.page-about .about-hero-line{display:inline}
+.page-about .about-hero-line>em{font-style:normal}
+@media(min-width:600px){
+  .page-about .about-hero-phrase{display:block}
+  .page-about .about-hero-phrase + .about-hero-phrase{margin-top:.35em}
+  .page-about .about-hero-line + .about-hero-line::before{content:" "}
+}
+
+@media(max-width:599px){
+  .page-about .page-hero{padding-top:104px}
+  .page-about .page-hero .eyebrow{margin-bottom:14px;transform:translateY(-10px)}
+  .page-about .page-hero h1{line-height:1.08!important;letter-spacing:0!important;transform:translateY(-10px)}
+  .page-about .page-hero h1 .about-hero-phrase{display:flex;flex-direction:column;align-items:flex-start;gap:.25em;letter-spacing:.06em}
+  .page-about .page-hero h1 .about-hero-phrase + .about-hero-phrase{margin-top:.8em}
+  .page-about .page-hero h1 .about-hero-line{display:block;white-space:nowrap}
+  .page-about .page-hero h1 .about-hero-line em{font-style:normal}
+  .page-about .page-hero__lead{line-height:1.72;letter-spacing:.012em}
+  .page-about .orbit-stage__star{right:7%;top:58%;width:8px;height:8px;box-shadow:0 0 18px var(--gold-light)}
+}
+
+@media(max-width:599px){
+  .page-about .story-figure--about-1 .story-figure__caption{gap:10px}
+  .page-about .story-figure--about-1 .about-1-headline{max-width:100%;margin:0;color:var(--cream);font-size:clamp(1rem,1.3vw,1.25rem);font-weight:300;line-height:1.35;letter-spacing:normal;text-wrap:pretty}
+  .page-about .story-copy .section-heading .eyebrow{font-size:.76rem;font-weight:700;letter-spacing:.22em}
+  .page-about .story-copy .section-heading h2{display:none}
+  .page-about .story-copy .prose-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-top:28px}
+  .page-about .story-copy .pull-quote{max-width:340px;margin-top:20px;font-size:clamp(1.3rem,5.6vw,1.55rem);line-height:1.32;text-wrap:pretty}
+  .page-about .story-copy .pull-quote .quote-no-break{white-space:nowrap}
+  .page-about .section--values .section-heading h2{letter-spacing:.012em!important}
+}
+
+/* Persistent public navigation; reserve the existing header height. */
+:root{--site-header-height:82px}
+html{scroll-padding-top:calc(var(--site-header-height) + 16px)}
+body{padding-top:var(--site-header-height)}
+body.home-page{padding-top:0}
+.site-header,.home-page .site-header,.page-apply .site-header{position:fixed!important;inset:0 0 auto;width:100%}
+.home-page .site-header{background:rgba(13,13,15,.96)}
+@media(max-width:900px){:root{--site-header-height:72px}}

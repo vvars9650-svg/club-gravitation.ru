@@ -17,3 +17,30 @@
 
 /* Mobile format and dress-code refinement */
 @media(max-width:600px){.included-card{border-left:0}.first-contact-dress dl div{grid-template-columns:170px 20px minmax(0,1fr);gap:12px;justify-content:start}.first-contact-dress dt{text-align:left}.first-contact-dress dd{text-align:left}.first-contact-dress dd::before{left:-32px;right:auto}}
+
+/* Keep the shorter story paragraphs in their reading order. */
+.first-contact-story__body{column-count:1}
+.first-contact-dress__body p{white-space:normal}
+
+/* EVENT 01: dimensional orbit illustration and approved responsive collage. */
+.first-contact-hero__orb .first-contact-hero__planet{inset:16%;transform:none;border-color:rgba(241,214,166,.6);background:radial-gradient(circle at 32% 28%,rgba(241,214,166,.16),rgba(193,145,82,.045) 48%,rgba(9,9,12,.4) 78%);box-shadow:inset 10px 8px 28px rgba(241,214,166,.06),inset -15px -12px 30px rgba(0,0,0,.22),0 0 34px rgba(212,175,122,.09)}
+.first-contact-hero__orb .first-contact-hero__ring{inset:34% 1%;border-color:rgba(241,214,166,.43);box-shadow:0 0 10px rgba(212,175,122,.07)}
+.first-contact-hero__orb .first-contact-hero__ring--one{transform:rotate(-23deg);border-bottom-color:rgba(241,214,166,.7)}
+.first-contact-hero__orb .first-contact-hero__ring--two{inset:30% 4%;transform:rotate(32deg);border-color:rgba(241,214,166,.29);border-top-color:rgba(241,214,166,.5)}
+.first-contact-hero__orb .first-contact-hero__ring--three{inset:37% -2%;transform:rotate(72deg);border-color:rgba(241,214,166,.22)}
+.first-contact-hero__orb .first-contact-hero__ring--four{inset:27% 7%;transform:rotate(-64deg);border-color:rgba(241,214,166,.19)}
+.first-contact-hero__orb i{background:#f1d6a6;box-shadow:0 0 10px rgba(241,214,166,.55),0 0 28px rgba(212,175,122,.25)}
+.first-contact-format{grid-template-columns:minmax(0,1fr);gap:clamp(40px,6vw,80px)}
+.first-contact-collage{display:block;width:100%;min-width:0}
+.first-contact-collage img{display:block;width:100%;height:auto}
+.first-contact-program{background:#1b1b1e;color:var(--cream);padding-top:clamp(48px,6vw,80px);padding-bottom:clamp(48px,6vw,80px)}
+.first-contact-program .included-card{margin:0;padding:0;border:0;background:transparent}
+.first-contact-program .included-card ul{grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 48px}
+.first-contact-program .included-card li{white-space:normal;align-items:flex-start}
+@media(max-width:600px){.first-contact-program .included-card ul{grid-template-columns:1fr;gap:18px}.first-contact-collage img{aspect-ratio:900/2137}}
+
+.first-contact-program .included-card li::before{transform:translateY(4.5px)}
+
+.first-contact-dress dd::before{transform:translateY(4.5px)}
+
+.first-contact-hero__orb i{transform:translateY(-40px)}

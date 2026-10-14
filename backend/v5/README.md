@@ -1,5 +1,7 @@
 # V5 TEST backend
 
+Current activation RC supports approved FORM/Consent/Policy 2.3 and isolated TEST/PROD runtime. Build the distinct production package with `python -m backend.v5.build_production`; it refuses TEST mode. PROD configuration requires V5_PROD_CONSENT_TEXT_HASH=`10f8c02d5c034d06c09f80a5f4b67bebbcdc98fcd8d18b4b95718338ac50f8c2`. New evidence derives its hash from the validated document version; archived 2.2 records and replays retain 2.2 hashes. See docs/ACTIVATION-2.3-HANDOFF.md. No deployment is performed by builders.
+
 Runtime: `python314`. Entry point: `index.handler`. Runtime dependencies are
 listed and pinned in `requirements.txt`.
 

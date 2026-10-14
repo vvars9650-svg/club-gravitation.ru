@@ -104,6 +104,12 @@ class YandexPresignClient:
         self._sdk_factory = sdk_factory
 
     def presign_put(self, bucket, storage_key, expires_in=PRESIGN_TTL_SECONDS):
+        return self._presign(bucket, storage_key, expires_in, 'PUT')
+
+    def presign_get(self, bucket, storage_key, expires_in=180):
+        return self._presign(bucket, storage_key, expires_in, 'GET')
+
+    def _presign(self, bucket, storage_key, expires_in, method):
         if not bucket:
             raise RepositoryUnavailable("missing_photo_bucket_configuration")
         try:
@@ -117,7 +123,7 @@ class YandexPresignClient:
             client = sdk.client(PresignServiceStub)
             request = PresignURLsRequest(
                 bucket_name=bucket,
-                objects=[{"expires": expires_in, "name": storage_key, "method": "PUT"}],
+                objects=[{"expires": expires_in, "name": storage_key, "method": method}],
             )
             response = client.Create(request)
             urls = list(response.urls)

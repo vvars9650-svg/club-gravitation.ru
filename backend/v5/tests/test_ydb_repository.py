@@ -212,6 +212,31 @@ def make_record():
 
 
 class YdbRepositoryTests(unittest.TestCase):
+    def test_duplicate_detection_consumes_all_intake_stream_chunks(self):
+        original = {'record_type':b'phone_application', 'application_id':'APP-ORIGINAL', 'key_participant_id':'PT-ORIGINAL', 'participant_id':'PT-ORIGINAL', 'payload_fingerprint':'original', 'processing_blocked':False, 'application_number':9}
+        tx = submission_transaction('streamed-duplicate', [original])
+        execute = tx.execute
+        def streamed(query, params=None, commit_tx=False):
+            result = execute(query, params, commit_tx)
+            if '"application" AS record_type' in query:
+                return FakeExecuteResult([FakeResultSet([]), FakeResultSet([original])])
+            return result
+        tx.execute = streamed
+        repo = self.make_repo(tx)
+        record = make_record()
+        self.assertTrue(repo.save('streamed-duplicate', record))
+        self.assertTrue(record['duplicate_submission'])
+        self.assertEqual(record['application_number'], 9)
+
+    def test_short_form_version_is_written_to_application_and_evidence(self):
+        tx = submission_transaction('short-form-ydb-key')
+        repo = self.make_repo(tx)
+        record = make_record()
+        record['form_version'] = 'FORM-2.3'
+        self.assertTrue(repo.save('short-form-ydb-key', record))
+        self.assertEqual(record['consent']['form_version'], 'FORM-2.3')
+        self.assertTrue(any(params.get('$form_version') == 'FORM-2.3' for params in tx.params))
+
     def make_repo(self, transaction):
         repo = YdbRepository.__new__(YdbRepository)
         repo.endpoint = "test"
@@ -304,7 +329,7 @@ class YdbRepositoryTests(unittest.TestCase):
 
         self.assertEqual(
             record["consent"]["consent_text_hash"],
-            "TEST-HASH-ONLY",
+            "TEST-7a4ed02773773d680bb56399c943b94e2f35cf97d96b89a29e156d132fca6bf7",
         )
 
         self.assertEqual(

@@ -156,7 +156,7 @@ function validPayload() {
     ['city', 'Краснодар'],
     ['phone', '8 (999) 000-00-00'],
     ['email', 'user@example.com'],
-    ['occupation', 'Инженер'],
+    ['profile_or_messenger_url', '@synthetic'],
     ['life_outside_work', 'Спорт'],
     ['desired_connections', 'Новые друзья'],
     ['desired_connections', 'Близкие по духу люди'],
@@ -191,21 +191,18 @@ async function testRequestContractAndPayload() {
   assert.ok(submit.getIdempotencyKey().length <= 128);
   assert.deepEqual(JSON.parse(calls[0][1].body), payload);
 
-  assert.deepEqual(payload.desired_connections, [
-    'Новые друзья',
-    'Близкие по духу люди',
-  ]);
-  assert.deepEqual(payload.acquaintance_methods, ['Через живой разговор']);
+  assert.equal(payload.profile_or_messenger_url, '@synthetic');
+  assert.equal(Object.hasOwn(payload, 'occupation'), false);
   assert.equal(payload.phone, '+79990000000');
   assert.equal(payload.policy_acknowledged, true);
   assert.equal(payload.personal_data_consent, true);
-  assert.equal(payload.consent_version, 'CONSENT-PD-2.2');
-  assert.equal(payload.policy_version, 'PPD-2.2');
-  assert.equal(payload.form_version, 'FORM-2.2');
+  assert.equal(payload.consent_version, 'CONSENT-PD-2.3');
+  assert.equal(payload.policy_version, 'PPD-2.3');
+  assert.equal(payload.form_version, 'FORM-2.3');
   assert.equal(payload.photo_object_id, 'PHOTO-0000000000000001');
   assert.equal(Object.hasOwn(payload, 'photo_upload'), false);
-  assert.equal(FORM_FIELDS.length, 24);
-  assert.deepEqual(FORM_FIELDS, apiContract.FORM_FIELDS);
+  assert.equal(FORM_FIELDS.length, 9);
+  assert.ok(FORM_FIELDS.every(field => apiContract.FORM_FIELDS.includes(field)));
   assert.equal(FORM_FIELDS.includes('comfortable_price'), false);
 
   for (const serverOwned of [
@@ -240,10 +237,7 @@ function testFrontendValidation() {
   assert.equal(normalizeRussianPhone('8 (999) 000-00-00'), '+79990000000');
   assert.equal(normalizeRussianPhone('9abcdefghij'), null);
   assert.equal(validateFrontendPayload({...payload, email: 'bad'}), 'email');
-  assert.equal(
-    validateFrontendPayload({...payload, public_profile_url: 'ftp://example.test'}),
-    'public_profile_url',
-  );
+  assert.equal(validateFrontendPayload({...payload, profile_or_messenger_url: ''}), 'profile_or_messenger_url');
   assert.equal(
     validateFrontendPayload({
       ...payload,
@@ -252,18 +246,7 @@ function testFrontendValidation() {
     }),
     'visit_krasnodar',
   );
-  assert.equal(
-    validateFrontendPayload({...payload, desired_connections: ['Другое']}),
-    'desired_connections_other',
-  );
-  assert.equal(
-    validateFrontendPayload({...payload, acquaintance_methods: ['Другое']}),
-    'acquaintance_methods_other',
-  );
-  assert.equal(
-    validateFrontendPayload({...payload, acquaintance_methods: ['unknown']}),
-    'acquaintance_methods',
-  );
+  assert.equal(validateFrontendPayload({...payload, profile_or_messenger_url: 'x'.repeat(501)}), 'profile_or_messenger_url');
 }
 
 async function testIdempotencyLifecycleAndErrors() {
@@ -396,8 +379,8 @@ function testForbiddenFrontendIntegrations() {
     assert.equal(frontend.includes(forbidden), false, forbidden);
   }
 
-  assert.match(frontend, /ваша заявка принята\. №\$\{applicationnumber\}/u);
-  assert.match(frontend, /ваша заявка уже зарегистрирована\. №\$\{applicationnumber\}/u);
+  assert.match(frontend, /ваша заявка принята\. №/u);
+  assert.match(frontend, /ваша заявка уже зарегистрирована\. №/u);
   assert.equal(frontend.includes('data-application-id'), false);
 }
 

@@ -112,8 +112,8 @@ async function main() {
     const actualHash = crypto.createHash('sha256').update(fs.readFileSync(artifactPath(`assets/images/hero/${name}`))).digest('hex');
     assert.equal(actualHash, expected, name);
   }
-  assert.match(read('privacy/index.html'), /PPD','2\.2/u);
-  assert.match(read('consent-pd/index.html'), /CONSENT','PD','2\.2/u);
+  assert.match(read('privacy/index.html'), /PPD','2\.3/u);
+  assert.match(read('consent-pd/index.html'), /CONSENT','PD','2\.3/u);
   const root = read('index.html');
   const approvedTitle = 'ГРАВИТАЦИЯ — клуб живых встреч';
   const approvedDescription = 'Краснодар. Пространство для новых людей, живого общения и настоящих встреч. Первый вечер — «ПЕРВЫЙ КОНТАКТ».';
