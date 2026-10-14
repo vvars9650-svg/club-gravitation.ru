@@ -18,7 +18,7 @@ LOCAL / TEST, только синтетические данные. PROD не и
 | TEST private photo GET, URL TTL 180 секунд | PASS |
 | TEST Admin repository/card и операционный PATCH synthetic-заявки | PASS |
 | Анонимный GET фактического TEST `/admin/participants/{id}?include_photo=true` | PASS, отклонён |
-| Живой TEST Admin: операторский OIDC login и экран фотографии | НЕ ПРОВЕРЕНО, необходима операторская сессия |
+| Живой TEST Admin: операторский OIDC login и экран фотографии | PASS после разрешённого TEST activation; №000018, private PNG декодирован, TTL 180 секунд, console/CSP clean |
 | PROD_ENABLED build | Намеренно BLOCKED до legal/release gate |
 
 Браузерная матрица: 1440×900 DPR1, 1440×900 DPR2, 390×844 DPR3, 360×800 DPR3, 768×1024 DPR2. Страницы: /, /about/, /events/, /first-contact/, /founders/, /privacy/, /consent-pd/, /offer/, /terms/, /apply/. Скриншоты и JSON отчёты находятся в локальном `test-results` и не включаются в публичный artifact.
