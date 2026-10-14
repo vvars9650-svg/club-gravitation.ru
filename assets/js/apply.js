@@ -32,8 +32,9 @@
   const PHOTO_INITIATE_URL = `${PHOTO_UPLOAD_BASE_URL}/photo-uploads/initiate`;
   const PHOTO_COMPLETE_URL = `${PHOTO_UPLOAD_BASE_URL}/photo-uploads/complete`;
   const FORM_VERSION = 'FORM-2.3';
-  const CONSENT_VERSION = 'CONSENT-PD-2.2';
-  const POLICY_VERSION = 'PPD-2.2';
+  const CONSENT_VERSION = 'CONSENT-PD-2.3';
+  const CONSENT_TEXT_HASH = '10f8c02d5c034d06c09f80a5f4b67bebbcdc98fcd8d18b4b95718338ac50f8c2';
+  const POLICY_VERSION = 'PPD-2.3';
   const MULTI_FIELDS = new Set();
   const FORM_FIELDS = ['full_name', 'age', 'gender', 'city', 'visit_krasnodar',
     'phone', 'email', 'profile_or_messenger_url', 'photo_object_id'];
@@ -72,7 +73,10 @@
       && config.mode === FRONTEND_MODES.PROD_ENABLED
       && config.prod_api_url === PROD_API_URL
       && config.form_version === FORM_VERSION
-      && config.short_form_legal_approved === true;
+      && config.short_form_legal_approved === true
+      && config.consent_version === CONSENT_VERSION
+      && config.policy_version === POLICY_VERSION
+      && config.consent_text_hash === CONSENT_TEXT_HASH;
   }
 
   function resolveFrontendMode(locationLike = {}, runtimeConfig) {
@@ -662,6 +666,7 @@
     FORM_FIELDS,
     FORM_VERSION,
     CONSENT_VERSION,
+    CONSENT_TEXT_HASH,
     POLICY_VERSION,
     buildPayload,
     createIdempotencyKey,

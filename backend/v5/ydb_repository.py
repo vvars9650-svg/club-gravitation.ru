@@ -12,7 +12,8 @@ try:
 except ImportError:  # unit-only imports must not silently create memory storage
     ydb = None
 
-from .domain import CONSENT_VERSION, FORM_FIELDS, FORM_VERSION, SHORT_FORM_VERSION, MULTI_FIELDS, POLICY_VERSION, ids, phone as normalize_phone
+from .domain import CONSENT_VERSION, FORM_FIELDS, FORM_VERSION, SHORT_FORM_VERSION, legal_versions, MULTI_FIELDS, POLICY_VERSION, ids, phone as normalize_phone
+from .legal_text import consent_hash_for_version
 from .participant_model import INITIAL_APPLICATION_STATUS, INITIAL_PARTICIPANT_STATUS
 from .repository import DESTRUCTION_CLASSIFICATION, RepositoryConflict, RepositoryUnavailable
 from .photo_contract import MAX_PHOTO_BYTES, validate_photo_object_id
@@ -402,8 +403,11 @@ class YdbRepository:
         record["environment"] = self.environment
         record["application_id"] = application_id
         record["consent"]["application_id"] = application_id
-        record["consent"]["consent_text_hash"] = self.consent_hash
         record["consent"]["form_version"] = SHORT_FORM_VERSION if record.get("form_version") == SHORT_FORM_VERSION else FORM_VERSION
+        consent_version, policy_version = legal_versions(record["consent"]["form_version"])
+        record["consent"]["consent_version"] = consent_version
+        record["consent"]["policy_version"] = policy_version
+        record["consent"]["consent_text_hash"] = consent_hash_for_version(consent_version, self.environment)
         record["consent"]["granted"] = True
         record["consent"]["source"] = "website"
 
@@ -1204,10 +1208,10 @@ class YdbRepository:
                 "$source": form["source"],
 
                 "$consent_type": "personal_data_application",
-                "$consent_version": CONSENT_VERSION,
-                "$policy_version": POLICY_VERSION,
+                "$consent_version": record["consent"]["consent_version"],
+                "$policy_version": record["consent"]["policy_version"],
                 "$form_version": record["consent"]["form_version"],
-                "$consent_text_hash": self.consent_hash,
+                "$consent_text_hash": record["consent"]["consent_text_hash"],
                 "$consent_source": "website",
 
                 "$log_id": log_id,

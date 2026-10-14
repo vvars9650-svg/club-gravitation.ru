@@ -329,7 +329,7 @@ class YdbRepositoryTests(unittest.TestCase):
 
         self.assertEqual(
             record["consent"]["consent_text_hash"],
-            "TEST-HASH-ONLY",
+            "TEST-7a4ed02773773d680bb56399c943b94e2f35cf97d96b89a29e156d132fca6bf7",
         )
 
         self.assertEqual(

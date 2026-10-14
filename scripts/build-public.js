@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const {execFileSync} = require('node:child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const OUTPUT = path.join(ROOT, 'public-dist');
@@ -54,8 +55,12 @@ const FILES = [
   'assets/js/site.js',
   'assets/js/apply.js',
   'assets/js/admin-config.prod.js',
+  'legal/frozen/PPD-2.3.txt',
+  'legal/frozen/CONSENT-PD-2.3.txt',
+  'legal/frozen/FORM-2.3.txt',
   'legal/frozen/PPD-2.2.txt',
   'legal/frozen/CONSENT-PD-2.2.txt',
+  'legal/frozen/FORM-2.2.txt',
   'legal/frozen/OFFER-1.0.txt',
   'legal/frozen/TERMS-1.2.txt',
 ];
@@ -105,20 +110,37 @@ function buildHero(name, config) {
   fs.writeFileSync(destination, image);
 }
 
+
+function canonicalLegalHash(source) {
+  const lines = source.replace(/^\uFEFF/u, '').replace(/\r\n?/gu, '\n').normalize('NFC').split('\n').map(line => line.replace(/[ \t]+$/u, ''));
+  while (lines.length && lines.at(-1) === '') lines.pop();
+  return crypto.createHash('sha256').update(lines.join('\n') + '\n').digest('hex');
+}
+
+function verifyApprovedLegal() {
+  const approval = JSON.parse(fs.readFileSync(path.join(ROOT, 'legal/approval-2.3.json'), 'utf8'));
+  if (approval.approved_source_head !== 'a0a6c6f6199b9d29096a9fa6d935724b4d24860b' || approval.approved_at !== '14.10.2026') throw new Error('legal_approval_required');
+  for (const version of ['PPD-2.3','CONSENT-PD-2.3','FORM-2.3']) {
+    const document = approval.documents[version];
+    if (document.path !== `legal/frozen/${version}.txt` || canonicalLegalHash(fs.readFileSync(path.join(ROOT, document.path), 'utf8')) !== document.canonical_sha256) throw new Error('frozen_legal_hash_mismatch');
+  }
+  if (approval.documents['CONSENT-PD-2.3'].canonical_sha256 !== require('../assets/js/apply').CONSENT_TEXT_HASH) throw new Error('frontend_legal_hash_mismatch');
+  return approval;
+}
+
 function buildPublic() {
-  if (process.env.V5_PUBLIC_MODE === 'PROD_ENABLED') {
-    throw new Error('FORM-2.3 production release requires approved legal documents and explicit release gate');
+  const approval = verifyApprovedLegal();
+  const sourceHead = execFileSync('git', ['rev-parse','HEAD'], {cwd:ROOT, encoding:'utf8'}).trim();
+  const mode = process.env.V5_PUBLIC_MODE === 'PROD_ENABLED' ? 'PROD_ENABLED' : 'PUBLIC_BLOCKED';
+  const prodApiUrl = process.env.V5_PROD_API_URL || '';
+  if (mode === 'PROD_ENABLED' && prodApiUrl !== require('../assets/js/apply').PROD_API_URL) {
+    throw new Error('V5_PROD_API_URL must equal the approved PROD /applications endpoint');
   }
   fs.rmSync(OUTPUT, {recursive: true, force: true});
   fs.mkdirSync(OUTPUT, {recursive: true});
   FILES.forEach(copyFile);
-  const mode = process.env.V5_PUBLIC_MODE === 'PROD_ENABLED' ? 'PROD_ENABLED' : 'PUBLIC_BLOCKED';
-  const prodApiUrl = process.env.V5_PROD_API_URL || '';
-  if (mode === 'PROD_ENABLED' && !/^https:\/\/[^\s/]+(?:\/[^\s]*)?\/applications$/u.test(prodApiUrl)) {
-    throw new Error('V5_PROD_API_URL must be an HTTPS /applications endpoint when PROD_ENABLED');
-  }
   fs.writeFileSync(path.join(OUTPUT, 'assets/js/public-config.js'),
-    `window.__V5_PUBLIC_CONFIG__=${JSON.stringify({mode, prod_api_url: mode === 'PROD_ENABLED' ? prodApiUrl : ''})};\n`);
+    `window.__V5_PUBLIC_CONFIG__=${JSON.stringify({mode, prod_api_url: mode === 'PROD_ENABLED' ? prodApiUrl : '', source_head:sourceHead, form_version:'FORM-2.3', policy_version:'PPD-2.3', consent_version:'CONSENT-PD-2.3', consent_text_hash:approval.documents['CONSENT-PD-2.3'].canonical_sha256, short_form_legal_approved:true})};\n`);
   for (const file of ['assets/css/site.css', 'assets/css/admin.css', 'assets/js/admin.js', 'assets/js/admin-auth.js', 'assets/js/admin-config.prod.js']) {
     const destination = path.join(OUTPUT, 'admin-prod', file);
     fs.mkdirSync(path.dirname(destination), {recursive: true});
@@ -137,4 +159,4 @@ function buildPublic() {
 
 if (require.main === module) buildPublic();
 
-module.exports = {FILES, HEROES, OUTPUT, buildPublic};
+module.exports = {FILES, HEROES, OUTPUT, buildPublic, canonicalLegalHash, verifyApprovedLegal};

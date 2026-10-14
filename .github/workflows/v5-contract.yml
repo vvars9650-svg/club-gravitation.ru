@@ -35,6 +35,7 @@ jobs:
       - run: node tests/public-release-safety.test.js
       - run: node tests/public-artifact-safety.test.js
       - run: node tests/selectel-deploy-safety.test.js
+      - run: node tests/legal-activation.test.js
       - run: python -m compileall backend/v5
       - run: python -m unittest discover -s backend/v5/tests -v
       - run: git diff --check

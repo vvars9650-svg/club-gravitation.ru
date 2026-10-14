@@ -7,6 +7,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 from .build_deployment import build_deployment_zip
+from .legal_text import verify_current_documents, CURRENT_DOCUMENT_HASHES
 
 WRAPPER = '''import json, os
 from v5.handler import handler as _handler
@@ -18,6 +19,7 @@ def handler(event, context=None):
 
 
 def build_production_zip(output_path):
+    verify_current_documents()
     output_path=Path(output_path).resolve()
     output_path.parent.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='production-candidate-') as tmp:
@@ -31,7 +33,7 @@ def build_production_zip(output_path):
             root=Path(__file__).resolve().parents[2]
             sha=subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip()
             dirty=subprocess.check_output(['git','status','--porcelain','--','backend/v5'],cwd=root,text=True).strip()
-            manifest={'target':'PROD','source_head':sha,'source_dirty':bool(dirty),'provenance_snapshot':'b306cf4a4a94cc92395485d8986c445c070d2c42','short_form_legal_gate':'CLOSED','approved_legal_baseline':['PPD-2.2','CONSENT-PD-2.2','FORM-2.2'],'files':digests}
+            manifest={'target':'PROD','source_head':sha,'source_dirty':bool(dirty),'provenance_snapshot':'b306cf4a4a94cc92395485d8986c445c070d2c42','short_form_legal_gate':'APPROVED_NOT_DEPLOYED','approved_at':'14.10.2026','approval_source_head':'a0a6c6f6199b9d29096a9fa6d935724b4d24860b','legal_canonical_sha256':CURRENT_DOCUMENT_HASHES,'approved_legal_baseline':['PPD-2.3','CONSENT-PD-2.3','FORM-2.3'],'legacy_contract':['PPD-2.2','CONSENT-PD-2.2','FORM-2.2'],'files':digests}
             target.writestr('DEPLOYMENT-MANIFEST.json',json.dumps(manifest,sort_keys=True,indent=2))
     return output_path
 

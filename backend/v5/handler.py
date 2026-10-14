@@ -68,8 +68,6 @@ def handler(event,context=None,repo=None,photo_service=None):
         data=json.loads(raw_body)
         if not isinstance(data,dict):
             raise DomainError('invalid_json',400)
-        if data.get('form_version') == SHORT_FORM_VERSION and runtime_environment() == 'PROD':
-            raise DomainError('short_form_prod_legal_gate_closed', 503)
         key=event.get('headers',{}).get('Idempotency-Key') or event.get('headers',{}).get('idempotency-key')
         if path.endswith('/photo-uploads/initiate'):
             if {'photo_data','base64','binary','content'}.intersection(data):

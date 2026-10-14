@@ -7,6 +7,12 @@ FORM_VERSION = "FORM-2.2"
 SHORT_FORM_VERSION = "FORM-2.3"
 CONSENT_VERSION = "CONSENT-PD-2.2"
 POLICY_VERSION = "PPD-2.2"
+SHORT_CONSENT_VERSION = "CONSENT-PD-2.3"
+SHORT_POLICY_VERSION = "PPD-2.3"
+
+
+def legal_versions(form_version):
+    return (SHORT_CONSENT_VERSION, SHORT_POLICY_VERSION) if form_version == SHORT_FORM_VERSION else (CONSENT_VERSION, POLICY_VERSION)
 
 FORM_FIELDS = (
     "full_name age gender city visit_krasnodar phone email preferred_contact "
@@ -50,8 +56,10 @@ class DomainError(Exception):
         self.code, self.status = code, status
 
 
-def fingerprint(data):
+def fingerprint(data, short_legal_version=None):
     safe = {key: data.get(key) for key in FORM_FIELDS}
+    if short_legal_version:
+        safe["legal_contract"] = [SHORT_FORM_VERSION, short_legal_version, SHORT_POLICY_VERSION]
     return hashlib.sha256(
         json.dumps(safe, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
@@ -183,7 +191,7 @@ def validate(data):
         raise DomainError("policy_acknowledgement_required")
     if data.get("personal_data_consent") is not True:
         raise DomainError("consent_required")
-    if data.get("consent_version") != CONSENT_VERSION or data.get("policy_version") != POLICY_VERSION:
+    if data.get("consent_version") != SHORT_CONSENT_VERSION or data.get("policy_version") != SHORT_POLICY_VERSION:
         raise DomainError("invalid_legal_version")
     short_fields = {"full_name", "age", "gender", "city", "visit_krasnodar", "phone", "email", "profile_or_messenger_url", "photo_object_id"}
     if (set(FORM_FIELDS) - short_fields).intersection(data) or REMOVED_FORM_FIELDS.intersection(data):

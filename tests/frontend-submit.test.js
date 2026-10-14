@@ -196,8 +196,8 @@ async function testRequestContractAndPayload() {
   assert.equal(payload.phone, '+79990000000');
   assert.equal(payload.policy_acknowledged, true);
   assert.equal(payload.personal_data_consent, true);
-  assert.equal(payload.consent_version, 'CONSENT-PD-2.2');
-  assert.equal(payload.policy_version, 'PPD-2.2');
+  assert.equal(payload.consent_version, 'CONSENT-PD-2.3');
+  assert.equal(payload.policy_version, 'PPD-2.3');
   assert.equal(payload.form_version, 'FORM-2.3');
   assert.equal(payload.photo_object_id, 'PHOTO-0000000000000001');
   assert.equal(Object.hasOwn(payload, 'photo_upload'), false);

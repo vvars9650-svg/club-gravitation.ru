@@ -27,10 +27,11 @@ PACKAGE_FILES = (
     "admin.py",
     "handler.py",
 )
+FROZEN_FILES = ("CONSENT-PD-2.2.txt", "PPD-2.2.txt", "FORM-2.2.txt", "CONSENT-PD-2.3.txt", "PPD-2.3.txt", "FORM-2.3.txt")
 EXPECTED_FILES = (
     "index.py",
     "requirements.txt",
-    "legal/frozen/CONSENT-PD-2.2.txt",
+    *("legal/frozen/" + name for name in FROZEN_FILES),
     *(f"v5/{name}" for name in PACKAGE_FILES),
 )
 
@@ -49,10 +50,8 @@ def build_deployment_zip(output_path):
         shutil.copy2(SOURCE_DIR / "requirements.txt", staging)
         frozen_dir = staging / "legal" / "frozen"
         frozen_dir.mkdir(parents=True)
-        shutil.copy2(
-            SOURCE_DIR.parents[1] / "legal" / "frozen" / "CONSENT-PD-2.2.txt",
-            frozen_dir / "CONSENT-PD-2.2.txt",
-        )
+        for name in FROZEN_FILES:
+            shutil.copy2(SOURCE_DIR.parents[1] / "legal" / "frozen" / name, frozen_dir / name)
 
         for name in PACKAGE_FILES:
             shutil.copy2(SOURCE_DIR / name, package_dir / name)

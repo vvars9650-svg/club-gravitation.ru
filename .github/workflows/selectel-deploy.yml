@@ -15,6 +15,14 @@ on:
         description: Optional release ID; leave empty to use shared/previous-release
         required: false
         type: string
+      public_mode:
+        description: Explicit intake mode for the authorized release stage
+        required: true
+        type: choice
+        default: PUBLIC_BLOCKED
+        options:
+          - PUBLIC_BLOCKED
+          - PROD_ENABLED
 
 permissions:
   contents: read
@@ -43,7 +51,7 @@ jobs:
       - name: Run public release checks
         if: inputs.operation == 'deploy'
         env:
-          V5_PUBLIC_MODE: PROD_ENABLED
+          V5_PUBLIC_MODE: ${{ inputs.public_mode }}
           V5_PROD_API_URL: https://d5dsivdtqjog5vgvn111.7qsg961h.apigw.yandexcloud.net/applications
         run: |
           node --check scripts/build-public.js

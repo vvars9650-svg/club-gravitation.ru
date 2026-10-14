@@ -2,7 +2,7 @@
 
 import os
 
-from .legal_text import CONSENT_TEXT_SHA256, verify_frozen_consent
+from .legal_text import CURRENT_CONSENT_TEXT_SHA256, verify_current_documents
 from .repository import RepositoryUnavailable
 
 
@@ -32,11 +32,11 @@ def runtime_settings():
     else:
         # PROD may only use the canonical frozen legal baseline, never a test or
         # caller-supplied placeholder hash.
-        if consent_hash != CONSENT_TEXT_SHA256 or consent_hash.startswith("TEST-"):
+        if consent_hash != CURRENT_CONSENT_TEXT_SHA256 or consent_hash.startswith("TEST-"):
             raise RepositoryUnavailable("invalid_prod_consent_hash")
         try:
-            verify_frozen_consent()
-        except ValueError as exc:
+            verify_current_documents()
+        except (ValueError, OSError) as exc:
             raise RepositoryUnavailable("frozen_consent_hash_mismatch") from exc
     return {
         "environment": environment,

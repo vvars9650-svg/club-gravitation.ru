@@ -1,5 +1,17 @@
 # V5 application contract
 
+## Current RC: approved legal 2.3
+
+The real Python backend and current frontend bind FORM-2.3 / CONSENT-PD-2.3 / PPD-2.3. Owner approval: 14.10.2026, source a0a6c6f. Effective date: actual production publication. Canonical consent SHA-256: `10f8c02d5c034d06c09f80a5f4b67bebbcdc98fcd8d18b4b95718338ac50f8c2`.
+
+Short-form fields: full_name, age, gender, city, visit_krasnodar, phone, email, profile_or_messenger_url (required free text), photo_object_id; two independent consent booleans and exact legal version identifiers. Hash and timestamps are server-owned. TEST evidence prefixes the correct version-specific canonical hash with TEST-; PROD uses the bare digest. No schema migration.
+
+Existing applications, consent evidence and idempotent replays 2.2 remain compatible and unchanged. New legacy submissions in PROD are rejected with `legacy_form_retired_reload_required` after activation; a controlled pre-publication compatibility window can explicitly set V5_ALLOW_LEGACY_INTAKE=true. Final release must leave it false. Public runtime stays PUBLIC_BLOCKED by default; an explicit PROD_ENABLED candidate build requires the exact approved PROD endpoint, versions and frozen hashes.
+
+The legacy Node TEST stub and previous contract below are retained for compatibility; they are not the production backend. Publication/deployment require a separate owner release authorization. RKN PDF/registry are excluded from current release gates by the owner's decision.
+
+## Historical 2.2 TEST/stub contract
+
 `POST /applications` is TEST-only and accepts `application/json` and `Idempotency-Key`.
 
 The canonical payload uses internal `form_version: "FORM-2.2"` and legal versions

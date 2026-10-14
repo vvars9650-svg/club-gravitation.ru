@@ -11,7 +11,7 @@ SHORT = {key: P[key] for key in (
     'full_name', 'age', 'gender', 'city', 'visit_krasnodar', 'phone', 'email',
     'profile_or_messenger_url', 'photo_object_id', 'policy_acknowledged',
     'personal_data_consent', 'consent_version', 'policy_version')}
-SHORT.update(form_version='FORM-2.3', profile_or_messenger_url='Мессенджер @synthetic')
+SHORT.update(form_version='FORM-2.3', consent_version='CONSENT-PD-2.3', policy_version='PPD-2.3', profile_or_messenger_url='Мессенджер @synthetic')
 
 
 class ShortFormTests(unittest.TestCase):
@@ -36,7 +36,7 @@ class ShortFormTests(unittest.TestCase):
         body = json.loads(result['body'])
         record = repo.by_key['short-key']
         self.assertEqual(record['consent']['form_version'], 'FORM-2.3')
-        self.assertEqual(record['consent']['consent_version'], 'CONSENT-PD-2.2')
+        self.assertEqual(record['consent']['consent_version'], 'CONSENT-PD-2.3')
         self.assertEqual(record['form']['occupation'], '')
         self.assertEqual(handler(e(payload, 'short-key'), repo=repo)['statusCode'], 200)
         changed = {**payload, 'profile_or_messenger_url': '@other'}
