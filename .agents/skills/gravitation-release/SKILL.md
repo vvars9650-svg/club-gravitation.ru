@@ -5,6 +5,8 @@ description: Run a controlled Gravitation site release or deployment. Use for bu
 
 # Gravitation release workflow
 
+Default development/deployment environment: the home PC. Before Selectel CLI work, read the canonical [SSH/CLI runbook](../../../docs/SELECTEL-SSH-CLI.md) for the verified alias, identity and TEST permission limits.
+
 1. Start from facts, not handoff assumptions:
    - confirm repo, worktree, branch, HEAD, git status and diff;
    - read only the current release task and the minimum relevant project sources;
