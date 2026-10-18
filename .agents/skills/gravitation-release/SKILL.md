@@ -5,6 +5,10 @@ description: Run a controlled Gravitation site release or deployment. Use for bu
 
 # Gravitation release workflow
 
+Default development/deployment environment: the home PC. Before Selectel CLI work, read the canonical [SSH/CLI runbook](../../../docs/SELECTEL-SSH-CLI.md) for the verified alias, identity and TEST permission limits.
+
+Public TEST has a separate [deploy/rollback runbook](../../../docs/SELECTEL-TEST-DEPLOY.md). The fixed TEST entrypoint was installed and live-tested on 2026-10-18. Use status/deploy/rollback from a fresh SSH process; do not use the PROD release script, reinstall access, repeat key diagnostics or change sudoers. Reconcile actual status with the recorded installation handoff before an authorized deploy. Public TEST authorization never includes TEST Admin or PROD. Preserve PUBLIC_BLOCKED and all protected files.
+
 1. Start from facts, not handoff assumptions:
    - confirm repo, worktree, branch, HEAD, git status and diff;
    - read only the current release task and the minimum relevant project sources;

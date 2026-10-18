@@ -1,0 +1,5 @@
+--- /etc/nginx/sites-available/test.club-gravitation.ru.before
++++ /etc/nginx/sites-available/test.club-gravitation.ru.after
+@@ -5 +5 @@
+-    root /srv/gravitation-test/releases/event01-20261016-7605aba;
++    root /srv/gravitation-test/current;

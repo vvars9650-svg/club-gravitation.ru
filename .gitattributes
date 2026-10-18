@@ -1,0 +1,7 @@
+# Preserve Linux entrypoint/checksum bytes across Windows checkouts.
+scripts/selectel-test-release.py text eol=lf
+scripts/install-selectel-test-release.py text eol=lf
+scripts/package-test-release.py text eol=lf
+scripts/selectel-test-deploy.sudoers text eol=lf
+tests/test_selectel_test_release.py text eol=lf
+docs/SELECTEL-TEST-NGINX.patch text eol=lf

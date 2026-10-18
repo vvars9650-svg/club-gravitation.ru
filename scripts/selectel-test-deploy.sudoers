@@ -1,0 +1,4 @@
+# Install as root:root 0440; validate with visudo -cf before activation.
+# Script rejects extra args, paths, invalid IDs/checksums, oversized/invalid stdin.
+Cmnd_Alias GRAVITATION_TEST_PUBLIC = /usr/local/sbin/gravitation-test-release status, /usr/local/sbin/gravitation-test-release deploy *, /usr/local/sbin/gravitation-test-release rollback
+gravdeploy ALL=(root) NOPASSWD: NOSETENV: GRAVITATION_TEST_PUBLIC
