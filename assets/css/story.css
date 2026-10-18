@@ -154,7 +154,7 @@ html,body{overflow-x:hidden}
 .page-about .orbit-stage__star{top:calc(46% - 25px)}
 .page-about .story-figure--about-1 .story-figure__caption,
 .page-about .story-figure--about-2 .story-figure__caption{left:50%;top:50%;right:auto;bottom:auto;transform:translate(-50%,-50%)}
-.page-about .story-figure--about-3 .story-figure__caption{left:55%;right:auto;top:auto;bottom:10%;transform:translateX(-50%)}
+.page-about .story-figure--about-3 .story-figure__caption{left:50%;right:auto;top:auto;bottom:10%;transform:translateX(-50%)}
 .page-about .outcome-grid h3{text-align:center}
 .page-about .section--cta{align-items:stretch}
 .page-about .section--cta>div{display:flex;flex-direction:column;justify-content:center}
@@ -170,7 +170,8 @@ html,body{overflow-x:hidden}
 @media(min-width:600px){
   .page-about .story-figure--about-1 .story-figure__caption,
   .page-about .story-figure--about-2 .story-figure__caption,
-  .page-about .story-figure--about-3 .story-figure__caption{top:auto;bottom:10px;transform:translateX(-50%)}
+  .page-about .story-figure--about-3 .story-figure__caption{top:auto;bottom:10px;transform:translateX(-50%);width:min(90%,440px);max-width:none;padding:14px 17px}
+  .page-about .story-figure__caption :is(span,.about-1-headline){margin:0;color:var(--cream);font-size:clamp(1rem,1.3vw,1.25rem);font-weight:300;line-height:1.35;letter-spacing:normal}
 }
 
 @media(max-width:599px){
@@ -178,3 +179,5 @@ html,body{overflow-x:hidden}
   .page-about .story-figure--about-2 .story-figure__caption,
   .page-about .story-figure--about-3 .story-figure__caption{top:10px;bottom:auto}
 }
+
+.page-about .principle-grid p + p{margin-top:1em}
