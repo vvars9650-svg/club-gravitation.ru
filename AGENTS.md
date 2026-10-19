@@ -22,6 +22,8 @@
 - Различать состояния: выполнено локально → закоммичено → pushed в GitHub → CI PASS → TEST deployed/checked → production.
 - PROD, main DNS и реальный intake не изменять без отдельного явного разрешения.
 
+Публичный TEST публиковать по [SSH runbook](docs/SELECTEL-SSH-CLI.md) и [TEST deploy/rollback runbook](docs/SELECTEL-TEST-DEPLOY.md). Установленный manager уже разрешает `terms/index.html` и `offer/index.html` после согласованного изменения 19.10.2026; их повторный deploy выполняется через существующий SSH без root-консоли. Другие юридические/gate-файлы остаются защищены. Отказ allowlist не является неисправностью SSH.
+
 ## 4. Встроенный браузер
 
 Для frontend/visual задач Codex использует встроенный браузер сам, а не перекладывает навигацию на Влада.
