@@ -63,9 +63,9 @@ Tablet проверять как regression smoke, если задача не в
 
 ## 6. Публичная безопасность
 
-- `/apply/` должен оставаться `PUBLIC_BLOCKED`, пока конкретная утверждённая задача не меняет этот gate.
+- Сохранять фактический режим каждого контура: публичный TEST — `PUBLIC_BLOCKED`; действующий PROD принимает FORM-2.3 в `PROD_ENABLED` с 15.10.2026. Не переносить TEST public-config в PROD и не открывать TEST для реальных заявок. Смена любого режима требует отдельного разрешения.
 - Не подключать TEST Admin config, backend/private assets, секреты или реальные персональные данные к public artifact.
-- Не включать реальный PROD intake/photo collection без отдельного legal/technical gate.
+- Новое включение или изменение PROD intake/photo требует отдельного legal/technical решения; исторические launch-gates не применять задним числом к уже принятому релизу. Актуальный статус — управляющий Sheet, не старые снимки в runbook.
 
 ## 7. HANDOFF
 

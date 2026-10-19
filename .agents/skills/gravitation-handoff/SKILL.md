@@ -52,3 +52,5 @@ Only constraints that the next session could otherwise violate, such as protecte
    - do not use an arbitrary token-count threshold as the decision rule.
 
 6. The receiving session must verify repo/branch/HEAD/status and relevant live sources before making changes. A handoff is a compact transfer, not an authority that overrides current facts.
+
+For a managing-chat audit, state which conversation turns were actually accessible; reference placeholders and unavailable older turns are evidence gaps, not audited content. Distinguish current checks from accepted executor reports, and local-only evidence from material available on GitHub/Drive. Store dated audit evidence separately from mutable status; give each source an owner and storage location. A prepared handoff does not authorize creating a new chat or retiring the old one: follow the user's requested review gate. The 19.10.2026 archive and continuation draft are indexed in `docs/archive/CONTROL-CHAT-AUDIT-20261019.md` and `docs/CONTROL-CHAT-HANDOFF-DRAFT-20261019.md`; load them only for that transition.

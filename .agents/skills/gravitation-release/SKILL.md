@@ -27,6 +27,9 @@ description: Run a controlled Gravitation site release or deployment. Use for bu
    - confirm no secret, private backend file or test-only configuration leaks into the public artifact.
 
 5. Deploy through the existing proven project mechanism.
+   - Public TEST procedure and SSH runbook are pinned at commit `15a388f9dd8f6b544489ad619bde8762290d8e9d`: [TEST](https://github.com/vvars9650-svg/club-gravitation.ru/blob/15a388f9dd8f6b544489ad619bde8762290d8e9d/docs/SELECTEL-TEST-DEPLOY.md), [SSH](https://github.com/vvars9650-svg/club-gravitation.ru/blob/15a388f9dd8f6b544489ad619bde8762290d8e9d/docs/SELECTEL-SSH-CLI.md). Read the relevant procedure; these files may be absent from the current branch. Their release IDs are dated snapshots, so obtain actual status before an authorized operation. Public TEST manager, PROD release procedure and Admin deployment are separate mechanisms.
+   - For a narrowly approved frontend delta, use the verified active artifact of the target environment plus only approved files; compare full inventory/hashes and preserve environment configuration. A Git source HEAD or public-config source_head alone does not prove deployed artifact provenance.
+   - Run checks that rebuild the same `public-dist` sequentially; concurrent rebuilds produced false failures in the CTA V2 release. This does not require serializing unrelated checks.
    - Codex performs routine terminal/SSH/deploy commands itself when credentials are already available;
    - ask Vlad only for interactive password, passphrase, 2FA, UAC, secret or external approval that cannot be completed autonomously;
    - never ask Vlad to copy private keys or tokens into chat.
