@@ -181,3 +181,37 @@ html,body{overflow-x:hidden}
 }
 
 .page-about .principle-grid p + p{margin-top:1em}
+
+/* Crop the original collage sheets above the embedded counters; keep every photo. */
+.page-about .about-collage{
+  --sheet-width:1671;--sheet-height:941;--crop-width:396;--crop-height:440;
+  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;
+  padding:4px;aspect-ratio:auto;height:auto;background:var(--cream);
+}
+.page-about .about-collage__card{
+  --crop-x:8;--crop-y:4;
+  position:relative;display:block;width:100%;height:auto;aspect-ratio:9/10;overflow:hidden;
+}
+.page-about .about-collage__card:nth-child(4n + 2){--crop-x:426}
+.page-about .about-collage__card:nth-child(4n + 3){--crop-x:846}
+.page-about .about-collage__card:nth-child(4n + 4){--crop-x:1266}
+.page-about .about-collage__card:nth-child(n + 5){--crop-y:479}
+.page-about .about-collage__card img{
+  position:absolute;max-width:none;
+  width:calc(100% * var(--sheet-width) / var(--crop-width));
+  height:calc(100% * var(--sheet-height) / var(--crop-height));
+  left:calc(-100% * var(--crop-x) / var(--crop-width));
+  top:calc(-100% * var(--crop-y) / var(--crop-height));
+  aspect-ratio:auto;object-fit:cover;
+}
+@media(max-width:760px){
+  .page-about .about-collage{
+    --sheet-width:941;--sheet-height:2119;--crop-width:432;--crop-height:480;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+  .page-about .about-collage__card:nth-child(n){--crop-x:16;--crop-y:4}
+  .page-about .about-collage__card:nth-child(2n){--crop-x:492}
+  .page-about .about-collage__card:nth-child(n + 3){--crop-y:535}
+  .page-about .about-collage__card:nth-child(n + 5){--crop-y:1069}
+  .page-about .about-collage__card:nth-child(n + 7){--crop-y:1600}
+}

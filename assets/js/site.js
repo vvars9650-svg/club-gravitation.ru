@@ -28,7 +28,7 @@ if (menu && nav) {
 }
 
 document.querySelectorAll('[data-year]').forEach(el => el.textContent = new Date().getFullYear());
-document.querySelectorAll('.brand__tag').forEach(el => { el.textContent = 'КЛУБ ВСТРЕЧ · КРАСНОДАР'; });
+document.querySelectorAll('.brand__tag').forEach(el => { el.textContent = 'КЛУБ ЖИВЫХ ВСТРЕЧ'; });
 document.querySelectorAll('.home-scroll').forEach(el => el.remove());
 const path = location.pathname.replace(/index\.html$/, '');
 document.querySelectorAll('.site-nav a').forEach(a => {
@@ -37,6 +37,8 @@ document.querySelectorAll('.site-nav a').forEach(a => {
 });
 
 document.querySelectorAll('.site-footer').forEach(footer => {
+  const tagline = footer.querySelector(':scope > p');
+  if (tagline) tagline.textContent = 'Краснодар';
   const links = footer.querySelector('.footer-links');
   if (links) {
     const founders = links.querySelector('a[href="/founders/"]') || document.createElement('a');
@@ -88,7 +90,7 @@ document.querySelectorAll('.site-footer').forEach(footer => {
 if (!document.querySelector('.site-footer')) {
   const footer = document.createElement('footer');
   footer.className = 'site-footer seller-footer';
-  footer.innerHTML = '<a class="footer-brand" href="/"><img src="/assets/brand/logo-mark.svg" alt=""><span>ГРАВИТАЦИЯ</span></a><p>КЛУБ ВСТРЕЧ · КРАСНОДАР</p><div class="footer-links"><a href="/about/">О клубе</a><a href="/events/">Мероприятия</a><a href="/founders/">Основатели</a><a href="/privacy/">Конфиденциальность</a></div><div class="footer-legal-links" aria-label="Документы"><a href="/offer/">Оферта</a><a href="/terms/">Участие и возврат</a></div><div class="seller-details">Исполнитель: Арсентьев Владислав Владимирович · плательщик НПД · ИНН: 236903136086<br><a href="tel:+79898080104">+7 989 808-01-04</a> · <a href="mailto:arsvvlad@yandex.ru">arsvvlad@yandex.ru</a></div><small>© <span data-year></span> Гравитация</small>';
+  footer.innerHTML = '<a class="footer-brand" href="/"><img src="/assets/brand/logo-mark.svg" alt=""><span>ГРАВИТАЦИЯ</span></a><p>Краснодар</p><div class="footer-links"><a href="/about/">О клубе</a><a href="/events/">Мероприятия</a><a href="/founders/">Основатели</a><a href="/privacy/">Конфиденциальность</a></div><div class="footer-legal-links" aria-label="Документы"><a href="/offer/">Оферта</a><a href="/terms/">Участие и возврат</a></div><div class="seller-details">Исполнитель: Арсентьев Владислав Владимирович · плательщик НПД · ИНН: 236903136086<br><a href="tel:+79898080104">+7 989 808-01-04</a> · <a href="mailto:arsvvlad@yandex.ru">arsvvlad@yandex.ru</a></div><small>© <span data-year></span> Гравитация</small>';
   footer.querySelectorAll('[data-year]').forEach(el => el.textContent = new Date().getFullYear());
   const fallbackPrivacy = footer.querySelector('.footer-links a[href="/privacy/"]');
   const fallbackLegal = footer.querySelector('.footer-legal-links');
