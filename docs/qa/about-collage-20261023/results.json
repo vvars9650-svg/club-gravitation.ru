@@ -1,0 +1,649 @@
+[
+  {
+    "width": 1440,
+    "height": 900,
+    "dpr": 1,
+    "status": "PASS",
+    "metrics": {
+      "width": 1440,
+      "scrollWidth": 1440,
+      "grid": {
+        "x": 0,
+        "width": 1440
+      },
+      "cards": [
+        {
+          "x": 4,
+          "y": 6602.296875,
+          "width": 355,
+          "height": 394.4375,
+          "scaleX": 0.896459829443447,
+          "scaleY": 0.8964366365568545,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 363,
+          "y": 6602.296875,
+          "width": 355,
+          "height": 394.4375,
+          "scaleX": 0.896459829443447,
+          "scaleY": 0.8964366365568545,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 722,
+          "y": 6602.296875,
+          "width": 355,
+          "height": 394.4375,
+          "scaleX": 0.896459829443447,
+          "scaleY": 0.8964366365568545,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 1081,
+          "y": 6602.296875,
+          "width": 355,
+          "height": 394.4375,
+          "scaleX": 0.896459829443447,
+          "scaleY": 0.8964366365568545,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 4,
+          "y": 7000.734375,
+          "width": 355,
+          "height": 394.4375,
+          "scaleX": 0.896459829443447,
+          "scaleY": 0.8964366365568545,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 363,
+          "y": 7000.734375,
+          "width": 355,
+          "height": 394.4375,
+          "scaleX": 0.896459829443447,
+          "scaleY": 0.8964366365568545,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 722,
+          "y": 7000.734375,
+          "width": 355,
+          "height": 394.4375,
+          "scaleX": 0.896459829443447,
+          "scaleY": 0.8964366365568545,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 1081,
+          "y": 7000.734375,
+          "width": 355,
+          "height": 394.4375,
+          "scaleX": 0.896459829443447,
+          "scaleY": 0.8964366365568545,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        }
+      ],
+      "tag": "КЛУБ ЖИВЫХ ВСТРЕЧ",
+      "footer": "Краснодар"
+    },
+    "errors": [],
+    "consoleErrors": [
+      "Failed to load resource: net::ERR_TUNNEL_CONNECTION_FAILED"
+    ],
+    "network": [
+      {
+        "url": "https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&display=swap",
+        "error": "net::ERR_TUNNEL_CONNECTION_FAILED"
+      },
+      {
+        "url": "http://localhost:4176/assets/images/story/about-4-mobile.png",
+        "error": "net::ERR_ABORTED"
+      },
+      {
+        "url": "http://localhost:4176/assets/images/story/about-1-mobile.png",
+        "error": "net::ERR_ABORTED"
+      },
+      {
+        "url": "http://localhost:4176/assets/images/story/about-2-mobile.png",
+        "error": "net::ERR_ABORTED"
+      },
+      {
+        "url": "http://localhost:4176/assets/images/story/about-3-mobile.png",
+        "error": "net::ERR_ABORTED"
+      }
+    ]
+  },
+  {
+    "width": 1440,
+    "height": 900,
+    "dpr": 2,
+    "status": "PASS",
+    "metrics": {
+      "width": 1440,
+      "scrollWidth": 1440,
+      "grid": {
+        "x": 0,
+        "width": 1440
+      },
+      "cards": [
+        {
+          "x": 4,
+          "y": 6602.296875,
+          "width": 355,
+          "height": 394.4375,
+          "scaleX": 0.896459829443447,
+          "scaleY": 0.8964366365568545,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 363,
+          "y": 6602.296875,
+          "width": 355,
+          "height": 394.4375,
+          "scaleX": 0.896459829443447,
+          "scaleY": 0.8964366365568545,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 722,
+          "y": 6602.296875,
+          "width": 355,
+          "height": 394.4375,
+          "scaleX": 0.896459829443447,
+          "scaleY": 0.8964366365568545,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 1081,
+          "y": 6602.296875,
+          "width": 355,
+          "height": 394.4375,
+          "scaleX": 0.896459829443447,
+          "scaleY": 0.8964366365568545,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 4,
+          "y": 7000.734375,
+          "width": 355,
+          "height": 394.4375,
+          "scaleX": 0.896459829443447,
+          "scaleY": 0.8964366365568545,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 363,
+          "y": 7000.734375,
+          "width": 355,
+          "height": 394.4375,
+          "scaleX": 0.896459829443447,
+          "scaleY": 0.8964366365568545,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 722,
+          "y": 7000.734375,
+          "width": 355,
+          "height": 394.4375,
+          "scaleX": 0.896459829443447,
+          "scaleY": 0.8964366365568545,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 1081,
+          "y": 7000.734375,
+          "width": 355,
+          "height": 394.4375,
+          "scaleX": 0.896459829443447,
+          "scaleY": 0.8964366365568545,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        }
+      ],
+      "tag": "КЛУБ ЖИВЫХ ВСТРЕЧ",
+      "footer": "Краснодар"
+    },
+    "errors": [],
+    "consoleErrors": [
+      "Failed to load resource: net::ERR_TUNNEL_CONNECTION_FAILED"
+    ],
+    "network": [
+      {
+        "url": "https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&display=swap",
+        "error": "net::ERR_TUNNEL_CONNECTION_FAILED"
+      },
+      {
+        "url": "http://localhost:4176/assets/images/story/about-4-mobile.png",
+        "error": "net::ERR_ABORTED"
+      },
+      {
+        "url": "http://localhost:4176/assets/images/story/about-1-mobile.png",
+        "error": "net::ERR_ABORTED"
+      },
+      {
+        "url": "http://localhost:4176/assets/images/story/about-2-mobile.png",
+        "error": "net::ERR_ABORTED"
+      },
+      {
+        "url": "http://localhost:4176/assets/images/story/about-3-mobile.png",
+        "error": "net::ERR_ABORTED"
+      }
+    ]
+  },
+  {
+    "width": 1920,
+    "height": 1080,
+    "dpr": 1,
+    "status": "PASS",
+    "metrics": {
+      "width": 1920,
+      "scrollWidth": 1920,
+      "grid": {
+        "x": 0,
+        "width": 1920
+      },
+      "cards": [
+        {
+          "x": 4,
+          "y": 8000.03125,
+          "width": 475,
+          "height": 527.765625,
+          "scaleX": 1.1994875822860562,
+          "scaleY": 1.1994553666312433,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 483,
+          "y": 8000.03125,
+          "width": 475,
+          "height": 527.765625,
+          "scaleX": 1.1994875822860562,
+          "scaleY": 1.1994553666312433,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 962,
+          "y": 8000.03125,
+          "width": 475,
+          "height": 527.765625,
+          "scaleX": 1.1994875822860562,
+          "scaleY": 1.1994553666312433,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 1441,
+          "y": 8000.03125,
+          "width": 475,
+          "height": 527.765625,
+          "scaleX": 1.1994875822860562,
+          "scaleY": 1.1994553666312433,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 4,
+          "y": 8531.796875,
+          "width": 475,
+          "height": 527.765625,
+          "scaleX": 1.1994875822860562,
+          "scaleY": 1.1994553666312433,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 483,
+          "y": 8531.796875,
+          "width": 475,
+          "height": 527.765625,
+          "scaleX": 1.1994875822860562,
+          "scaleY": 1.1994553666312433,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 962,
+          "y": 8531.796875,
+          "width": 475,
+          "height": 527.765625,
+          "scaleX": 1.1994875822860562,
+          "scaleY": 1.1994553666312433,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 1441,
+          "y": 8531.796875,
+          "width": 475,
+          "height": 527.765625,
+          "scaleX": 1.1994875822860562,
+          "scaleY": 1.1994553666312433,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        }
+      ],
+      "tag": "КЛУБ ЖИВЫХ ВСТРЕЧ",
+      "footer": "Краснодар"
+    },
+    "errors": [],
+    "consoleErrors": [
+      "Failed to load resource: net::ERR_TUNNEL_CONNECTION_FAILED"
+    ],
+    "network": [
+      {
+        "url": "https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&display=swap",
+        "error": "net::ERR_TUNNEL_CONNECTION_FAILED"
+      }
+    ]
+  },
+  {
+    "width": 768,
+    "height": 1024,
+    "dpr": 2,
+    "status": "PASS",
+    "metrics": {
+      "width": 768,
+      "scrollWidth": 768,
+      "grid": {
+        "x": 0,
+        "width": 768
+      },
+      "cards": [
+        {
+          "x": 4,
+          "y": 5757.140625,
+          "width": 187,
+          "height": 207.765625,
+          "scaleX": 0.472219105326152,
+          "scaleY": 0.47218716790648246,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 195,
+          "y": 5757.140625,
+          "width": 187,
+          "height": 207.765625,
+          "scaleX": 0.472219105326152,
+          "scaleY": 0.47218716790648246,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 386,
+          "y": 5757.140625,
+          "width": 187,
+          "height": 207.765625,
+          "scaleX": 0.472219105326152,
+          "scaleY": 0.47218716790648246,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 577,
+          "y": 5757.140625,
+          "width": 187,
+          "height": 207.765625,
+          "scaleX": 0.472219105326152,
+          "scaleY": 0.47218716790648246,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 4,
+          "y": 5968.90625,
+          "width": 187,
+          "height": 207.765625,
+          "scaleX": 0.472219105326152,
+          "scaleY": 0.47218716790648246,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 195,
+          "y": 5968.90625,
+          "width": 187,
+          "height": 207.765625,
+          "scaleX": 0.472219105326152,
+          "scaleY": 0.47218716790648246,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 386,
+          "y": 5968.90625,
+          "width": 187,
+          "height": 207.765625,
+          "scaleX": 0.472219105326152,
+          "scaleY": 0.47218716790648246,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        },
+        {
+          "x": 577,
+          "y": 5968.90625,
+          "width": 187,
+          "height": 207.765625,
+          "scaleX": 0.472219105326152,
+          "scaleY": 0.47218716790648246,
+          "source": "http://localhost:4176/assets/images/story/about-4.png"
+        }
+      ],
+      "tag": "КЛУБ ЖИВЫХ ВСТРЕЧ",
+      "footer": "Краснодар"
+    },
+    "errors": [],
+    "consoleErrors": [
+      "Failed to load resource: net::ERR_TUNNEL_CONNECTION_FAILED"
+    ],
+    "network": [
+      {
+        "url": "https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&display=swap",
+        "error": "net::ERR_TUNNEL_CONNECTION_FAILED"
+      }
+    ]
+  },
+  {
+    "width": 390,
+    "height": 844,
+    "dpr": 3,
+    "status": "PASS",
+    "metrics": {
+      "width": 390,
+      "scrollWidth": 390,
+      "grid": {
+        "x": 0,
+        "width": 390
+      },
+      "cards": [
+        {
+          "x": 4,
+          "y": 7315.328125,
+          "width": 189,
+          "height": 210,
+          "scaleX": 0.4375,
+          "scaleY": 0.4375,
+          "source": "http://localhost:4176/assets/images/story/about-4-mobile.png"
+        },
+        {
+          "x": 197,
+          "y": 7315.328125,
+          "width": 189,
+          "height": 210,
+          "scaleX": 0.4375,
+          "scaleY": 0.4375,
+          "source": "http://localhost:4176/assets/images/story/about-4-mobile.png"
+        },
+        {
+          "x": 4,
+          "y": 7529.328125,
+          "width": 189,
+          "height": 210,
+          "scaleX": 0.4375,
+          "scaleY": 0.4375,
+          "source": "http://localhost:4176/assets/images/story/about-4-mobile.png"
+        },
+        {
+          "x": 197,
+          "y": 7529.328125,
+          "width": 189,
+          "height": 210,
+          "scaleX": 0.4375,
+          "scaleY": 0.4375,
+          "source": "http://localhost:4176/assets/images/story/about-4-mobile.png"
+        },
+        {
+          "x": 4,
+          "y": 7743.328125,
+          "width": 189,
+          "height": 210,
+          "scaleX": 0.4375,
+          "scaleY": 0.4375,
+          "source": "http://localhost:4176/assets/images/story/about-4-mobile.png"
+        },
+        {
+          "x": 197,
+          "y": 7743.328125,
+          "width": 189,
+          "height": 210,
+          "scaleX": 0.4375,
+          "scaleY": 0.4375,
+          "source": "http://localhost:4176/assets/images/story/about-4-mobile.png"
+        },
+        {
+          "x": 4,
+          "y": 7957.328125,
+          "width": 189,
+          "height": 210,
+          "scaleX": 0.4375,
+          "scaleY": 0.4375,
+          "source": "http://localhost:4176/assets/images/story/about-4-mobile.png"
+        },
+        {
+          "x": 197,
+          "y": 7957.328125,
+          "width": 189,
+          "height": 210,
+          "scaleX": 0.4375,
+          "scaleY": 0.4375,
+          "source": "http://localhost:4176/assets/images/story/about-4-mobile.png"
+        }
+      ],
+      "tag": "КЛУБ ЖИВЫХ ВСТРЕЧ",
+      "footer": "Краснодар"
+    },
+    "errors": [],
+    "consoleErrors": [
+      "Failed to load resource: net::ERR_TUNNEL_CONNECTION_FAILED"
+    ],
+    "network": [
+      {
+        "url": "https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&display=swap",
+        "error": "net::ERR_TUNNEL_CONNECTION_FAILED"
+      }
+    ]
+  },
+  {
+    "width": 360,
+    "height": 800,
+    "dpr": 3,
+    "status": "PASS",
+    "metrics": {
+      "width": 360,
+      "scrollWidth": 360,
+      "grid": {
+        "x": 0,
+        "width": 360
+      },
+      "cards": [
+        {
+          "x": 4,
+          "y": 7372.53125,
+          "width": 174,
+          "height": 193.328125,
+          "scaleX": 0.4027630180658874,
+          "scaleY": 0.40276221094856063,
+          "source": "http://localhost:4176/assets/images/story/about-4-mobile.png"
+        },
+        {
+          "x": 182,
+          "y": 7372.53125,
+          "width": 174,
+          "height": 193.328125,
+          "scaleX": 0.4027630180658874,
+          "scaleY": 0.40276221094856063,
+          "source": "http://localhost:4176/assets/images/story/about-4-mobile.png"
+        },
+        {
+          "x": 4,
+          "y": 7569.859375,
+          "width": 174,
+          "height": 193.328125,
+          "scaleX": 0.4027630180658874,
+          "scaleY": 0.40276221094856063,
+          "source": "http://localhost:4176/assets/images/story/about-4-mobile.png"
+        },
+        {
+          "x": 182,
+          "y": 7569.859375,
+          "width": 174,
+          "height": 193.328125,
+          "scaleX": 0.4027630180658874,
+          "scaleY": 0.40276221094856063,
+          "source": "http://localhost:4176/assets/images/story/about-4-mobile.png"
+        },
+        {
+          "x": 4,
+          "y": 7767.1875,
+          "width": 174,
+          "height": 193.328125,
+          "scaleX": 0.4027630180658874,
+          "scaleY": 0.40276221094856063,
+          "source": "http://localhost:4176/assets/images/story/about-4-mobile.png"
+        },
+        {
+          "x": 182,
+          "y": 7767.1875,
+          "width": 174,
+          "height": 193.328125,
+          "scaleX": 0.4027630180658874,
+          "scaleY": 0.40276221094856063,
+          "source": "http://localhost:4176/assets/images/story/about-4-mobile.png"
+        },
+        {
+          "x": 4,
+          "y": 7964.515625,
+          "width": 174,
+          "height": 193.328125,
+          "scaleX": 0.4027630180658874,
+          "scaleY": 0.40276221094856063,
+          "source": "http://localhost:4176/assets/images/story/about-4-mobile.png"
+        },
+        {
+          "x": 182,
+          "y": 7964.515625,
+          "width": 174,
+          "height": 193.328125,
+          "scaleX": 0.4027630180658874,
+          "scaleY": 0.40276221094856063,
+          "source": "http://localhost:4176/assets/images/story/about-4-mobile.png"
+        }
+      ],
+      "tag": "КЛУБ ЖИВЫХ ВСТРЕЧ",
+      "footer": "Краснодар"
+    },
+    "errors": [],
+    "consoleErrors": [
+      "Failed to load resource: net::ERR_TUNNEL_CONNECTION_FAILED"
+    ],
+    "network": [
+      {
+        "url": "https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&display=swap",
+        "error": "net::ERR_TUNNEL_CONNECTION_FAILED"
+      }
+    ]
+  },
+  {
+    "sharedBrandingRoutes": [
+      "/",
+      "/about/",
+      "/events/",
+      "/first-contact/",
+      "/founders/",
+      "/apply/",
+      "/privacy/",
+      "/consent-pd/",
+      "/offer/",
+      "/terms/"
+    ],
+    "status": "PASS"
+  }
+]
