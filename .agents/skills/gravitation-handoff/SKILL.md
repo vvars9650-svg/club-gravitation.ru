@@ -9,7 +9,7 @@ Use this skill when a major stage is complete, the next task is substantially in
 
 1. Re-check the actual state before writing the handoff:
    - repo/worktree/branch/HEAD/status;
-   - commit/push/PR/deploy state when relevant;
+   - commit/push/PR/deploy state when relevant, including actual GitHub remote SHA readback; distinguish local-only files, untracked files and released TEST artifact;
    - latest task-relevant Drive/Sheet source if available;
    - actual environment state for anything claimed as deployed.
 
@@ -21,7 +21,7 @@ Required shape:
 What is actually complete and the acceptance result.
 
 ## Where
-Repo, worktree if still needed, branch, HEAD/commit/PR, environment and relevant URL/resource identifiers.
+Permanent result first: GitHub repo, pushed branch, verified remote commit SHA/PR; Drive links for decision/media; actual deployed TEST/PROD IDs and URLs. Worktree/localhost only as temporary context if still needed. If code is untracked/local-only or exists solely on TEST, flag `PERSISTENCE BLOCKED`, never `DONE`.
 
 ## Verified
 Only checks that were actually run and their outcomes.
@@ -52,3 +52,5 @@ Only constraints that the next session could otherwise violate, such as protecte
    - do not use an arbitrary token-count threshold as the decision rule.
 
 6. The receiving session must verify repo/branch/HEAD/status and relevant live sources before making changes. A handoff is a compact transfer, not an authority that overrides current facts.
+
+7. Mandatory close-out for coding tasks: apply the project's current permissions; commit+push the task-only verified source to a separate GitHub branch, confirm remote readback, note reproducible build artifact/manifest where relevant, and only then mark DONE. If push is impossible or explicitly prohibited, report exact `PERSISTENCE BLOCKED` and retain safe material. Local worktree, transient cloud environment, TEST deploy and QR are not source repositories. Do not ask Vlad to install GitHub Desktop or operate shell/SSH manually.
