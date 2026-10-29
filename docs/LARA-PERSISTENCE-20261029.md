@@ -5,8 +5,8 @@
 Восстановлен необходимый набор оригинальных исходников принятой пятислайдовой
 визитки; реконструкция и изменения дизайна не выполнялись. Приёмка Владом и Ларой
 подтверждена текущей задачей. Собранный автономный HTML совпадает побайтово с TEST.
-Сохранение выполняется в отдельную GitHub-ветку; итоговый remote SHA и результат
-независимого readback передаются в финальном HANDOFF после push.
+Исходники постоянно сохранены в отдельной GitHub-ветке. Независимое повторное
+получение ветки и сборка из удалённого commit успешно выполнены.
 
 ## Where
 
@@ -14,6 +14,9 @@
 - Ветка сохранения: `codex/lara-card-persistence-20261029`.
 - Исходный baseline: `08fc6d6dcaa61c1df15d5b76973bce22bdc20bad`.
 - Исходники: `prototypes/lara-card/`.
+- Проверенный исходный remote commit: `f402d98a2674d440404d92943b4e3418c141fd7e`.
+- Его дерево: `a5191bb6783d194e5017cd71c3477fede6542c3b`, совпадает с локально проверенным commit.
+- Этот отчёт уточняется последующим документационным commit; текущий HEAD сверять через remote ref.
 - TEST: https://test.club-gravitation.ru/card/lara/
 - Current: `lara-typography-20261029-v3-test`.
 - Previous: `lara-palette-20261029-v2-test`.
@@ -55,10 +58,47 @@ https://docs.google.com/document/d/1wzqOeA2GYO6H9369LF-DLqsuCtnJuM92ENzW1u0XrnM/
 
     node prototypes/lara-card/verify-build.mjs --live
 
+### Удалённый readback и воспроизводимость
+
+- Независимый git ls-remote подтвердил ветку и remote SHA.
+- Новый sparse clone скачан с GitHub в отдельную папку, без копирования исходников.
+- Все 20 файлов из сохранённого набора присутствуют в удалённом дереве.
+- `verify-build.mjs --live` из нового clone: source checks, build, HTTPS, SSH,
+  PUBLIC_BLOCKED — PASS. HTML и JSON-пакет имеют исходные SHA-256.
+- git diff --check и git status нового clone: PASS, tracked-изменений нет.
+- TEST current/previous остались прежними; deploy/rollback не вызывались.
+- CI не заявляется: эта задача проверена независимой сборкой и readback.
+
+### Сохранённые файлы
+
+- `docs/LARA-PERSISTENCE-20261029.md`
+- `prototypes/lara-card/.gitattributes`
+- `prototypes/lara-card/README.md`
+- `prototypes/lara-card/accepted-manifest.json`
+- `prototypes/lara-card/assets/OFL-CormorantGaramond.txt`
+- `prototypes/lara-card/assets/OFL-Inter.txt`
+- `prototypes/lara-card/assets/cormorant-garamond.ttf`
+- `prototypes/lara-card/assets/inter.ttf`
+- `prototypes/lara-card/assets/lara-approved.jpg`
+- `prototypes/lara-card/build.mjs`
+- `prototypes/lara-card/create-qr.py`
+- `prototypes/lara-card/exports/lara-card-qr-TEST-verification.json`
+- `prototypes/lara-card/exports/lara-card-qr-TEST.png`
+- `prototypes/lara-card/exports/lara-card-qr-TEST.svg`
+- `prototypes/lara-card/index.html`
+- `prototypes/lara-card/prepare-test-release.mjs`
+- `prototypes/lara-card/requirements-qr.txt`
+- `prototypes/lara-card/script.js`
+- `prototypes/lara-card/style.css`
+- `prototypes/lara-card/verify-build.mjs`
+
 ## Current blocker
 
-Для сборки и сверки TEST блокеров нет. Удалённое сохранение и сборка из вновь
-полученного remote commit должны быть подтверждены перед закрытием задачи.
+Нет. Источники находятся в GitHub и воспроизводимы без исходного компьютера.
+Обычный HTTPS git push на этом ПК требовал интерактивную авторизацию; тот же
+проверенный набор байтов сохранён через уже подключённый GitHub. Настройки
+доступа не менялись. Локальный commit `83cedcedbb3e3c907f368024f82f888bc400d92e`
+и исходный remote commit отличаются метаданными автора; дерево файлов совпадает.
 
 ## Next task
 
