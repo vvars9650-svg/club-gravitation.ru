@@ -19,10 +19,12 @@ On 2026-10-19 Vlad authorized a bounded installed-policy extension for `terms/in
 2. Protect unrelated work:
    - do not reset, stash, discard or overwrite unknown local changes;
    - if the working copy is dirty outside scope, use an isolated worktree from the approved baseline;
-   - package/deploy only from the verified target worktree.
+   - package/deploy only from the verified target worktree;
+   - for completed code tasks, preserve reproducible source and build scripts in remote GitHub before considering the job DONE. If TEST was deployed from untracked-only local files, treat source persistence as a priority recovery task and do not erase the worktree; TEST live does not prove code is safely stored.
 
 3. Respect release authority:
-   - commit, push, deploy, DNS, cloud and production mutations require explicit authorization in the current task;
+   - safe task-scoped commit+push to an isolated GitHub branch is covered by Vlad's standing authorization of 2026-10-29, unless the current task explicitly forbids it; verify diff, source provenance, absence of secrets/private data and remote SHA readback;
+   - merge/main/v5, deployment, DNS/cloud mutations, server permissions, destructive changes and PROD still require separate authorization; public TEST may be deployed only via the already-approved scoped TEST manager and within its allowlist;
    - do not re-open already accepted gates unless new evidence contradicts them;
    - never weaken auth, privacy, validation, environment isolation or fail-closed behavior to make a check pass.
 
