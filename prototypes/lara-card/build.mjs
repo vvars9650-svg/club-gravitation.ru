@@ -1,0 +1,10 @@
+import {mkdir, copyFile, cp, writeFile} from 'node:fs/promises';
+import {fileURLToPath} from 'node:url';
+import path from 'node:path';
+const root = path.dirname(fileURLToPath(import.meta.url));
+const out = path.join(root, 'public-dist');
+await mkdir(out, {recursive:true});
+for (const file of ['index.html','style.css','script.js']) await copyFile(path.join(root,file),path.join(out,file));
+await cp(path.join(root,'assets'),path.join(out,'assets'),{recursive:true});
+await writeFile(path.join(out,'build-info.json'),JSON.stringify({project:'lara-card-preview',screens:5,source:root,builtAt:new Date().toISOString()},null,2));
+console.log(`PREVIEW READY: ${out}`);

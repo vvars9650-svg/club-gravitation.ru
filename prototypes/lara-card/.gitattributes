@@ -1,0 +1,8 @@
+# Preserve accepted source bytes across Windows/Linux checkouts.
+index.html -text
+style.css -text
+script.js -text
+assets/* -text
+# Retain upstream OFL license bytes, including original spacing.
+assets/OFL-*.txt -whitespace
+exports/* -text

@@ -1,0 +1,21 @@
+{
+  "base": "lara-palette-20261029-v2-test",
+  "release": "lara-typography-20261029-v3-test",
+  "path": "card/lara/index.html",
+  "url": "https://test.club-gravitation.ru/card/lara/",
+  "fileBytes": 1798924,
+  "fileSha256": "7c2bf4f3d37b1608e50a6207fd54f7635475a94937f44ff99bc70909f29cd325",
+  "packageSha256": "9065a8e77c06598a0133daeea567aae52699c71ef8ef8b9d564f50e5757c315a",
+  "files": 1,
+  "dependencies": "embedded font/photo/CSS/JS; only approved external CTA links",
+  "sources": {
+    "index.html": "bea252878d3075a4df2c89eb30b4c0dacc770921fe41782d06509c565d342482",
+    "style.css": "d22f43757687e69286b3fdcf3d4750d6325fc54c55ed7cb13674ff306176715b",
+    "script.js": "738e51081ee5bf71a4fb4beac4bee1e0bd5cd3984e411aafdc22f189e0d4bb5a",
+    "assets/lara-approved.jpg": "63f55561fd942653abe0f19bc7665f021851d4ce021da5405b931b0459e430d6",
+    "assets/cormorant-garamond.ttf": "b20b7d9626dd956b2c5e558692ad328b1f19e3275e2782db4fa07670d83f35e0",
+    "assets/inter.ttf": "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031",
+    "assets/OFL-CormorantGaramond.txt": "60700d351cac4650c51f3f9db318d2a420f8b45052dba2715eb5fec41f0f6956",
+    "assets/OFL-Inter.txt": "5b9321a4298cfeb6b34354164a1c3afc3db114569984c502b9b35d988fd58c57"
+  }
+}
