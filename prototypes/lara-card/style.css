@@ -14,7 +14,9 @@ h1{top:53%;font-family:"Cormorant Garamond",serif;font-size:8.15cqw;line-height:
 .card[data-current="1"] .accent{top:64%}
 .role{top:67%;font-size:3.65cqw;line-height:1.3;letter-spacing:.035em;font-weight:400}
 .contact-block{position:absolute;top:76.5%;left:6%;width:88%;display:grid;grid-template-columns:54% 42%;gap:4%;align-items:center}
-.club-logo{display:block;width:100%;height:auto}
+.club-text{margin:0;text-align:left;font-weight:400}
+.club-name{display:block;font-size:5cqw;line-height:1.1;letter-spacing:.035em}
+.club-description{display:block;margin-top:.7cqw;font-size:3.1cqw;line-height:1.25;letter-spacing:.025em}
 .phone{justify-self:end;color:var(--cream);font-size:3.8cqw;line-height:1.3;font-weight:500;white-space:nowrap;text-decoration:none}
 .phone:focus-visible{outline:2px solid var(--orange);outline-offset:4px}
 .navigation{position:absolute;left:6%;right:6%;bottom:4.3%;height:5%;display:flex;align-items:center;justify-content:space-between}
@@ -64,12 +66,11 @@ h1{top:53%;font-family:"Cormorant Garamond",serif;font-size:8.15cqw;line-height:
 /* Shared type scale from slide 5; slide 1 is deliberately excluded. */
 .slide:not([data-screen="1"]) h2{font:700 8.15cqw/1.18 "Cormorant Garamond",serif;letter-spacing:.015em}
 .slide:not([data-screen="1"]) p,.slide:not([data-screen="1"]) .invitation-link{font:600 4.3cqw/1.3 "Cormorant Garamond",serif;letter-spacing:.015em}
-/* Give the complete original logo enough width on phones. */
+/* Preserve the compact portrait; keep club text left and phone right. */
 @media(max-width:600px){
   .portrait-frame{left:18%;width:64%;height:35%}
   h1{top:40%}
   .card[data-current="1"] .accent{top:51%}
   .role{top:54%}
-  .contact-block{top:60%;grid-template-columns:100%;gap:1cqw;justify-items:center}
-  .phone{justify-self:center;font-size:4.5cqw}
+  .contact-block{top:70%}
 }

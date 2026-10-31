@@ -13,7 +13,7 @@ for (const [file, hash] of Object.entries(expected.sources)) {
   assert.equal(sha(fs.readFileSync(path.join(root,file))),hash,`Source mismatch: ${file}`);
 }
 const html = fs.readFileSync(path.join(root,'index.html'),'utf8');
-for (const [screen, hash] of Object.entries(expected.unchangedSlides)) {
+for (const [screen, hash] of Object.entries(expected.slideHashes)) {
   const section = html.match(new RegExp(`<section[^>]+data-screen="${screen}"[\\s\\S]*?<\\/section>`))[0];
   assert.equal(sha(section),hash,`Slide ${screen} changed`);
 }
@@ -49,4 +49,4 @@ const output=path.join(root,'public-dist/candidate/card/lara/index.html');
 assert.equal(sha(fs.readFileSync(output)),expected.fileSha256);
 execFileSync(process.execPath,args,{stdio:'pipe'});
 assert.equal(sha(fs.readFileSync(output)),expected.fileSha256);
-console.log('PASS: source hashes, unchanged slides 2–4, tel, buttons, dots, keyboard, simulated touch pointer events, deterministic standalone build.');
+console.log('PASS: source/slide hashes, tel, buttons, dots, keyboard, simulated touch pointer events, deterministic standalone build.');
