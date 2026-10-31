@@ -1,0 +1,903 @@
+{
+  "browser": "Codex in-app",
+  "dpr": "1 (viewport API exposes width/height only)",
+  "touch": "simulated pointer events in verify-candidate.mjs; hardware touch not available",
+  "results": [
+    {
+      "viewport": [
+        390,
+        844,
+        1.0000000149011612
+      ],
+      "screen": "1",
+      "card": {
+        "bottom": 617.1999969482422,
+        "h": 390.3999938964844,
+        "right": 390.3999938964844,
+        "w": 390.3999938964844,
+        "x": 0,
+        "y": 226.8000030517578
+      },
+      "photoArea": 22.47196094519583,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        360,
+        800,
+        1.0000000149011612
+      ],
+      "screen": "1",
+      "card": {
+        "bottom": 580,
+        "h": 360,
+        "right": 360,
+        "w": 360,
+        "x": 0,
+        "y": 220
+      },
+      "photoArea": 22.36111111111111,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        360,
+        800,
+        1.0000000149011612
+      ],
+      "screen": "5",
+      "card": {
+        "bottom": 580,
+        "h": 360,
+        "right": 360,
+        "w": 360,
+        "x": 0,
+        "y": 220
+      },
+      "photoArea": 0,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        1440,
+        900,
+        1.0000000149011612
+      ],
+      "screen": "1",
+      "card": {
+        "bottom": 900,
+        "h": 900,
+        "right": 1170,
+        "w": 900,
+        "x": 270,
+        "y": 0
+      },
+      "photoArea": 35.72,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        1440,
+        900,
+        1.0000000149011612
+      ],
+      "screen": "2",
+      "card": {
+        "bottom": 900,
+        "h": 900,
+        "right": 1170,
+        "w": 900,
+        "x": 270,
+        "y": 0
+      },
+      "photoArea": 0,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        1440,
+        900,
+        1.0000000149011612
+      ],
+      "screen": "3",
+      "card": {
+        "bottom": 900,
+        "h": 900,
+        "right": 1170,
+        "w": 900,
+        "x": 270,
+        "y": 0
+      },
+      "photoArea": 0,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        1440,
+        900,
+        1.0000000149011612
+      ],
+      "screen": "4",
+      "card": {
+        "bottom": 900,
+        "h": 900,
+        "right": 1170,
+        "w": 900,
+        "x": 270,
+        "y": 0
+      },
+      "photoArea": 0,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        1440,
+        900,
+        1.0000000149011612
+      ],
+      "screen": "5",
+      "card": {
+        "bottom": 900,
+        "h": 900,
+        "right": 1170,
+        "w": 900,
+        "x": 270,
+        "y": 0
+      },
+      "photoArea": 0,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        390,
+        844,
+        1.0000000149011612
+      ],
+      "screen": "1",
+      "card": {
+        "bottom": 617.1999969482422,
+        "h": 390.3999938964844,
+        "right": 390.3999938964844,
+        "w": 390.3999938964844,
+        "x": 0,
+        "y": 226.8000030517578
+      },
+      "photoArea": 22.47196094519583,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        390,
+        844,
+        1.0000000149011612
+      ],
+      "screen": "2",
+      "card": {
+        "bottom": 617.1999969482422,
+        "h": 390.3999938964844,
+        "right": 390.3999938964844,
+        "w": 390.3999938964844,
+        "x": 0,
+        "y": 226.8000030517578
+      },
+      "photoArea": 0,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        390,
+        844,
+        1.0000000149011612
+      ],
+      "screen": "3",
+      "card": {
+        "bottom": 617.1999969482422,
+        "h": 390.3999938964844,
+        "right": 390.3999938964844,
+        "w": 390.3999938964844,
+        "x": 0,
+        "y": 226.8000030517578
+      },
+      "photoArea": 0,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        390,
+        844,
+        1.0000000149011612
+      ],
+      "screen": "4",
+      "card": {
+        "bottom": 617.1999969482422,
+        "h": 390.3999938964844,
+        "right": 390.3999938964844,
+        "w": 390.3999938964844,
+        "x": 0,
+        "y": 226.8000030517578
+      },
+      "photoArea": 0,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        390,
+        844,
+        1.0000000149011612
+      ],
+      "screen": "5",
+      "card": {
+        "bottom": 617.1999969482422,
+        "h": 390.3999938964844,
+        "right": 390.3999938964844,
+        "w": 390.3999938964844,
+        "x": 0,
+        "y": 226.8000030517578
+      },
+      "photoArea": 0,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        360,
+        800,
+        1.0000000149011612
+      ],
+      "screen": "1",
+      "card": {
+        "bottom": 580,
+        "h": 360,
+        "right": 360,
+        "w": 360,
+        "x": 0,
+        "y": 220
+      },
+      "photoArea": 22.36111111111111,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        360,
+        800,
+        1.0000000149011612
+      ],
+      "screen": "2",
+      "card": {
+        "bottom": 580,
+        "h": 360,
+        "right": 360,
+        "w": 360,
+        "x": 0,
+        "y": 220
+      },
+      "photoArea": 0,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        360,
+        800,
+        1.0000000149011612
+      ],
+      "screen": "3",
+      "card": {
+        "bottom": 580,
+        "h": 360,
+        "right": 360,
+        "w": 360,
+        "x": 0,
+        "y": 220
+      },
+      "photoArea": 0,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        360,
+        800,
+        1.0000000149011612
+      ],
+      "screen": "4",
+      "card": {
+        "bottom": 580,
+        "h": 360,
+        "right": 360,
+        "w": 360,
+        "x": 0,
+        "y": 220
+      },
+      "photoArea": 0,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        360,
+        800,
+        1.0000000149011612
+      ],
+      "screen": "5",
+      "card": {
+        "bottom": 580,
+        "h": 360,
+        "right": 360,
+        "w": 360,
+        "x": 0,
+        "y": 220
+      },
+      "photoArea": 0,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        768,
+        1024,
+        1.0000000149011612
+      ],
+      "screen": "1",
+      "card": {
+        "bottom": 896,
+        "h": 768,
+        "right": 768,
+        "w": 768,
+        "x": 0,
+        "y": 128
+      },
+      "photoArea": 35.74354383680556,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        768,
+        1024,
+        1.0000000149011612
+      ],
+      "screen": "2",
+      "card": {
+        "bottom": 896,
+        "h": 768,
+        "right": 768,
+        "w": 768,
+        "x": 0,
+        "y": 128
+      },
+      "photoArea": 0,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        768,
+        1024,
+        1.0000000149011612
+      ],
+      "screen": "3",
+      "card": {
+        "bottom": 896,
+        "h": 768,
+        "right": 768,
+        "w": 768,
+        "x": 0,
+        "y": 128
+      },
+      "photoArea": 0,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        768,
+        1024,
+        1.0000000149011612
+      ],
+      "screen": "4",
+      "card": {
+        "bottom": 896,
+        "h": 768,
+        "right": 768,
+        "w": 768,
+        "x": 0,
+        "y": 128
+      },
+      "photoArea": 0,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        768,
+        1024,
+        1.0000000149011612
+      ],
+      "screen": "5",
+      "card": {
+        "bottom": 896,
+        "h": 768,
+        "right": 768,
+        "w": 768,
+        "x": 0,
+        "y": 128
+      },
+      "photoArea": 0,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        1080,
+        1080,
+        1.0000000149011612
+      ],
+      "screen": "1",
+      "card": {
+        "bottom": 1080,
+        "h": 1080,
+        "right": 1080,
+        "w": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "photoArea": 35.75685871056242,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        1080,
+        1080,
+        1.0000000149011612
+      ],
+      "screen": "2",
+      "card": {
+        "bottom": 1080,
+        "h": 1080,
+        "right": 1080,
+        "w": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "photoArea": 0,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        1080,
+        1080,
+        1.0000000149011612
+      ],
+      "screen": "3",
+      "card": {
+        "bottom": 1080,
+        "h": 1080,
+        "right": 1080,
+        "w": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "photoArea": 0,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        1080,
+        1080,
+        1.0000000149011612
+      ],
+      "screen": "4",
+      "card": {
+        "bottom": 1080,
+        "h": 1080,
+        "right": 1080,
+        "w": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "photoArea": 0,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    },
+    {
+      "viewport": [
+        1080,
+        1080,
+        1.0000000149011612
+      ],
+      "screen": "5",
+      "card": {
+        "bottom": 1080,
+        "h": 1080,
+        "right": 1080,
+        "w": 1080,
+        "x": 0,
+        "y": 0
+      },
+      "photoArea": 0,
+      "horizontalOverflow": false,
+      "textOverflow": [],
+      "outsideCard": [],
+      "images": [
+        {
+          "complete": true,
+          "naturalWidth": 1312,
+          "src": "./assets/lara-approved.jpg"
+        },
+        {
+          "complete": true,
+          "naturalWidth": 2160,
+          "src": "./assets/gravitation-logo-horizontal-main.svg"
+        }
+      ]
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 {
-  "status": "candidate-awaiting-visual-QA-and-acceptance",
+  "status": "candidate-awaiting-visual-acceptance",
   "baseline": "9938a78655a5f7688233233384e78448f8c07e88",
   "base": "lara-typography-20261029-v3-test",
   "candidate": "lara-visual-update2-20261031-candidate",
