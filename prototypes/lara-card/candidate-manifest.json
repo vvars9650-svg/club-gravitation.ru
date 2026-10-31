@@ -32,7 +32,7 @@
     "assets/gravitation-logo-horizontal-main.svg": "0d9beab3b96f50004e1c9f89529c7dad8d5f0ce5ff148c96427a7692a55e7222",
     "build.mjs": "397958d60636096471a6da98a0cef1624f7cb7756aff9521063eaebe5ab066a5",
     "prepare-test-release.mjs": "b7c7d4141a2057152aebd2a34e62263efd74c7063b7202aae8f2a4bd2380791e",
-    "preview.mjs": "39a24a3f643c7c87b69060e2a778c50eccd2d60202c3935d9ea77684133889c7",
+    "preview.mjs": "7f8cd5c5b38d21fe06f92ff1e6339f8cf0989e2a992745c579c8c3079f8b48a6",
     "verify-candidate.mjs": "760919c60e5dcb9bbc932205af130a3e1819df6b7269efbc4baf30d8a4ae9216",
     "accepted-manifest.json": "d4f3d27bef834227dbebe80dca7e212139fab90ba250762b558c5a8e8382daef"
   }

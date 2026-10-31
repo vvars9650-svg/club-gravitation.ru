@@ -5,7 +5,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 const root = fileURLToPath(new URL('./public-dist/', import.meta.url));
 const types = {'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.jpg':'image/jpeg','.svg':'image/svg+xml','.ttf':'font/ttf','.json':'application/json'};
-http.createServer((req,res) => {
+const handler = (req,res) => {
   try {
     const pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
     const file = path.resolve(root, '.' + pathname, ...(pathname.endsWith('/') ? ['index.html'] : []));
@@ -13,4 +13,8 @@ http.createServer((req,res) => {
     res.writeHead(200, {'Content-Type':types[path.extname(file)] || 'application/octet-stream','Cache-Control':'no-store'});
     fs.createReadStream(file).pipe(res);
   } catch { res.writeHead(404); res.end('Not found'); }
-}).listen(4176, 'localhost', () => console.log('PREVIEW READY: http://localhost:4176/'));
+};
+// localhost may resolve to either family. Keep both listeners loopback-only.
+for (const host of ['127.0.0.1','::1']) {
+  http.createServer(handler).listen(4176, host, () => console.log(`PREVIEW READY: http://localhost:4176/ (${host})`));
+}
