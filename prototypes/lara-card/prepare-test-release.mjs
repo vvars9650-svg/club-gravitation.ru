@@ -21,6 +21,7 @@ if (script.toLowerCase().includes('</script')) throw new Error('Unsafe inline sc
 html=html.replace(/<link rel="stylesheet" href="\.\/style\.css[^\"]*">/,`<style>${css}</style>`);
 html=html.replace(/<script src="\.\/script\.js[^\"]*" defer><\/script>/,'');
 html=html.replace('src="./assets/lara-approved.jpg"',`src="${dataUri('lara-approved.jpg','image/jpeg')}"`);
+html=html.replace('src="./assets/gravitation-logo-horizontal-main.svg"',`src="${dataUri('gravitation-logo-horizontal-main.svg','image/svg+xml')}"`);
 html=html.replace('</body>',`<script>${script}</script>\n</body>`);
 if (/src="\.\//.test(html)||/url\("\.\//.test(html)) throw new Error('Non-embedded local dependency');
 const bytes=Buffer.from(html,'utf8');
@@ -30,6 +31,6 @@ fs.mkdirSync(path.dirname(destination),{recursive:true});
 fs.writeFileSync(destination,bytes);
 const payload=Buffer.from(JSON.stringify({base,files:{[key]:{sha256:sha(bytes),base64:bytes.toString('base64')}}}));
 fs.writeFileSync(path.join(output,'test-package.json'),payload);
-const report={base,release,path:key,url:'https://test.club-gravitation.ru/card/lara/',fileBytes:bytes.length,fileSha256:sha(bytes),packageSha256:sha(payload),files:1,dependencies:'embedded font/photo/CSS/JS; only approved external CTA links'};
+const report={base,release,path:key,url:'https://test.club-gravitation.ru/card/lara/',fileBytes:bytes.length,fileSha256:sha(bytes),packageSha256:sha(payload),files:1,dependencies:'embedded font/photo/logo/CSS/JS; only approved external CTA links and tel'};
 fs.writeFileSync(path.join(output,'manifest.json'),JSON.stringify(report,null,2));
 console.log(JSON.stringify(report,null,2));

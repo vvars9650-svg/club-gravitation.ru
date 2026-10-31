@@ -6,3 +6,8 @@ assets/* -text
 # Retain upstream OFL license bytes, including original spacing.
 assets/OFL-*.txt -whitespace
 exports/* -text
+# Preserve reproducible candidate tooling across Windows/Linux checkouts.
+*.mjs -text
+candidate-manifest.json -text
+# The unmodified upstream SVG uses CRLF; retain its original bytes.
+assets/gravitation-logo-horizontal-main.svg whitespace=cr-at-eol
